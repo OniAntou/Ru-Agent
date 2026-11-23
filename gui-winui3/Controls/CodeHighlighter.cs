@@ -135,6 +135,12 @@ public static class CodeHighlighter
             [".css"] = "css", [".scss"] = "css", [".less"] = "css",
         };
 
+    /// <summary>
+    /// Every extension the highlighter colors. The file preview asks the same table
+    /// which files it may show as source, so the two lists cannot drift apart.
+    /// </summary>
+    public static IEnumerable<string> KnownExtensions => Extensions.Keys;
+
     /// <summary>The highlighter language for a file name by its extension, or null when none fits.</summary>
     public static string? LanguageForFile(string? fileName)
     {

@@ -1174,17 +1174,42 @@ tabs or collapsing hides the surface. Narrow windows use the reader overlay.
 rejects hidden credential-name paths and reparse points, checks the opened
 handle's final path, and holds a read-only handle without write/delete sharing.
 Documents, PDFs and images have a 64 MiB input cap; text/Markdown have a 1 MiB
-cap. HTML and SVG are source text, never active browser content. Unsupported
-formats are refused rather than opened as executable content.
+cap. HTML and SVG are source text, never active browser content. Which files
+count as source text is not a second list: `IsTextual` asks
+`CodeHighlighter.KnownExtensions` through `LanguageForFile`, so a language the
+highlighter colors can never be refused by the preview, and adds prose
+extensions (`.txt`, `.csv`, `.log`) and well-known bare names (`Dockerfile`,
+`Makefile`, `.gitignore`, `go.mod`, …). Unsupported formats are refused rather
+than opened as executable content.
 
 `DocumentPreviewControl` cancels superseded reads and owns the current result.
 Windows.Data.Pdf rasterizes one selected page at a time, at most 1600×2400
-pixels; page controls and scroll/zoom remain in the panel. Image decoding refuses
-inputs above 40 megapixels and limits decode width. Markdown uses the existing
-native presentation stack. Other text shows in a framed code view: a fixed
-line-number gutter beside unwrapped lines that scroll sideways, colored by
+pixels; page controls and scroll/zoom remain in the panel. A paged document
+also takes a typed page number: the page box commits on Enter or focus loss and
+snaps a rejected value back to the page being shown, so it never disagrees with
+the rendered page. Images and PDF pages carry −/%/+ zoom on a toolbar row; the
+header's Fit returns zoom to 100% and the start of the file for every
+non-Office preview. Image decoding refuses inputs above 40 megapixels and limits
+decode width. Markdown uses the existing native presentation stack. Other text
+shows in a flat code view: no card, border or rounding, so the pane reads as an
+editor rather than a floating document. A fixed line-number gutter, muted and
+right-aligned, sits beside unwrapped lines that scroll sideways, colored by
 `CodeHighlighter` from the file's extension (`CodePreviewModel`; above 400,000
-characters the text stays plain), and the header names the language and line count.
+characters the text stays plain). A hairline under the header is the only
+division the pane draws. The code pane scrolls in its own scrollers: the gutter
+follows the code's vertical offset in a second, bar-less scroller whose viewport
+is trimmed by the height of the code's horizontal bar. That keeps the horizontal
+bar at the bottom edge of the pane, where it used to shorten the code column and
+hide the last line behind it. A wheel over the gutter moves the code.
+
+The header names the file, then describes it: for code the language and line
+count, images their dimensions, PDFs their page count, and always the size and
+how long ago the file changed. Those facts come from `FilePreviewSource.Describe`
+reading the same handle the bytes came from, so the header cannot describe a
+different file than the one shown, and `PreviewDetail` formats them without a
+window. Copy path and Reveal in File Explorer sit beside reload; reveal goes
+through `ExplorerReveal`, the helper the Changes tab also uses, so a workspace
+path is resolved in one place.
 
 `CodeTheme` is the one code palette for chat code blocks, edit diffs and the file
 preview: keywords, strings, comments (italic), numbers, calls and capitalized type
@@ -1193,7 +1218,10 @@ JSON, XML/XAML/HTML, SQL, shell, YAML, diff, JavaScript/TypeScript, the C family
 Java/Kotlin, Go, Rust, TOML/INI and CSS; other files stay plain. Edit diffs
 (`FileEditPreviewControl`) color each line from its own side of the edit, show a
 +/− marker, and tint lines only when the edit removes something: an add-only edit
-(a new file) marks additions with the gutter bar alone.
+(a new file) marks additions with the gutter bar alone. The diff is a flat code
+surface, not a card — no border and no rounding — and it reads like the Preview
+tab: one source line per row, scrolled sideways when it is wider than the panel,
+with the horizontal bar under the block instead of inside a card.
 
 Office-like documents use the extension's registered Windows preview handler
 through `CLSCTX_LOCAL_SERVER`, never an in-process handler DLL or Office editing

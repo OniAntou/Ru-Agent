@@ -26,8 +26,6 @@ namespace RuApp.Controls
         private static FontFamily MonoFont =>
             (FontFamily)Application.Current.Resources["RuMonoFontFamily"];
 
-        private static readonly SolidColorBrush FallbackSurfaceBrush = new SolidColorBrush(Color.FromArgb(255, 32, 35, 42));
-        private static readonly SolidColorBrush FallbackLineBrush = new SolidColorBrush(Color.FromArgb(255, 51, 65, 85));
         private static readonly SolidColorBrush FallbackInkBrush = new SolidColorBrush(Color.FromArgb(255, 241, 245, 249));
         private static readonly SolidColorBrush FallbackMutedBrush = new SolidColorBrush(Color.FromArgb(255, 148, 163, 184));
         private static readonly SolidColorBrush FallbackSuccessBrush = new SolidColorBrush(Color.FromArgb(255, 52, 211, 153));
@@ -101,6 +99,9 @@ namespace RuApp.Controls
                 Spacing = 0
             };
 
+            // One source line per row, scrolled sideways when it is wider than the panel —
+            // the same reading as the Preview tab. The surface is flat, so the horizontal
+            // bar sits under the block instead of inside a card.
             var scrollViewer = new ScrollViewer
             {
                 MaxHeight = 320,
@@ -112,17 +113,10 @@ namespace RuApp.Controls
                 Content = _previewLinesPanel
             };
 
-            var rootBorder = new Border
-            {
-                CornerRadius = UiCornerRadius.Card,
-                BorderThickness = new Thickness(1),
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Background = GetThemeBrush("RuBackdropCodeBrush", FallbackSurfaceBrush),
-                BorderBrush = GetThemeBrush("RuLineBrush", FallbackLineBrush),
-                Child = scrollViewer
-            };
-
-            Content = rootBorder;
+            // A flat code pane with no surface of its own, exactly like the Preview tab: the
+            // diff sits on the panel, so the numbers start at the panel's left edge instead
+            // of after a tinted block. Added/removed rows still carry their own tint.
+            Content = scrollViewer;
             Loaded += (_, _) => RefreshAll();
         }
 
@@ -160,6 +154,16 @@ namespace RuApp.Controls
             var mutedBrush = GetThemeBrush("RuMutedBrush", FallbackMutedBrush);
             var inkBrush = GetThemeBrush("RuInkBrush", FallbackInkBrush);
 
+            // The gutter hugs the widest number: the fixed 44 px column it used to carry left
+            // a dead band on the left of every diff, which read as an indent over the code.
+            int digits = 1;
+            foreach (var line in lines)
+            {
+                digits = Math.Max(digits, line.DisplayLineNumber.Length);
+            }
+
+            double numberWidth = Math.Max(14, (digits * 7) + 6);
+
             foreach (var line in lines)
             {
                 var row = new Grid
@@ -168,8 +172,8 @@ namespace RuApp.Controls
                     ColumnDefinitions =
                     {
                         new ColumnDefinition { Width = new GridLength(3, GridUnitType.Pixel) },
-                        new ColumnDefinition { Width = new GridLength(44, GridUnitType.Pixel) },
-                        new ColumnDefinition { Width = new GridLength(16, GridUnitType.Pixel) },
+                        new ColumnDefinition { Width = new GridLength(numberWidth, GridUnitType.Pixel) },
+                        new ColumnDefinition { Width = new GridLength(12, GridUnitType.Pixel) },
                         new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }
                     }
                 };
@@ -183,7 +187,7 @@ namespace RuApp.Controls
                     Foreground = mutedBrush,
                     Opacity = 0.7,
                     TextAlignment = TextAlignment.Right,
-                    Margin = new Thickness(0, 1, 6, 1),
+                    Margin = new Thickness(0, 1, 4, 1),
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 var markerBlock = new TextBlock

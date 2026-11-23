@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: The side panel's file preview opens the source types the highlighter
+  already knows instead of refusing them: Go, Rust, Java/Kotlin, the C family, project
+  and build files (`.csproj`, `.props`, `.scss`, `.diff`, `.mjs`), plus well-known names
+  without an extension (`Dockerfile`, `Makefile`, `.gitignore`, `go.mod`, `README`). One
+  table now decides both coloring and previewability, so the two cannot disagree. The
+  header also describes what is open — language and line count, image dimensions, PDF
+  page count, then size and last change, read from the same handle the bytes came from —
+  and offers Copy path and Reveal in File Explorer. PDFs take a typed page number and
+  images and PDF pages take −/%/+ zoom.
+
+- **feat(gui)**: The Changes tab's edit diff is a flat code surface too: the bordered,
+  rounded box around it is gone, so the horizontal bar now sits under the block instead
+  of inside a card. A long line stays one row and scrolls sideways, matching the Preview
+  tab, and the gutter hugs the widest line number instead of reserving a wide empty
+  column on the left.
+
+- **feat(gui)**: The file preview is a flat editor pane instead of a card: the bordered,
+  rounded box around code is gone, line numbers form a muted right-aligned gutter, and a
+  single hairline separates the header from the content. The code's horizontal scrollbar
+  now belongs to the pane rather than to the code column, where it shortened that column
+  and hid the last line behind the bar; the gutter follows the vertical offset in its own
+  bar-less scroller and accepts the wheel.
+
 - **fix(gui)**: The Changes tab and the turn summary no longer list a file the agent deleted:
   a file whose latest recorded edit is a deletion leaves the rows and the totals, and a later
   write or restore brings it back. The Changes tab compares a file's oldest recorded version

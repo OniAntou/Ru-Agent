@@ -1,3 +1,4 @@
+using RuApp.Controls;
 using RuApp.Services;
 using Xunit;
 
@@ -16,10 +17,37 @@ public sealed class FilePreviewSourceTests : IDisposable
     [InlineData("photo.png", FilePreviewKind.Image)]
     [InlineData("notes.md", FilePreviewKind.Markdown)]
     [InlineData("app.html", FilePreviewKind.Text)]
+    [InlineData("main.go", FilePreviewKind.Text)]
+    [InlineData("lib.rs", FilePreviewKind.Text)]
+    [InlineData("App.kt", FilePreviewKind.Text)]
+    [InlineData("engine.cpp", FilePreviewKind.Text)]
+    [InlineData("project.csproj", FilePreviewKind.Text)]
+    [InlineData("change.diff", FilePreviewKind.Text)]
+    [InlineData("theme.scss", FilePreviewKind.Text)]
+    [InlineData("Dockerfile", FilePreviewKind.Text)]
+    [InlineData("Makefile", FilePreviewKind.Text)]
+    [InlineData(".gitignore", FilePreviewKind.Text)]
+    [InlineData("README", FilePreviewKind.Text)]
+    [InlineData("go.mod", FilePreviewKind.Text)]
     public void Formats_choose_read_only_renderers(string path, FilePreviewKind expected) => Assert.Equal(expected, FilePreviewSource.Classify(path));
 
     [Fact]
     public void Unsupported_executables_are_refused() => Assert.Throws<NotSupportedException>(() => FilePreviewSource.Classify("program.exe"));
+
+    /// <summary>
+    /// The highlighter's extension table is the one list of source types: a language it
+    /// colors can never be refused by the preview, which is how a .go file used to fail.
+    /// </summary>
+    [Fact]
+    public void Every_extension_the_highlighter_colors_is_previewable_as_text()
+    {
+        var extensions = CodeHighlighter.KnownExtensions.ToList();
+        Assert.NotEmpty(extensions);
+        foreach (string extension in extensions)
+        {
+            Assert.Equal(FilePreviewKind.Text, FilePreviewSource.Classify("sample" + extension));
+        }
+    }
 
     [Fact]
     public void Corrupt_office_packages_are_refused_before_calling_an_external_renderer()
@@ -40,6 +68,20 @@ public sealed class FilePreviewSourceTests : IDisposable
         Assert.False(source.CanWrite);
         Assert.Throws<IOException>(() => File.WriteAllText(path, "mutated"));
         Assert.Equal("read-only preview", new StreamReader(source).ReadToEnd());
+    }
+
+    [Fact]
+    public void The_header_facts_describe_the_handle_that_was_validated()
+    {
+        string path = Path.Combine(_root, "facts.txt");
+        File.WriteAllText(path, "twelve bytes");
+        var written = new DateTime(2024, 3, 4, 5, 6, 7, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(path, written);
+        using var source = FilePreviewSource.Open(_root, path);
+        var facts = FilePreviewSource.Describe(source);
+        Assert.Equal(new FileInfo(path).Length, facts.Length);
+        Assert.NotNull(facts.LastWriteTimeUtc);
+        Assert.Equal(written, facts.LastWriteTimeUtc!.Value, TimeSpan.FromSeconds(1));
     }
 
     [Fact]

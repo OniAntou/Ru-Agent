@@ -3,62 +3,109 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:RuApp.Controls">
-    <Grid RowDefinitions="Auto,Auto,*">
-        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,0,0,10">
-            <StackPanel Spacing="3">
-                <TextBlock x:Name="FileNameLabel" Text="File preview" FontSize="13" FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis" Foreground="{StaticResource RuInkBrush}" />
-                <TextBlock x:Name="PreviewDetailLabel" Text="Read-only preview" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
-            </StackPanel>
-            <Button x:Name="FocusPreviewButton" Grid.Column="1" Click="OnFocusPreview" Visibility="Collapsed"
-                    Content="Focus preview" FontSize="11" Padding="6,0" Background="Transparent" BorderThickness="0"
-                    ToolTipService.ToolTip="Use the document with the keyboard; Tab or Esc returns to Ru."
-                    AutomationProperties.Name="Focus document preview" />
-            <Button x:Name="FitPreviewButton" Grid.Column="1" Click="OnFitPreview" Visibility="Collapsed"
-                    Content="Fit" FontSize="11" Padding="6,0" Background="Transparent" BorderThickness="0"
-                    ToolTipService.ToolTip="Fit preview to panel width" AutomationProperties.Name="Fit file preview" />
-            <Button x:Name="PreviewReloadButton" Grid.Column="2" Click="OnRefresh" ToolTipService.ToolTip="Reload file preview"
-                    AutomationProperties.Name="Reload file preview" Width="28" Padding="0" Background="Transparent" BorderThickness="0">
-                <FontIcon Glyph="&#xE72C;" FontSize="13" />
-            </Button>
-        </Grid>
-        <Grid x:Name="PageToolbar" Grid.Row="1" Visibility="Collapsed" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,8">
-            <Button x:Name="PreviousPage" Click="OnPreviousPage" Content="‹" AutomationProperties.Name="Previous preview page" />
-            <TextBlock x:Name="PageLabel" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12"
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
+        <StackPanel Grid.Row="0" Margin="0,0,0,10" Spacing="8">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="2">
+                <StackPanel Spacing="2">
+                    <TextBlock x:Name="FileNameLabel" Text="File preview" FontSize="13" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" Foreground="{StaticResource RuInkBrush}" />
+                    <!-- Type, size and last change: what the reader needs before reading the file. -->
+                    <TextBlock x:Name="PreviewDetailLabel" Text="Read-only preview" FontSize="11"
+                               TextTrimming="CharacterEllipsis" Foreground="{StaticResource RuMutedBrush}" />
+                </StackPanel>
+                <Button x:Name="FocusPreviewButton" Grid.Column="1" Click="OnFocusPreview" Visibility="Collapsed"
+                        Content="Focus preview" FontSize="11" Padding="6,0" Background="Transparent" BorderThickness="0"
+                        ToolTipService.ToolTip="Use the document with the keyboard; Tab or Esc returns to Ru."
+                        AutomationProperties.Name="Focus document preview" />
+                <Button x:Name="FitPreviewButton" Grid.Column="1" Click="OnFitPreview" Visibility="Collapsed"
+                        Content="Fit" FontSize="11" Padding="6,0" Background="Transparent" BorderThickness="0"
+                        ToolTipService.ToolTip="Reset zoom to 100% and return to the start"
+                        AutomationProperties.Name="Fit file preview" />
+                <Button x:Name="CopyPathButton" Grid.Column="2" Click="OnCopyPath" IsEnabled="False"
+                        ToolTipService.ToolTip="Copy the file path" AutomationProperties.Name="Copy previewed file path"
+                        Width="28" Padding="0" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE8C8;" FontSize="13" />
+                </Button>
+                <Button x:Name="RevealFileButton" Grid.Column="3" Click="OnRevealFile" IsEnabled="False"
+                        ToolTipService.ToolTip="Show in File Explorer" AutomationProperties.Name="Show previewed file in File Explorer"
+                        Width="28" Padding="0" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE838;" FontSize="13" />
+                </Button>
+                <Button x:Name="PreviewReloadButton" Grid.Column="4" Click="OnRefresh" ToolTipService.ToolTip="Reload file preview"
+                        AutomationProperties.Name="Reload file preview" Width="28" Padding="0" Background="Transparent" BorderThickness="0">
+                    <FontIcon Glyph="&#xE72C;" FontSize="13" />
+                </Button>
+            </Grid>
+            <!-- A hairline separates the header from the editor pane; the pane itself
+                 carries no card, border or rounding. -->
+            <Border Height="1" Background="{StaticResource RuLineBrush}" />
+        </StackPanel>
+        <!-- Paged documents: the page number is an input, so a long report is one
+             keystroke away instead of a stepper walk. -->
+        <StackPanel x:Name="PageToolbar" Grid.Row="1" Orientation="Horizontal" Spacing="2"
+                    HorizontalAlignment="Left" Margin="0,0,0,8" Visibility="Collapsed">
+            <Button x:Name="PreviousPage" Click="OnPreviousPage" Content="&#x2039;" Width="26" Height="24"
+                    MinWidth="0" Padding="0" FontSize="13" Background="Transparent" BorderThickness="0"
+                    AutomationProperties.Name="Previous preview page" />
+            <!-- Left-aligned: the TextBox template's clear button sits at the
+                 right edge, where a centred page number would disappear. -->
+            <TextBox x:Name="PageInput" Width="52" Height="26" MinWidth="0" MinHeight="0" Padding="6,0"
+                     FontSize="11" TextAlignment="Left" VerticalContentAlignment="Center"
+                     KeyDown="OnPageInputKeyDown" LostFocus="OnPageInputLostFocus"
+                     AutomationProperties.Name="Preview page number" />
+            <TextBlock x:Name="PageTotalLabel" VerticalAlignment="Center" FontSize="11"
                        Foreground="{StaticResource RuMutedBrush}" />
-            <Button x:Name="NextPage" Grid.Column="2" Click="OnNextPage" Content="›" AutomationProperties.Name="Next preview page" />
-        </Grid>
-        <Grid Grid.Row="2" x:Name="PreviewArea" Margin="0,0,0,12">
+            <Button x:Name="NextPage" Click="OnNextPage" Content="&#x203A;" Width="26" Height="24"
+                    MinWidth="0" Padding="0" FontSize="13" Background="Transparent" BorderThickness="0"
+                    AutomationProperties.Name="Next preview page" />
+        </StackPanel>
+        <!-- Raster surfaces (images, PDF pages) get zoom; text scrolls and selects instead. -->
+        <StackPanel x:Name="ZoomToolbar" Grid.Row="2" Orientation="Horizontal" Spacing="2"
+                    HorizontalAlignment="Right" Margin="0,0,0,8" Visibility="Collapsed">
+            <Button x:Name="ZoomOutButton" Click="OnZoomOut" Content="&#x2212;" Width="26" Height="24"
+                    MinWidth="0" Padding="0" FontSize="13" Background="Transparent" BorderThickness="0"
+                    AutomationProperties.Name="Zoom out" />
+            <TextBlock x:Name="ZoomLabel" Text="100%" MinWidth="34" VerticalAlignment="Center"
+                       TextAlignment="Center" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
+            <Button x:Name="ZoomInButton" Click="OnZoomIn" Content="+" Width="26" Height="24"
+                    MinWidth="0" Padding="0" FontSize="13" Background="Transparent" BorderThickness="0"
+                    AutomationProperties.Name="Zoom in" />
+        </StackPanel>
+        <Grid Grid.Row="3" x:Name="PreviewArea" Margin="0,0,0,12">
+            <!-- Rendered pages and Markdown: one scroller, zoom applies to the whole page. -->
             <ScrollViewer x:Name="ContentScroll" Visibility="Collapsed" HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto" ZoomMode="Enabled" MinZoomFactor="0.25" MaxZoomFactor="4"
-                          SizeChanged="OnPreviewViewportSizeChanged">
+                          SizeChanged="OnPreviewViewportSizeChanged" ViewChanged="OnPreviewViewChanged">
                 <Grid x:Name="PreviewContent">
                     <Image x:Name="PageImage" Stretch="Uniform" VerticalAlignment="Top" AutomationProperties.Name="Rendered document page" />
-                    <!-- Code and plain text: an editor-like frame with a fixed line-number
-                         gutter and syntax colors. Lines do not wrap; the code scrolls
-                         sideways inside the frame while the gutter stays put. Both columns
-                         share one block line height so numbers stay level with their lines. -->
-                    <Border x:Name="CodeFrame" Visibility="Collapsed" VerticalAlignment="Top"
-                            Background="{StaticResource RuSidebarBrush}" BorderBrush="{StaticResource RuLineBrush}"
-                            BorderThickness="1" CornerRadius="{StaticResource AppCardCornerRadius}" Padding="0,8,0,10">
-                        <Grid ColumnDefinitions="Auto,*">
-                            <TextBlock x:Name="LineNumbers" FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12"
-                                       LineHeight="19" LineStackingStrategy="BlockLineHeight"
-                                       TextAlignment="Right" Padding="12,0,10,0" Opacity="0.6"
-                                       Foreground="{StaticResource RuMutedBrush}" IsTextSelectionEnabled="False"
-                                       AutomationProperties.AccessibilityView="Raw" />
-                            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled"
-                                          VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled">
-                                <TextBlock x:Name="TextContent" FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12"
-                                           LineHeight="19" LineStackingStrategy="BlockLineHeight"
-                                           IsTextSelectionEnabled="True" TextWrapping="NoWrap" Padding="4,0,16,0"
-                                           Foreground="{StaticResource RuInkBrush}" />
-                            </ScrollViewer>
-                        </Grid>
-                    </Border>
                     <controls:MarkdownBlock x:Name="MarkdownContent" Visibility="Collapsed" />
                 </Grid>
             </ScrollViewer>
+            <!-- Code and plain text: a flat editor pane, not a card. The gutter keeps its
+                 place in its own scroller while the code scrolls sideways, and the code's
+                 horizontal bar belongs to the pane rather than to the code column: inside
+                 that column it shortened the viewport and hid the last line. Both columns
+                 share one block line height so numbers stay level with their lines. -->
+            <Grid x:Name="CodeFrame" Visibility="Collapsed" ColumnDefinitions="Auto,*">
+                <ScrollViewer x:Name="GutterScroll" VerticalScrollMode="Enabled" VerticalScrollBarVisibility="Hidden"
+                              HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
+                              ViewChanged="OnGutterScrollChanged">
+                    <TextBlock x:Name="LineNumbers" FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12"
+                               LineHeight="19" LineStackingStrategy="BlockLineHeight" Margin="0,8,0,0"
+                               TextAlignment="Right" Padding="0,0,12,0" Opacity="0.55"
+                               Foreground="{StaticResource RuMutedBrush}" IsTextSelectionEnabled="False"
+                               AutomationProperties.AccessibilityView="Raw" />
+                </ScrollViewer>
+                <ScrollViewer x:Name="CodeScroll" Grid.Column="1"
+                              HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled"
+                              VerticalScrollBarVisibility="Auto" VerticalScrollMode="Enabled"
+                              ViewChanged="OnCodeScrollChanged" SizeChanged="OnCodeScrollSizeChanged">
+                    <TextBlock x:Name="TextContent" FontFamily="{StaticResource RuMonoFontFamily}" FontSize="12"
+                               LineHeight="19" LineStackingStrategy="BlockLineHeight" Margin="0,8,0,0"
+                               IsTextSelectionEnabled="True" TextWrapping="NoWrap" Padding="0,0,12,0"
+                               Foreground="{StaticResource RuInkBrush}" />
+                </ScrollViewer>
+            </Grid>
             <TextBlock x:Name="StatusLabel" Text="Select a file in Files to preview it here." TextWrapping="Wrap"
                        VerticalAlignment="Center" HorizontalAlignment="Stretch" FontSize="13"
                        Foreground="{StaticResource RuMutedBrush}" AutomationProperties.LiveSetting="Polite" />

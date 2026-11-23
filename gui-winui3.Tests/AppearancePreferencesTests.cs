@@ -269,7 +269,6 @@ public sealed class AppearancePreferencesTests : IDisposable
                      (new[] { "Controls", "AgentQuestionPanelControl.xaml" }, "RuBackdropSurfaceBrush"),
                      (new[] { "Controls", "WorkspaceTrustPanelControl.xaml" }, "RuBackdropSurfaceBrush"),
                      (new[] { "Controls", "MarkdownBlock.RichBlocks.cs" }, "RuBackdropSurfaceBrush"),
-                     (new[] { "Controls", "FileEditPreviewControl.cs" }, "RuBackdropCodeBrush"),
                      (new[] { "Controls", "AgentSidePanelControl.Tabs.cs" }, "RuBackdropSurfaceBrush"),
                  })
         {

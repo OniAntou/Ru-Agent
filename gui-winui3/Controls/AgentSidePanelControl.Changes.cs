@@ -196,9 +196,7 @@ public sealed partial class AgentSidePanelControl
             || ChangesTabFiles.Resolve(_workspacePath, row.RelativePath) is not { } path) return;
         try
         {
-            // A deleted file has no item to select; open its folder instead.
-            var arguments = File.Exists(path) ? $"/select,\"{path}\"" : $"\"{Path.GetDirectoryName(path)}\"";
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", arguments) { UseShellExecute = false })?.Dispose();
+            ExplorerReveal.Reveal(path);
         }
         catch (Exception ex)
         {

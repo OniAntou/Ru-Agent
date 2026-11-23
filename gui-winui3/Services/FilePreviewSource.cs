@@ -2,10 +2,18 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.IO.Compression;
 using Microsoft.Win32.SafeHandles;
+using RuApp.Controls;
 
 namespace RuApp.Services;
 
 public enum FilePreviewKind { Text, Markdown, Image, Pdf, Office }
+
+/// <summary>
+/// What the preview header may say about a file: its length and last write time,
+/// both read from the handle that was validated for the read itself. The time is
+/// null when the handle cannot report it, rather than a guessed value.
+/// </summary>
+public readonly record struct PreviewFileFacts(long Length, DateTime? LastWriteTimeUtc);
 
 /// <summary>User-initiated, read-only presentation input. Never exposed as a model execution path.</summary>
 public static class FilePreviewSource
@@ -14,7 +22,21 @@ public static class FilePreviewSource
     public const long MaximumTextBytes = 1024 * 1024;
     private static readonly HashSet<string> Images = new(StringComparer.OrdinalIgnoreCase) { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tif", ".tiff" };
     private static readonly HashSet<string> Documents = new(StringComparer.OrdinalIgnoreCase) { ".docx", ".pptx", ".xlsx", ".doc", ".ppt", ".xls", ".rtf", ".odt", ".odp", ".ods" };
-    private static readonly HashSet<string> Text = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".cs", ".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".xml", ".xaml", ".html", ".css", ".csv", ".log", ".yml", ".yaml", ".toml", ".ini", ".ps1", ".sh", ".sql", ".svg", ".md", ".markdown" };
+
+    /// <summary>Prose and data whose extensions no highlighter language covers.</summary>
+    private static readonly HashSet<string> PlainTextExtensions = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".csv", ".log", ".text" };
+
+    /// <summary>Well-known files that carry their type in the name instead of an extension.</summary>
+    private static readonly HashSet<string> PlainTextFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Dockerfile", "Containerfile", "Makefile", "GNUmakefile", "Justfile",
+        "Gemfile", "Rakefile", "Procfile", "Vagrantfile", "Brewfile",
+        "LICENSE", "LICENCE", "COPYING", "NOTICE", "AUTHORS", "CONTRIBUTORS",
+        "README", "CHANGELOG", "CHANGES", "TODO", "VERSION",
+        ".gitignore", ".gitattributes", ".gitmodules", ".dockerignore", ".editorconfig", ".mailmap",
+        ".prettierrc", ".babelrc", ".eslintrc", ".nvmrc", ".node-version", ".python-version",
+        "go.mod", "go.sum", "Cargo.lock",
+    };
 
     public static FilePreviewKind Classify(string path)
     {
@@ -23,8 +45,22 @@ public static class FilePreviewSource
         if (Documents.Contains(ext)) return FilePreviewKind.Office;
         if (ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase)) return FilePreviewKind.Pdf;
         if (ext.Equals(".md", StringComparison.OrdinalIgnoreCase) || ext.Equals(".markdown", StringComparison.OrdinalIgnoreCase)) return FilePreviewKind.Markdown;
-        if (Text.Contains(ext)) return FilePreviewKind.Text;
+        if (IsTextual(path)) return FilePreviewKind.Text;
         throw new NotSupportedException("preview_format_unsupported: No preview is available for this file type.");
+    }
+
+    /// <summary>
+    /// Whether the file is shown as text. <see cref="CodeHighlighter"/> owns the one
+    /// table of source types, so a language it colors can never be refused here; the
+    /// plain set adds prose and the names a project states without an extension.
+    /// </summary>
+    public static bool IsTextual(string path)
+    {
+        string name = Path.GetFileName(path);
+        return !string.IsNullOrEmpty(name)
+            && (PlainTextFileNames.Contains(name)
+                || PlainTextExtensions.Contains(Path.GetExtension(name))
+                || CodeHighlighter.LanguageForFile(name) is not null);
     }
 
     public static FileStream Open(string workspace, string path)
@@ -57,6 +93,28 @@ public static class FilePreviewSource
         catch { stream.Dispose(); throw; }
     }
 
+    /// <summary>
+    /// The size and last write time of an already validated handle. Reading them from
+    /// the handle keeps the header describing the bytes that were actually read.
+    /// </summary>
+    public static PreviewFileFacts Describe(FileStream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        long length = stream.Length;
+        if (!GetFileInformationByHandleEx(stream.SafeFileHandle, FileBasicInfoClass, out var info, (uint)Marshal.SizeOf<FileBasicInfo>()))
+        {
+            return new PreviewFileFacts(length, null);
+        }
+
+        DateTime? modified = null;
+        if (info.LastWriteTime > 0 && info.LastWriteTime <= MaxFileTimeUtc)
+        {
+            modified = DateTime.FromFileTimeUtc(info.LastWriteTime);
+        }
+
+        return new PreviewFileFacts(length, modified);
+    }
+
     public static void ValidateOfficePackage(Stream source, string path)
     {
         string? part = Path.GetExtension(path).ToLowerInvariant() switch
@@ -80,6 +138,22 @@ public static class FilePreviewSource
         finally { source.Position = 0; }
     }
 
+    private const int FileBasicInfoClass = 0;
+    private static readonly long MaxFileTimeUtc = DateTime.MaxValue.ToFileTimeUtc();
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FileBasicInfo
+    {
+        public long CreationTime;
+        public long LastAccessTime;
+        public long LastWriteTime;
+        public long ChangeTime;
+        public uint FileAttributes;
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint GetFinalPathNameByHandle(SafeFileHandle file, StringBuilder path, uint length, uint flags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandleEx(SafeFileHandle file, int infoClass, out FileBasicInfo info, uint size);
 }

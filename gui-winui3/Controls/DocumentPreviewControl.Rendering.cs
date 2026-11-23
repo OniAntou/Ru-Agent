@@ -12,6 +12,9 @@ public sealed partial class DocumentPreviewControl
     private async Task RenderAsync(FilePreviewKind kind, byte[] bytes, CancellationToken ct, long generation)
     {
         PageImage.Visibility = CodeFrame.Visibility = MarkdownContent.Visibility = Visibility.Collapsed;
+        PageToolbar.Visibility = ZoomToolbar.Visibility = Visibility.Collapsed;
+        ContentScroll.Visibility = Visibility.Collapsed;
+        bool code = kind == FilePreviewKind.Text;
         if (kind is FilePreviewKind.Text or FilePreviewKind.Markdown)
         {
             using var reader = new StreamReader(new MemoryStream(bytes), detectEncodingFromByteOrderMarks: true);
@@ -19,7 +22,12 @@ public sealed partial class DocumentPreviewControl
             ct.ThrowIfCancellationRequested();
             if (generation != _generation) return;
             if (text.Contains('\0')) throw new NotSupportedException("preview_binary_text: This file does not contain readable text.");
-            if (kind == FilePreviewKind.Markdown) { MarkdownContent.MarkdownText = text; MarkdownContent.Visibility = Visibility.Visible; }
+            if (kind == FilePreviewKind.Markdown)
+            {
+                MarkdownContent.MarkdownText = text;
+                MarkdownContent.Visibility = Visibility.Visible;
+                ShowDetail("Markdown", PreviewDetail.Lines(LineCount(text)));
+            }
             else ShowCode(text);
         }
         else if (kind == FilePreviewKind.Pdf)
@@ -32,6 +40,8 @@ public sealed partial class DocumentPreviewControl
                 if (generation != _generation) { stream.Dispose(); return; }
                 _pdfStream = stream; _pdf = document; _page = 0;
                 await RenderPdfPageAsync(ct, generation);
+                if (generation != _generation) return;
+                ShowDetail("PDF", PreviewDetail.Pages((int)document.PageCount));
             }
             catch { if (!ReferenceEquals(stream, _pdfStream)) stream.Dispose(); throw; }
         }
@@ -46,13 +56,26 @@ public sealed partial class DocumentPreviewControl
             ct.ThrowIfCancellationRequested();
             if (generation != _generation) return;
             PageImage.Source = image; PageImage.Visibility = Visibility.Visible;
+            ZoomToolbar.Visibility = Visibility.Visible;
+            ShowDetail(ImageTypeName(_path), PreviewDetail.Dimensions(
+                (int)Math.Min(decoder.PixelWidth, int.MaxValue), (int)Math.Min(decoder.PixelHeight, int.MaxValue)));
         }
         if (generation != _generation) return;
-        ContentScroll.Visibility = Visibility.Visible;
         FitPreviewButton.Visibility = Visibility.Visible;
+        StatusLabel.Visibility = Visibility.Collapsed;
+        if (code)
+        {
+            // The code pane scrolls in its own columns; the page scroller stays collapsed.
+            CodeScroll.UpdateLayout();
+            CodeScroll.ChangeView(0, 0, null, true);
+            SyncCodeGutter();
+            return;
+        }
+
+        ContentScroll.Visibility = Visibility.Visible;
         ContentScroll.UpdateLayout();
         ContentScroll.ChangeView(0, 0, 1, true);
-        StatusLabel.Visibility = Visibility.Collapsed;
+        RefreshZoom();
     }
 
     /// <summary>Fills the code frame: line numbers, then the highlighted lines.</summary>
@@ -67,7 +90,7 @@ public sealed partial class DocumentPreviewControl
             foreach (var span in view.Lines[index]) TextContent.Inlines.Add(CodeTheme.Run(span));
         }
 
-        PreviewDetailLabel.Text = view.Description;
+        ShowDetail(view.Description);
         CodeFrame.Visibility = Visibility.Visible;
     }
 
@@ -89,30 +112,31 @@ public sealed partial class DocumentPreviewControl
         ct.ThrowIfCancellationRequested();
         if (generation != _generation) return;
         PageImage.Source = image; PageImage.Visibility = Visibility.Visible;
-        PageToolbar.Visibility = Visibility.Visible;
-        PageLabel.Text = $"Page {_page + 1} of {document.PageCount}";
-        PreviousPage.IsEnabled = _page > 0;
-        NextPage.IsEnabled = _page + 1 < document.PageCount;
+        // One page needs no pager; a longer document shows where the reader is.
+        PageToolbar.Visibility = document.PageCount > 1 ? Visibility.Visible : Visibility.Collapsed;
+        ZoomToolbar.Visibility = Visibility.Visible;
+        PageTotalLabel.Text = "of " + PreviewDetail.Pages((int)document.PageCount);
+        SyncPageInput();
+        RefreshPageControls();
         ContentScroll.ChangeView(0, 0, null, true);
     }
 
-    private async void OnPreviousPage(object sender, RoutedEventArgs e) => await ChangePageAsync(-1);
-    private async void OnNextPage(object sender, RoutedEventArgs e) => await ChangePageAsync(1);
-
-    private async Task ChangePageAsync(int delta)
+    /// <summary>Lines the way the reader counts them: a final newline closes the last one.</summary>
+    private static int LineCount(string text)
     {
-        if (_read is null || _pdf is null) return;
-        long next = (long)_page + delta;
-        if (next < 0 || next >= _pdf.PageCount) return;
-        PreviousPage.IsEnabled = NextPage.IsEnabled = false;
-        _page = (uint)next;
-        long generation = ++_generation;
-        try { await RenderPdfPageAsync(_read.Token, generation); }
-        catch (OperationCanceledException) { }
-        catch (Exception error)
+        if (text.Length == 0) return 0;
+        int lines = 1;
+        foreach (char character in text)
         {
-            if (generation != _generation) return;
-            StatusLabel.Text = PreviewError(error); StatusLabel.Visibility = Visibility.Visible;
+            if (character == '\n') lines++;
         }
+
+        return text.EndsWith('\n') ? lines - 1 : lines;
+    }
+
+    private static string ImageTypeName(string? path)
+    {
+        string name = System.IO.Path.GetExtension(path ?? string.Empty).TrimStart('.').ToUpperInvariant();
+        return name switch { "JPG" => "JPEG", "TIF" => "TIFF", _ => name };
     }
 }

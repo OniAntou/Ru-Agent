@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using RuApp.Services;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Data.Pdf;
 
 namespace RuApp.Controls;
@@ -19,6 +20,7 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
     private PdfDocument? _pdf;
     private uint _page;
     private Windows.Storage.Streams.IRandomAccessStream? _pdfStream;
+    private PreviewFileFacts _facts;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _nativeMonitor;
     public Func<bool>? IsOccluded { get; set; }
 
@@ -49,14 +51,20 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         _office?.Dispose(); _office = null; _nativeReady = false;
         _pdf = null; _pdfStream?.Dispose(); _pdfStream = null;
         _path = _workspace = null;
+        _facts = default;
         PageImage.Source = null; TextContent.Inlines.Clear(); LineNumbers.Text = ""; MarkdownContent.MarkdownText = "";
-        PageToolbar.Visibility = ContentScroll.Visibility = Visibility.Collapsed;
+        PageToolbar.Visibility = ZoomToolbar.Visibility = ContentScroll.Visibility = Visibility.Collapsed;
+        CodeFrame.Visibility = Visibility.Collapsed;
+        ResetZoom();
+        PageInput.Text = ""; PageTotalLabel.Text = "";
         FocusPreviewButton.Visibility = Visibility.Collapsed;
         FitPreviewButton.Visibility = Visibility.Collapsed;
+        CopyPathButton.IsEnabled = RevealFileButton.IsEnabled = false;
         StatusLabel.Text = "Select a file in Files to preview it here.";
         StatusLabel.Visibility = Visibility.Visible;
         FileNameLabel.Text = "File preview";
         PreviewDetailLabel.Text = "Read-only preview";
+        ToolTipService.SetToolTip(PreviewDetailLabel, null);
     }
 
     public async Task OpenAsync(string workspace, string path)
@@ -66,6 +74,8 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         _workspace = workspace; _path = path;
         FileNameLabel.Text = System.IO.Path.GetFileName(path);
         ToolTipService.SetToolTip(FileNameLabel, path);
+        // Copy and reveal work from the moment a file is selected, even if it cannot render.
+        CopyPathButton.IsEnabled = RevealFileButton.IsEnabled = true;
         StatusLabel.Text = "Rendering preview…";
         _read = new(); var ct = _read.Token; long generation = _generation;
         try
@@ -90,23 +100,28 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
                 await opening;
                 ct.ThrowIfCancellationRequested();
                 if (generation != _generation) return;
+                _facts = office.Facts;
                 _nativeReady = true;
                 FocusPreviewButton.Visibility = Visibility.Visible;
+                ShowDetail(OfficeTypeName(path));
                 StatusLabel.Visibility = Visibility.Collapsed;
                 UpdateNativeBounds();
             }
             else
             {
                 // Bounds and canonical handle checks run away from the dispatcher.
+                PreviewFileFacts facts = default;
                 byte[] bytes = await Task.Run(async () =>
                 {
                     await using var file = FilePreviewSource.Open(workspace, path);
+                    facts = FilePreviewSource.Describe(file);
                     var result = new byte[checked((int)file.Length)];
                     await file.ReadExactlyAsync(result, ct);
                     return result;
                 }, ct);
                 ct.ThrowIfCancellationRequested();
                 if (generation != _generation) return;
+                _facts = facts;
                 await RenderAsync(kind, bytes, ct, generation);
             }
         }
@@ -124,6 +139,24 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         }
     }
 
+    /// <summary>Fills the header's second line: what the file is, its size and when it changed.</summary>
+    private void ShowDetail(params string?[] parts)
+    {
+        var described = new List<string?>(parts) { PreviewDetail.Size(_facts.Length) };
+        if (_facts.LastWriteTimeUtc is { } modified)
+        {
+            described.Add(PreviewDetail.Modified(modified.ToLocalTime(), DateTime.Now));
+        }
+
+        PreviewDetailLabel.Text = PreviewDetail.Compose(described.ToArray());
+        ToolTipService.SetToolTip(PreviewDetailLabel, _facts.LastWriteTimeUtc is { } stamp
+            ? $"{stamp.ToLocalTime():yyyy-MM-dd HH:mm} · {_facts.Length:N0} bytes"
+            : null);
+    }
+
+    private static string OfficeTypeName(string path) =>
+        System.IO.Path.GetExtension(path).TrimStart('.').ToUpperInvariant();
+
     private static string PreviewError(Exception error) => error switch
     {
         TimeoutException => "preview_timeout: The document renderer did not respond. Other file types still work; restart Ru to reconnect to the document renderer.",
@@ -137,6 +170,21 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
     private async void OnRefresh(object sender, RoutedEventArgs e)
     {
         if (_workspace is { } workspace && _path is { } path) await OpenAsync(workspace, path);
+    }
+
+    private void OnCopyPath(object sender, RoutedEventArgs e)
+    {
+        if (_path is not { } path) return;
+        var package = new DataPackage();
+        package.SetText(path);
+        Clipboard.SetContent(package);
+    }
+
+    private void OnRevealFile(object sender, RoutedEventArgs e)
+    {
+        if (_path is not { } path) return;
+        try { ExplorerReveal.Reveal(path); }
+        catch (Exception error) { GuiDiagnosticWriter.AppendTraceLine($"[Preview] Reveal failed: {error.GetType().Name}"); }
     }
 
     private async void OnFocusPreview(object sender, RoutedEventArgs e)
@@ -157,6 +205,12 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         PreviewContent.Width = Math.Max(1, ContentScroll.ActualWidth - 16);
     private void OnFitPreview(object sender, RoutedEventArgs e)
     {
+        if (CodeFrame.Visibility == Visibility.Visible)
+        {
+            CodeScroll.ChangeView(0, 0, null, true);
+            return;
+        }
+
         ContentScroll.UpdateLayout();
         ContentScroll.ChangeView(0, 0, 1, true);
     }

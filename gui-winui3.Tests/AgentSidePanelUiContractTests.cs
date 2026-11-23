@@ -298,7 +298,7 @@ public sealed class AgentSidePanelUiContractTests
     }
 
     [Fact]
-    public void Code_previews_are_framed_numbered_and_colored_by_file_type()
+    public void Code_previews_are_a_flat_numbered_pane_without_a_card()
     {
         var preview = GuiSource.Xml("Controls", "DocumentPreviewControl.xaml");
         var frame = GuiSource.Require(preview, "CodeFrame");
@@ -306,6 +306,26 @@ public sealed class AgentSidePanelUiContractTests
         var text = GuiSource.Require(preview, "TextContent");
         Assert.Contains(text, frame.Descendants());
         Assert.Equal("NoWrap", GuiSource.AttributeValue(text, "TextWrapping"));
+        // The pane reads as an editor, not a floating document: no fill, hairline or rounding.
+        foreach (var chrome in new[] { "Background", "BorderBrush", "BorderThickness", "CornerRadius" })
+        {
+            Assert.Null(GuiSource.AttributeValue(frame, chrome));
+        }
+
+        // The horizontal bar belongs to the code's own two-axis scroller. Inside the code
+        // column it shortened that column and hid the last line under the bar.
+        var codeScroll = GuiSource.Require(preview, "CodeScroll");
+        Assert.Contains(text, codeScroll.Descendants());
+        Assert.Equal("Auto", GuiSource.AttributeValue(codeScroll, "HorizontalScrollBarVisibility"));
+        var gutterScroll = GuiSource.Require(preview, "GutterScroll");
+        Assert.Contains(GuiSource.Require(preview, "LineNumbers"), gutterScroll.Descendants());
+        Assert.Equal("Hidden", GuiSource.AttributeValue(gutterScroll, "VerticalScrollBarVisibility"));
+        Assert.False(GuiSource.IsDescendantOf(frame, GuiSource.Require(preview, "ContentScroll")),
+            "The code pane owns its scrolling; the page scroller must not wrap it.");
+        Assert.Contains("GutterScroll.ChangeView",
+            GuiSource.MethodBody(GuiSource.Text("Controls", "DocumentPreviewControl.Viewer.cs"), "SyncCodeGutter"),
+            StringComparison.Ordinal);
+
         Assert.Contains("CodePreviewModel.Build(text, _path)",
             GuiSource.Text("Controls", "DocumentPreviewControl.Rendering.cs"), StringComparison.Ordinal);
 
@@ -335,6 +355,70 @@ public sealed class AgentSidePanelUiContractTests
             GuiSource.MethodBody(code, "OnChangeOpenPreviewClick"), StringComparison.Ordinal);
         Assert.Contains("ChangesTabFiles.Resolve(_workspacePath, row.RelativePath)",
             GuiSource.MethodBody(code, "OnChangeRevealClick"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_preview_header_names_the_file_and_offers_its_own_actions()
+    {
+        var preview = GuiSource.Xml("Controls", "DocumentPreviewControl.xaml");
+        foreach (var name in new[]
+                 {
+                     "PreviewDetailLabel", "CopyPathButton", "RevealFileButton",
+                     "PageToolbar", "PageInput", "PageTotalLabel", "ZoomToolbar", "ZoomInButton", "ZoomOutButton", "ZoomLabel",
+                 })
+        {
+            GuiSource.Require(preview, name);
+        }
+
+        var code = GuiSource.Text("Controls", "DocumentPreviewControl.xaml.cs");
+        Assert.Contains("ExplorerReveal.Reveal(path)", GuiSource.MethodBody(code, "OnRevealFile"), StringComparison.Ordinal);
+        Assert.Contains("Clipboard.SetContent", GuiSource.MethodBody(code, "OnCopyPath"), StringComparison.Ordinal);
+        // The header composes type, size and last change in one place.
+        Assert.Contains("PreviewDetail.Compose", GuiSource.MethodBody(code, "ShowDetail"), StringComparison.Ordinal);
+
+        // The Changes tab reveals through the same helper; a second copy would drift.
+        Assert.Contains("ExplorerReveal.Reveal(path)",
+            GuiSource.MethodBody(GuiSource.Text("Controls", "AgentSidePanelControl.Changes.cs"), "OnChangeRevealClick"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_preview_takes_its_source_types_from_the_highlighter_table()
+    {
+        // A language the highlighter colors must never be refused by the preview, so the
+        // decision lives in one method that asks CodeHighlighter rather than a second list.
+        var source = GuiSource.Text("Services", "FilePreviewSource.cs");
+        Assert.Contains("CodeHighlighter.LanguageForFile(", GuiSource.MethodBody(source, "IsTextual"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Edit_diffs_are_flat_and_scroll_sideways_like_the_preview()
+    {
+        // The diff body is built in code, so the contract is read from its declarations:
+        // it paints no surface of its own and a long line stays one row that scrolls
+        // sideways, matching how the Preview tab reads code.
+        var source = GuiSource.Text("Controls", "FileEditPreviewControl.cs");
+        // No surface, card or code tone of its own: the diff lies on the panel like the
+        // Preview tab's code does. The rows keep their own added/removed tints.
+        Assert.DoesNotContain("RuBackdropCodeBrush", source, StringComparison.Ordinal);
+        Assert.Contains("Content = scrollViewer;", source, StringComparison.Ordinal);
+        foreach (var chrome in new[] { "CornerRadius", "BorderThickness", "BorderBrush" })
+        {
+            Assert.DoesNotContain(chrome + " =", source, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("TextWrapping = TextWrapping.NoWrap", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("TextWrapping.Wrap", source, StringComparison.Ordinal);
+        Assert.Contains("HorizontalScrollMode = ScrollMode.Enabled", source, StringComparison.Ordinal);
+        Assert.Contains("HorizontalScrollBarVisibility = ScrollBarVisibility.Auto", source, StringComparison.Ordinal);
+
+        // The gutter is sized to the widest number. A fixed 44 px column left a dead band
+        // on the left of every diff, which read as an indent the code did not have.
+        Assert.DoesNotContain("GridLength(44", source, StringComparison.Ordinal);
+        Assert.Contains("double numberWidth", source, StringComparison.Ordinal);
+        var panel = GuiSource.Xml("Controls", "AgentSidePanelControl.xaml");
+        var hosted = Assert.Single(panel.Descendants(), element => element.Name.LocalName == "FileEditPreviewControl");
+        Assert.Equal("0,2,0,6", GuiSource.AttributeValue(hosted, "Margin"));
     }
 
     [Fact]

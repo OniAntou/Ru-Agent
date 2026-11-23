@@ -16,6 +16,9 @@ internal sealed class ShellDocumentPreview(PreviewStaWorker worker, nint parent,
     private (int X, int Y, int Width, int Height, bool Visible)? _position;
     private readonly nint _parent = parent;
 
+    /// <summary>Size and last write time of the handle the renderer was handed.</summary>
+    public PreviewFileFacts Facts { get; private set; }
+
     public async Task OpenAsync(string workspace, string path, CancellationToken ct)
     {
         // PowerPoint's DirectComposition content does not paint beneath WinUI's
@@ -29,6 +32,7 @@ internal sealed class ShellDocumentPreview(PreviewStaWorker worker, nint parent,
             try
             {
                 _source = FilePreviewSource.Open(workspace, path);
+                Facts = FilePreviewSource.Describe(_source);
                 FilePreviewSource.ValidateOfficePackage(_source, path);
                 Guid clsid = FindHandler(Path.GetExtension(path));
                 Guid iid = typeof(IPreviewHandler).GUID;

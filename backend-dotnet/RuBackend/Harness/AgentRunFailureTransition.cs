@@ -10,7 +10,11 @@ internal sealed class AgentRunFailureTransition(IHarnessEventStore store)
     private const int MaximumCommitAttempts = 8;
     private readonly IIdGenerator _ids = new CryptographicIdGenerator();
 
-    public async Task<AgentRun?> FailAsync(RunId runId, string errorCode, CancellationToken cancellationToken)
+    public async Task<AgentRun?> FailAsync(
+        RunId runId,
+        string errorCode,
+        CancellationToken cancellationToken,
+        RunFailureFingerprint? fingerprint = null)
     {
         for (var attempt = 0; attempt < MaximumCommitAttempts; attempt++)
         {
@@ -23,7 +27,7 @@ internal sealed class AgentRunFailureTransition(IHarnessEventStore store)
                 throw new HarnessStoreException(transition.ErrorCode ?? "invalid_transition");
 
             var failed = AgentV1Shared.AdvanceRun(run, transition.Next, run.BudgetWindow,
-                run.ModelStepsInWindow, run.ToolCallsInWindow, 1, DateTimeOffset.UtcNow, errorCode);
+                run.ModelStepsInWindow, run.ToolCallsInWindow, 1, DateTimeOffset.UtcNow, errorCode, fingerprint);
             var result = await store.CommitAsync(new HarnessCommit(runId, run.Version, failed,
                 [new HarnessEventIntent(_ids.NewEventId(), HarnessEventKind.RunFailed, safeCode: errorCode)], [], []),
                 cancellationToken).ConfigureAwait(false);

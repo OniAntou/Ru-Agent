@@ -49,7 +49,7 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
             var fields = ReadFields(state);
             var exceptionKind = fields.TryGetValue("exception_kind", out var fieldKind)
                 ? fieldKind
-                : ClassifyException(exception);
+                : ExceptionFingerprint.KindOf(exception);
             _emitter.TryEmit(
                 MapLevel(logLevel),
                 _categoryName,
@@ -60,7 +60,7 @@ public sealed class StructuredDiagnosticLoggerProvider : ILoggerProvider
                 status: fields.TryGetValue("status", out var status) ? status : null,
                 errorCode: fields.TryGetValue("error_code", out var errorCode) ? errorCode : null,
                 exceptionKind: exceptionKind,
-                exceptionSite: ExceptionSite(exception));
+                exceptionSite: ExceptionFingerprint.SiteOf(exception));
         }
 
         private static Dictionary<string, string> ReadFields<TState>(TState state)

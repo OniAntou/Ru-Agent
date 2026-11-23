@@ -357,8 +357,9 @@ public sealed partial class AgentRunCoordinator
     public Task<AgentRun> FailAsync(
         RunId runId,
         string errorCode,
-        CancellationToken cancellationToken) =>
-        _lifecycle.FailAsync(runId, errorCode, cancellationToken);
+        CancellationToken cancellationToken,
+        RunFailureFingerprint? fingerprint = null) =>
+        _lifecycle.FailAsync(runId, errorCode, cancellationToken, fingerprint);
 
     public Task<ContextCompactionResult> CompactAsync(
         RunId runId,

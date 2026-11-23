@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A run that stopped on an exception now carries a bounded fingerprint of
+  the failure — `failure_kind` (store, protocol, transport, invalid_operation, …) and
+  `failure_site` (the throwing type and method) — in the same terminal state commit and in
+  the run response, so even the `runtime_drive_failed` fallback says where it happened
+  without opening the host log. Both fields are validated: a lower-case token and a type
+  and method, never a message, path or secret, and absent for a run failed by name. The
+  fingerprint lives in an `agent_run_failures` side table instead of new run columns because
+  fixture databases replay the migration suffix and migrations must stay replay-safe. A
+  fault-injection matrix at the drive boundary now locks the contract: the mapped code, the
+  persisted fingerprint, an intact `run.failed` event and a session that still accepts a new
+  run.
+
 - **fix(harness)**: A run that stopped on an exception now keeps the name that
   exception carries instead of collapsing into `runtime_drive_failed`: a store fault
   reports the store's own code (`harness_store_unavailable`, or
@@ -14,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protocol code, and a tool-transport fault reports the code it carries. The fallback
   stays for a genuinely unclassified fault, so the family is visible from the run's
   terminal code without reading the host log.
+
+- **fix(gui)**: A failed run's status line names the throwing site the run now carries
+  (`(at Namespace.Type.Method)`) after the mapped sentence, so an operator can report a
+  failure without opening the Activity Log. Bounded to 96 characters, and omitted when the
+  run was failed by name.
 
 - **fix(gui)**: The blocked state after a create whose outcome could not be confirmed
   now keeps the last code the Host named. A repeated reconciliation failure used to

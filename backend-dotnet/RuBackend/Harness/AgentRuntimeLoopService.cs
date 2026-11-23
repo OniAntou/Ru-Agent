@@ -758,18 +758,21 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
             try
             {
                 var failureCode = NormalizeDriveFailureCode(error);
+                // The run's own terminal state keeps the bounded fingerprint, so an
+                // unexplained code still says where it happened without the host log.
+                var fingerprint = Diagnostics.ExceptionFingerprint.For(error);
                 if (coordinator is null)
                 {
                     // Registration is released only after the durable run no longer owns the
                     // session. A store error leaves it registered for a later bounded retry.
-                    await new AgentRunFailureTransition(_store).FailAsync(runId, failureCode, cancellationToken)
+                    await new AgentRunFailureTransition(_store).FailAsync(runId, failureCode, cancellationToken, fingerprint)
                         .ConfigureAwait(false);
                     await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
                     await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
                     return;
                 }
 
-                await coordinator.FailAsync(runId, failureCode, cancellationToken).ConfigureAwait(false);
+                await coordinator.FailAsync(runId, failureCode, cancellationToken, fingerprint).ConfigureAwait(false);
                 await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception nested) when (nested is not OperationCanceledException)

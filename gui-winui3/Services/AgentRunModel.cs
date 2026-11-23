@@ -32,7 +32,9 @@ public sealed record AgentRunModel(
     string? ContextWindowVersion = null,
     int? OutputTokenReserve = null,
     string? WorkspacePath = null,
-    string? WorkspaceKind = null)
+    string? WorkspaceKind = null,
+    string? FailureKind = null,
+    string? FailureSite = null)
 {
     public static AgentRunModel FromCreateResponse(CreateAgentRunResponse response) => new(
         response.RunId,
@@ -52,7 +54,9 @@ public sealed record AgentRunModel(
         response.TrustRequestId,
         response.DisplayIdentityHash,
         WorkspacePath: response.WorkspacePath,
-        WorkspaceKind: response.WorkspaceKind);
+        WorkspaceKind: response.WorkspaceKind,
+        FailureKind: response.FailureKind,
+        FailureSite: response.FailureSite);
 
     public static AgentRunModel FromGetResponse(GetAgentRunResponse response) => new(
         response.RunId,
@@ -79,5 +83,7 @@ public sealed record AgentRunModel(
         response.ContextWindowTokens,
         response.ContextWindowSource,
         response.ContextWindowVersion,
-        response.OutputTokenReserve);
+        response.OutputTokenReserve,
+        FailureKind: response.FailureKind,
+        FailureSite: response.FailureSite);
 }

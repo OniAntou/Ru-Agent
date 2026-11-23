@@ -88,7 +88,8 @@ internal static class AgentV1Shared
         int nextToolCalls,
         long appendedCount,
         DateTimeOffset updatedAt,
-        string? terminalErrorCode = null)
+        string? terminalErrorCode = null,
+        RunFailureFingerprint? terminalFailure = null)
     {
         DateTimeOffset? terminalAt = nextStatus.State.IsTerminal() ? updatedAt : null;
         return new AgentRun(
@@ -108,7 +109,8 @@ internal static class AgentV1Shared
             updatedAt,
             terminalAt,
             terminalErrorCode,
-            current.PermissionProfileVersion);
+            current.PermissionProfileVersion,
+            terminalFailure);
     }
 
     internal static string ComputeSha256(string value)

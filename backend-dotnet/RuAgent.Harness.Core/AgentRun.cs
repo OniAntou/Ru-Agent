@@ -21,7 +21,8 @@ public sealed record AgentRun
         DateTimeOffset updatedAt,
         DateTimeOffset? terminalAt = null,
         string? terminalErrorCode = null,
-        int? permissionProfileVersion = null)
+        int? permissionProfileVersion = null,
+        RunFailureFingerprint? terminalFailure = null)
     {
         _ = runId.Value;
         _ = sessionId.Value;
@@ -81,7 +82,7 @@ public sealed record AgentRun
                 nameof(updatedAt));
         }
 
-        ValidateTerminalMetadata(status, createdAt, updatedAt, terminalAt, terminalErrorCode);
+        ValidateTerminalMetadata(status, createdAt, updatedAt, terminalAt, terminalErrorCode, terminalFailure);
 
         RunId = runId;
         SessionId = sessionId;
@@ -99,6 +100,7 @@ public sealed record AgentRun
         UpdatedAt = updatedAt;
         TerminalAt = terminalAt;
         TerminalErrorCode = terminalErrorCode;
+        TerminalFailure = terminalFailure;
         PermissionProfileVersion = permissionProfileVersion ?? AgentPermissionPresetMapper.CurrentPermissionProfileVersion;
     }
 
@@ -138,6 +140,12 @@ public sealed record AgentRun
 
     public string? TerminalErrorCode { get; }
 
+    /// <summary>
+    /// Bounded identity of the throwing failure, present when the run failed through an
+    /// exception path. Its absence is normal for failures the runtime decided by name.
+    /// </summary>
+    public RunFailureFingerprint? TerminalFailure { get; init; }
+
     public int PermissionProfileVersion { get; }
 
     internal AgentRun Advance(
@@ -147,7 +155,8 @@ public sealed record AgentRun
         int nextToolCallsInWindow,
         long appendedEventCount,
         DateTimeOffset updatedAt,
-        string? terminalErrorCode = null)
+        string? terminalErrorCode = null,
+        RunFailureFingerprint? terminalFailure = null)
     {
         if (appendedEventCount <= 0)
         {
@@ -172,7 +181,8 @@ public sealed record AgentRun
             updatedAt,
             terminalAt,
             terminalErrorCode,
-            PermissionProfileVersion);
+            PermissionProfileVersion,
+            terminalFailure);
     }
 
     private static void ValidateTerminalMetadata(
@@ -180,11 +190,12 @@ public sealed record AgentRun
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt,
         DateTimeOffset? terminalAt,
-        string? terminalErrorCode)
+        string? terminalErrorCode,
+        RunFailureFingerprint? terminalFailure)
     {
         if (!status.State.IsTerminal())
         {
-            if (terminalAt is not null || terminalErrorCode is not null)
+            if (terminalAt is not null || terminalErrorCode is not null || terminalFailure is not null)
             {
                 throw new ArgumentException(
                     "A nonterminal run cannot contain terminal metadata.",

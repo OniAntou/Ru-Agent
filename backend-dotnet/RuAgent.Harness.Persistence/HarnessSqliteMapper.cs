@@ -96,6 +96,7 @@ public static class HarnessSqliteMapper
         command.Parameters.AddWithValue(
             "$terminal_error",
             run.TerminalErrorCode is { } errorCode ? errorCode : DBNull.Value);
+
     }
 
     internal static HarnessEvent ReadEvent(SqliteDataReader reader)

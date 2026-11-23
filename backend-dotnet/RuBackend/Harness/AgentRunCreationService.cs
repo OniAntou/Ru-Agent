@@ -502,6 +502,8 @@ public sealed class AgentRunCreationService
         TerminalErrorCode: run.TerminalErrorCode,
         TrustRequestId: trustRequestId,
         DisplayIdentityHash: displayIdentityHash,
+        FailureKind: run.TerminalFailure?.Kind,
+        FailureSite: run.TerminalFailure?.Site,
         WorkspacePath: workspacePath,
         WorkspaceKind: workspaceKind);
 

@@ -38,7 +38,9 @@ public sealed record CreateAgentRunResponse(
     [property: JsonPropertyName("workspace_path")] string? WorkspacePath = null,
     [property: JsonPropertyName("workspace_kind")] string? WorkspaceKind = null,
     [property: JsonPropertyName("provider_backend")] string? ProviderBackend = null,
-    [property: JsonPropertyName("provider_model")] string? ProviderModel = null);
+    [property: JsonPropertyName("provider_model")] string? ProviderModel = null,
+    [property: JsonPropertyName("failure_kind")] string? FailureKind = null,
+    [property: JsonPropertyName("failure_site")] string? FailureSite = null);
 
 public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("run_id")] string RunId,
@@ -66,7 +68,9 @@ public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("context_window_source")] string? ContextWindowSource = null,
     [property: JsonPropertyName("context_window_version")] string? ContextWindowVersion = null,
     [property: JsonPropertyName("output_token_reserve")] int? OutputTokenReserve = null,
-    [property: JsonPropertyName("tool_profile")] string? ToolProfile = null);
+    [property: JsonPropertyName("tool_profile")] string? ToolProfile = null,
+    [property: JsonPropertyName("failure_kind")] string? FailureKind = null,
+    [property: JsonPropertyName("failure_site")] string? FailureSite = null);
 
 public sealed record TrustAgentRunRequest(
     [property: JsonPropertyName("trust_request_id")] string TrustRequestId,

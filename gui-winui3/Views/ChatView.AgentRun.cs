@@ -203,7 +203,8 @@ namespace RuApp.Views
                     controller!.CurrentRun?.Status,
                     ResolveFailureReason(controller),
                     isRunningForStatus,
-                    HasRenderedAgentReply())
+                    HasRenderedAgentReply(),
+                    controller!.CurrentRun?.FailureSite)
                 : string.Empty;
 
             AgentApprovalPrompt? approval = controller is { HasPendingApproval: true }

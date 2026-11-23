@@ -311,6 +311,8 @@ public sealed class AgentRunQueryService
         TerminalAt: run.TerminalAt?.ToUniversalTime().ToString("O"),
         TerminalErrorCode: run.TerminalErrorCode,
         TrustRequestId: trustRequestId,
-        DisplayIdentityHash: displayIdentityHash);
+        DisplayIdentityHash: displayIdentityHash,
+        FailureKind: run.TerminalFailure?.Kind,
+        FailureSite: run.TerminalFailure?.Site);
 
 }

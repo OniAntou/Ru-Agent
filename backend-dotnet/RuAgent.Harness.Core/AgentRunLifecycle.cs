@@ -75,7 +75,8 @@ internal sealed class AgentRunLifecycle
     public async Task<AgentRun> FailAsync(
         RunId runId,
         string errorCode,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RunFailureFingerprint? fingerprint = null)
     {
         var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
         var stateChange = AgentRunStateMachine.TryTransition(
@@ -97,7 +98,8 @@ internal sealed class AgentRunLifecycle
             run.ToolCallsInWindow,
             1,
             _time.UtcNow,
-            errorCode);
+            errorCode,
+            fingerprint);
         return await CommitAsync(
                 run,
                 next,

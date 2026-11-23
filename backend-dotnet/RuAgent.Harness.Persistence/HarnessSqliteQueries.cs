@@ -23,9 +23,47 @@ internal static class HarnessSqliteQueries
         command.Parameters.AddWithValue("$run_id", runId.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false);
-        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? HarnessSqliteMapper.ReadRun(reader)
-            : null;
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var run = HarnessSqliteMapper.ReadRun(reader);
+        await reader.DisposeAsync().ConfigureAwait(false);
+        return await WithRunFailureAsync(connection, transaction, run, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Adds the bounded failure fingerprint to a failed run. It lives in its own table so
+    /// the migration that introduced it stays replay-safe; a run failed by name has none.
+    /// </summary>
+    internal static async Task<AgentRun> WithRunFailureAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        if (!run.Status.State.IsTerminal())
+        {
+            return run;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT kind, site FROM agent_run_failures WHERE run_id = $run_id
+            """;
+        command.Parameters.AddWithValue("$run_id", run.RunId.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return run;
+        }
+
+        var failure = new RunFailureFingerprint(
+            reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
+        return run with { TerminalFailure = failure };
     }
 
     internal static async Task<ExistingRun?> FindIdempotentRunAsync(
@@ -52,9 +90,11 @@ internal static class HarnessSqliteQueries
             return null;
         }
 
+        // Named, not positional: the run projection gained columns and this one
+        // used to be ordinal 18.
         return new ExistingRun(
             HarnessSqliteMapper.ReadRun(reader),
-            reader.GetString(18));
+            reader.GetString(reader.GetOrdinal("normalized_request_sha256")));
     }
 
     internal static Task<AgentRun?> FindActiveSessionRunAsync(
@@ -114,8 +154,13 @@ internal static class HarnessSqliteQueries
         command.Parameters.AddWithValue("$value", value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken)
             .ConfigureAwait(false);
-        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
-            ? HarnessSqliteMapper.ReadRun(reader)
-            : null;
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var run = HarnessSqliteMapper.ReadRun(reader);
+        await reader.DisposeAsync().ConfigureAwait(false);
+        return await WithRunFailureAsync(connection, transaction, run, cancellationToken).ConfigureAwait(false);
     }
 }

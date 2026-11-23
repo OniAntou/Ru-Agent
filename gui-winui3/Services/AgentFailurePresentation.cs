@@ -57,8 +57,30 @@ internal static class AgentFailurePresentation
         string? runStatus,
         string? failureReason,
         bool isRunning,
-        bool hasRenderedReply)
-        => Render(failureReason);
+        bool hasRenderedReply,
+        string? failureSite = null)
+        => WithFailureSite(Render(failureReason), failureSite);
+
+    /// <summary>
+    /// The run's terminal state carries the throwing type and method, so a failure the
+    /// copy can only describe by code still says where it happened. The mapped sentence
+    /// stays first; the site is a bounded suffix.
+    /// </summary>
+    internal static string WithFailureSite(string copy, string? failureSite)
+    {
+        if (string.IsNullOrWhiteSpace(copy) || string.IsNullOrWhiteSpace(failureSite))
+        {
+            return copy;
+        }
+
+        string site = failureSite.Trim();
+        if (site.Length > 96)
+        {
+            site = site[..96] + "…";
+        }
+
+        return $"{copy} (at {site})";
+    }
 
     internal static string Render(string? status)
     {

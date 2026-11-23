@@ -219,7 +219,47 @@ internal static class HarnessSqliteWriteSet
             """;
         HarnessSqliteMapper.AddRunProjectionParameters(command, commit.NextRun);
         command.Parameters.AddWithValue("$expected_version", commit.ExpectedVersion);
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+        if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+        {
+            return false;
+        }
+
+        await UpsertRunFailureAsync(connection, transaction, commit.NextRun, cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Records the bounded fingerprint of a failed run in the same transaction as its
+    /// terminal state, so a reader never sees one without the other. A run the runtime
+    /// failed by name has no fingerprint row, which is the normal case.
+    /// </summary>
+    internal static async Task UpsertRunFailureAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        if (run.TerminalFailure is not { } failure)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO agent_run_failures(run_id, kind, site, recorded_at_utc)
+            VALUES($run_id, $kind, $site, $recorded_at)
+            ON CONFLICT(run_id) DO UPDATE SET
+                kind = $kind,
+                site = $site,
+                recorded_at_utc = $recorded_at
+            """;
+        command.Parameters.AddWithValue("$run_id", run.RunId.Value);
+        command.Parameters.AddWithValue("$kind", failure.Kind);
+        command.Parameters.AddWithValue("$site", failure.Site is { } site ? site : DBNull.Value);
+        command.Parameters.AddWithValue("$recorded_at", HarnessSqliteMapper.Utc(run.UpdatedAt));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static async Task InsertEventsAsync(

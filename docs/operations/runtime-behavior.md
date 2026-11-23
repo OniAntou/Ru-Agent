@@ -90,6 +90,18 @@ protocol code, and a tool-transport fault with the code it carries.
 an operator can tell the family apart from the run's terminal code without the
 host log; the host still records the throwing type and method for that fallback.
 
+That fallback now names its site too. The run's terminal state carries a bounded
+fingerprint — `failure_kind` (a lower-case token such as `store`, `protocol`,
+`transport` or `invalid_operation`) and `failure_site` (the throwing type and
+method) — validated so it can never hold a message, a path or a secret, and absent
+for a run the runtime failed by name. It is stored in the `agent_run_failures` side
+table (one row per failed run, written in the same transaction as the terminal
+state) rather than as run columns, because fixture databases replay the migration
+suffix and every migration must stay replay-safe. The run response exposes both
+fields, so a failure can be reported without opening the host log. A fault-injection
+matrix at the drive boundary asserts the contract: the mapped code, the fingerprint,
+an intact `run.failed` event, and a session that still accepts a new run.
+
 Startup recovery compares the durable event stream with dispatch boundaries: a
 crash before any dispatch fails the run as `recovery_pre_dispatch`, an incomplete
 read-only execution as `recovery_read_only_incomplete`, an ambiguous

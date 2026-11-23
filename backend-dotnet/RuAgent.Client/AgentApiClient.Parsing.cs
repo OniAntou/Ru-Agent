@@ -102,7 +102,7 @@ public sealed partial class AgentApiClient
         using (doc)
         {
             var root = doc.RootElement;
-            var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "workspace_path", "workspace_kind", "provider_backend", "provider_model"], StringComparer.Ordinal);
+            var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "preset", "created_at", "updated_at", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "history_wait_kind", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "workspace_path", "workspace_kind", "provider_backend", "provider_model", "failure_kind", "failure_site"], StringComparer.Ordinal);
             foreach (var prop in root.EnumerateObject())
             {
                 if (!allowed.Contains(prop.Name))
@@ -162,7 +162,7 @@ public sealed partial class AgentApiClient
         using (doc)
         {
         var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve", "tool_profile"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve", "tool_profile", "failure_kind", "failure_site"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
         {
             if (!allowed.Contains(prop.Name))

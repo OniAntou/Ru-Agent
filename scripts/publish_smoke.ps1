@@ -210,6 +210,23 @@ try {
         throw "dotnet publish did not produce $backendExe."
     }
 
+    # A self-contained package carries its own runtime, which only a rebuild patches.
+    # Every bundled framework must be at or above the floor Directory.Build.targets
+    # raises, or an older SDK on the build machine shipped an unpatched runtime.
+    $runtimeFloorText = ([xml](Get-Content -LiteralPath (Join-Path $repoRoot "Directory.Build.targets") -Raw)).Project.PropertyGroup.RuSelfContainedRuntimeVersion
+    $runtimeFloor = [version]"$runtimeFloorText".Trim()
+    $runtimeConfigs = @(Get-ChildItem -LiteralPath $publishDir -Filter "*.runtimeconfig.json" -File)
+    if ($runtimeConfigs.Count -eq 0) { throw "no runtimeconfig.json in $publishDir." }
+    foreach ($runtimeConfig in $runtimeConfigs) {
+        $frameworks = @((Get-Content -LiteralPath $runtimeConfig.FullName -Raw | ConvertFrom-Json).runtimeOptions.includedFrameworks)
+        if ($frameworks.Count -eq 0) { throw "$($runtimeConfig.Name) is not self-contained." }
+        foreach ($framework in $frameworks) {
+            if ([version]$framework.version -lt $runtimeFloor) {
+                throw "$($runtimeConfig.Name) bundles $($framework.name) $($framework.version), below the patched floor $runtimeFloor."
+            }
+        }
+    }
+
     # Execution is in-process: the Broker ships as a library, so a published
     # RuAgent.Broker.exe would mean a stale executable stage survived.
     $brokerExe = Join-Path $publishDir "RuAgent.Broker.exe"

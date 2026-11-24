@@ -1,0 +1,33 @@
+<Project>
+
+  <!--
+    Self-contained runtime floor.
+
+    A self-contained publish bundles the runtime pack the SDK knows as "latest",
+    so an older SDK on a build machine or runner silently ships an unpatched
+    runtime that no package audit reports (runtime packs are not PackageReferences).
+    CVE-2026-111497 (Brotli decoder out-of-bounds write, fixed in 10.0.14) reached
+    a release that way: Broker web fetch decodes Brotli from hosts the model chooses.
+
+    Raising the KnownFrameworkReference latest patch restores the named runtime
+    packs from NuGet whatever SDK band builds the package. Framework-dependent
+    builds (tests, Debug runs) keep using the installed shared runtime.
+    scripts/publish_smoke.ps1 rejects a package whose runtimeconfig is below this floor.
+  -->
+  <PropertyGroup>
+    <RuSelfContainedRuntimeVersion>10.0.15</RuSelfContainedRuntimeVersion>
+  </PropertyGroup>
+
+  <!-- Inside a target so the update can select by item metadata; restore and
+       build both run ProcessFrameworkReferences, so both see the raised floor. -->
+  <Target Name="RuRaiseSelfContainedRuntimeFloor"
+          BeforeTargets="ProcessFrameworkReferences"
+          Condition="'$(SelfContained)' == 'true'">
+    <ItemGroup>
+      <!-- A floor, not a pin: an SDK that already knows a newer patch keeps it. -->
+      <KnownFrameworkReference Condition="('%(KnownFrameworkReference.Identity)' == 'Microsoft.NETCore.App' or '%(KnownFrameworkReference.Identity)' == 'Microsoft.AspNetCore.App') and '%(KnownFrameworkReference.TargetFramework)' == 'net10.0' and '%(KnownFrameworkReference.LatestRuntimeFrameworkVersion)' != '' and $([MSBuild]::VersionLessThan('%(KnownFrameworkReference.LatestRuntimeFrameworkVersion)', '$(RuSelfContainedRuntimeVersion)'))"
+                               LatestRuntimeFrameworkVersion="$(RuSelfContainedRuntimeVersion)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

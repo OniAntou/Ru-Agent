@@ -9,6 +9,14 @@ so CLI `ru --version` and GUI About agree. `RuReleaseVersion` overrides that
 default for Stable or Preview packaging; `package_release.ps1 -Version ...`
 sets it for every published project.
 
+A self-contained package ships the runtime it was built with, and only a rebuild
+patches it. `Directory.Build.targets` sets the runtime floor
+(`RuSelfContainedRuntimeVersion`) and restores those runtime packs whatever SDK
+builds the package; `scripts/publish_smoke.ps1` fails a package whose
+`*.runtimeconfig.json` bundles an older `Microsoft.NETCore.App` or
+`Microsoft.AspNetCore.App`. Raise the floor when a .NET security release lands, then
+rebuild every package.
+
 ## Install
 
 Download `Ru-Desktop-VERSION-win-x64-Setup.exe` or

@@ -12,8 +12,8 @@ namespace RuBackend.Harness.Hooks;
 /// <remarks>
 /// A prompt hook that exits with <see cref="HookResult.BlockExitCode"/> refuses the prompt
 /// before any run is written; a timeout, another exit code or a start failure never blocks.
-/// A workspace's own hooks run only once the workspace is trusted. Until then only the
-/// user's hooks run, and they start in the user's profile folder rather than the
+/// A workspace's own hooks run only once the workspace is trusted, and never in
+/// <c>plan</c>. Until trust only the user's hooks run, and they start in the user's profile folder rather than the
 /// workspace, where <c>cmd.exe</c> would resolve a bare program name against workspace
 /// files first. Stop hooks observe the finished run and cannot change it.
 /// </remarks>
@@ -68,9 +68,11 @@ public sealed class RunLifecycleHooks
         string sessionId,
         string workspaceRoot,
         bool workspaceTrusted,
+        RuAgent.Protocol.Harness.AgentPermissionPreset preset,
         CancellationToken cancellationToken)
     {
-        var hooks = HookConfiguration.Load(workspaceTrusted ? workspaceRoot : null, _userHome)
+        var workspaceHooks = HookConfiguration.RunsWorkspaceHooks(workspaceTrusted, preset);
+        var hooks = HookConfiguration.Load(workspaceHooks ? workspaceRoot : null, _userHome)
             .ForEvent(HookEvent.UserPromptSubmit);
         if (hooks.Count == 0) return null;
 
@@ -133,7 +135,8 @@ public sealed class RunLifecycleHooks
                 _logger.LogWarning(error, "workspace trust lookup failed for run {RunId}; running only the user's Stop hooks", run.RunId.Value);
             }
 
-            var hooks = HookConfiguration.Load(trusted ? workspaceRoot : null, _userHome).ForEvent(HookEvent.Stop);
+            var workspaceHooks = HookConfiguration.RunsWorkspaceHooks(trusted, run.Preset);
+            var hooks = HookConfiguration.Load(workspaceHooks ? workspaceRoot : null, _userHome).ForEvent(HookEvent.Stop);
             if (hooks.Count == 0) return;
             var workingDirectory = trusted ? workspaceRoot : _userHome ?? workspaceRoot;
             var input = JsonSerializer.Serialize(new Dictionary<string, object?>

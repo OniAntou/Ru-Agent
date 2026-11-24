@@ -333,7 +333,7 @@ public sealed class AgentRunCreationService
 
         // Before anything of the run is written, so a refused prompt leaves no run behind.
         if (_lifecycleHooks is not null
-            && await _lifecycleHooks.SubmitPromptAsync(prompt, sessionIdRaw, canonicalWorkspacePath, isTrusted, cancellationToken)
+            && await _lifecycleHooks.SubmitPromptAsync(prompt, sessionIdRaw, canonicalWorkspacePath, isTrusted, policySnapshot.Preset, cancellationToken)
                 .ConfigureAwait(false) is { } refusal)
         {
             return BoundedError(422, "prompt_blocked_by_hook", refusal);

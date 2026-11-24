@@ -4,6 +4,7 @@ using RuAgent.Broker.Runtime;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Policy;
 using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 
 namespace RuBackend.Harness.Broker;
 
@@ -141,7 +142,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
                 // or an outside-folder approval keeps the same scope), so returning the
                 // bare gateway here would silently drop PreToolUse blocks for the rest
                 // of the run and flip the run's provider web search surface.
-                return WithHooks(existing, canonicalRoot);
+                return WithHooks(existing, canonicalRoot, policySnapshot.Preset);
             }
 
             BrokerRunLeaseIdentity lease;
@@ -202,7 +203,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
                 await CloseLeaseThroughRuntimeAsync(lease).ConfigureAwait(false);
             }
 
-            return WithHooks(gateway, canonicalRoot);
+            return WithHooks(gateway, canonicalRoot, policySnapshot.Preset);
         }
         finally
         {
@@ -217,12 +218,14 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
     /// RunLifecycleHooks consults: an untrusted workspace starts in WaitingWorkspaceTrust
     /// (never driven), a trusted one may pass through WaitingHistory, and a subagent run
     /// is provisioned from an already trusted parent. Loading the workspace's hooks here
-    /// therefore follows that decision instead of skipping it.
+    /// therefore follows that decision instead of skipping it. A <c>plan</c> run loads only
+    /// the user-level hooks (<see cref="RuBackend.Harness.Hooks.HookConfiguration.RunsWorkspaceHooks"/>).
     /// </summary>
-    private static IToolGateway WithHooks(InProcessToolGateway gateway, string canonicalRoot)
+    private static IToolGateway WithHooks(InProcessToolGateway gateway, string canonicalRoot, AgentPermissionPreset preset)
     {
+        var workspaceHooks = RuBackend.Harness.Hooks.HookConfiguration.RunsWorkspaceHooks(workspaceTrusted: true, preset);
         var hooks = RuBackend.Harness.Hooks.HookConfiguration.Load(
-            canonicalRoot, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            workspaceHooks ? canonicalRoot : null, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         return hooks.IsEmpty
             ? gateway
             : new RuBackend.Harness.Hooks.HookToolGateway(

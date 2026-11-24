@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hosts the model chooses. `Directory.Build.targets` raises the runtime floor for every
   self-contained publish, and the publish smoke fails a package that bundles a runtime
   below it, so an older SDK on a build machine can no longer ship an unpatched runtime.
+- **fix(harness)**: A `plan` run no longer loads `<workspace>/.ru/hooks.json`, even in a
+  trusted workspace: a PreToolUse, UserPromptSubmit or Stop hook a cloned repository
+  declares could run commands in the read-only preset before policy was evaluated. Plan
+  runs keep the user's and approved plugins' hooks.
 
 - **fix(harness)**: Live command output and reply text no longer arrive a line late when a
   provider key is configured. The Host's secret redactor held back the last (longest key

@@ -277,10 +277,26 @@ public sealed class HookGatewayFactoryTests : IDisposable
         Assert.Equal(HookToolGateway.BlockedCode, decision.SafeCode);
     }
 
-    private Task<IToolGateway> CreateAsync() =>
+    [Fact]
+    public async Task A_plan_run_does_not_load_the_workspace_hooks()
+    {
+        // Plan is read-only: a trusted workspace's PreToolUse command must not run there.
+        Directory.CreateDirectory(Path.Combine(_fixture.WorkspaceRoot, ".ru"));
+        File.WriteAllText(
+            Path.Combine(_fixture.WorkspaceRoot, ".ru", "hooks.json"),
+            """{"hooks":{"PreToolUse":[{"matcher":"read","command":"echo blocked by test 1>&2 & exit 2"}]}}""");
+
+        var gateway = await CreateAsync(RuAgent.Protocol.Harness.AgentPermissionPreset.Plan);
+
+        var decision = await gateway.EvaluateAsync(ReadProposal(), CancellationToken.None);
+        Assert.NotEqual(HookToolGateway.BlockedCode, decision.SafeCode);
+    }
+
+    private Task<IToolGateway> CreateAsync(
+        RuAgent.Protocol.Harness.AgentPermissionPreset preset = RuAgent.Protocol.Harness.AgentPermissionPreset.Standard) =>
         _fixture.Factory.CreateAsync(
             _fixture.WorkspaceRoot,
-            Snapshot(),
+            Snapshot(preset),
             _runId,
             agentSessionId: "session-hook-reuse",
             CancellationToken.None);
@@ -296,10 +312,10 @@ public sealed class HookGatewayFactoryTests : IDisposable
             "1.0.0",
             JsonSerializer.SerializeToElement(new { path = "a.txt" }));
 
-    private static RuAgent.Harness.Core.Policy.PolicySnapshot Snapshot() =>
+    private static RuAgent.Harness.Core.Policy.PolicySnapshot Snapshot(RuAgent.Protocol.Harness.AgentPermissionPreset preset) =>
         RuAgent.Harness.Core.Policy.PolicySnapshotCanonicalizer.Create(
             1,
-            RuAgent.Protocol.Harness.AgentPermissionPreset.Standard,
+            preset,
             new RuAgent.Harness.Core.Workspace.WorkspaceIdentity(
                 new WorkspaceId("ws_" + new string('2', 32)),
                 "VOL-HOOKS",

@@ -160,7 +160,7 @@ project or in `~\.ru\hooks.json`:
   shown to the model as the reason. Any other failure, a timeout or a missing script never blocks.
 - A `PostToolUse` hook only observes. It cannot change the result.
 - `UserPromptSubmit` runs when you send a message. Exit code **2** refuses the message with the hook's
-  error text, and no run starts. Before you trust a project, only your own `~\.ru\hooks.json` runs.
+  error text, and no run starts. Before you trust a project, only your own `~\.ru\hooks.json` runs. A Plan run never runs a project's hooks, even in a trusted project.
 - `Stop` runs once when a run finishes, for example to send yourself a notification. It cannot change
   the run.
 - Hooks time out after 30 seconds by default and at most 120 seconds. They start with a cleaned

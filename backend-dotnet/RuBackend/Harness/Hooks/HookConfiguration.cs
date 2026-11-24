@@ -50,6 +50,15 @@ public sealed class HookConfiguration
 
     public static HookConfiguration Empty { get; } = new([]);
 
+    /// <summary>
+    /// Whether a run loads <c>&lt;workspace&gt;/.ru/hooks.json</c>. A workspace hook is code the
+    /// workspace supplies, so it needs trust, and <c>plan</c> loads none even when trusted: a
+    /// read-only preset must not run commands a cloned repository declares. User and approved
+    /// plugin hooks still run.
+    /// </summary>
+    public static bool RunsWorkspaceHooks(bool workspaceTrusted, RuAgent.Protocol.Harness.AgentPermissionPreset preset) =>
+        workspaceTrusted && preset != RuAgent.Protocol.Harness.AgentPermissionPreset.Plan;
+
     private readonly IReadOnlyList<HookDefinition> _hooks;
 
     public HookConfiguration(IReadOnlyList<HookDefinition> hooks) => _hooks = hooks;

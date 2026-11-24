@@ -28,7 +28,7 @@ public sealed class RunLifecycleHooksTests : IDisposable
         WriteHooks(_workspace, """{"hooks":{"UserPromptSubmit":[{"command":"check-prompt"}]}}""");
         var runner = new RecordingRunner(new HookResult(HookResult.BlockExitCode, "No deploys on Friday.", TimedOut: false));
 
-        var refusal = await Hooks(runner).SubmitPromptAsync("deploy it", "session-1", _workspace, workspaceTrusted: true, CancellationToken.None);
+        var refusal = await Hooks(runner).SubmitPromptAsync("deploy it", "session-1", _workspace, workspaceTrusted: true, AgentPermissionPreset.Standard, CancellationToken.None);
 
         Assert.Equal("No deploys on Friday.", refusal);
         var call = Assert.Single(runner.Calls);
@@ -47,7 +47,7 @@ public sealed class RunLifecycleHooksTests : IDisposable
         WriteHooks(_workspace, """{"hooks":{"UserPromptSubmit":[{"command":"check-prompt"}]}}""");
         var runner = new RecordingRunner(new HookResult(exitCode, "message", timedOut));
 
-        var refusal = await Hooks(runner).SubmitPromptAsync("hello", "session-1", _workspace, workspaceTrusted: true, CancellationToken.None);
+        var refusal = await Hooks(runner).SubmitPromptAsync("hello", "session-1", _workspace, workspaceTrusted: true, AgentPermissionPreset.Standard, CancellationToken.None);
 
         Assert.Null(refusal);
     }
@@ -59,11 +59,41 @@ public sealed class RunLifecycleHooksTests : IDisposable
         WriteHooks(_home, """{"hooks":{"UserPromptSubmit":[{"command":"user-hook"}]}}""");
         var runner = new RecordingRunner(new HookResult(0, string.Empty, TimedOut: false));
 
-        await Hooks(runner).SubmitPromptAsync("hello", "session-1", _workspace, workspaceTrusted: false, CancellationToken.None);
+        await Hooks(runner).SubmitPromptAsync("hello", "session-1", _workspace, workspaceTrusted: false, AgentPermissionPreset.Standard, CancellationToken.None);
 
         var call = Assert.Single(runner.Calls);
         Assert.Equal("user-hook", call.Command);
         Assert.Equal(_home, call.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task A_trusted_workspace_in_plan_runs_only_the_users_prompt_hooks()
+    {
+        // Plan is read-only: trust does not let a cloned repository's hooks run commands there.
+        WriteHooks(_workspace, """{"hooks":{"UserPromptSubmit":[{"command":"workspace-hook"}]}}""");
+        WriteHooks(_home, """{"hooks":{"UserPromptSubmit":[{"command":"user-hook"}]}}""");
+        var runner = new RecordingRunner(new HookResult(0, string.Empty, TimedOut: false));
+
+        await Hooks(runner).SubmitPromptAsync("hello", "session-1", _workspace, workspaceTrusted: true, AgentPermissionPreset.Plan, CancellationToken.None);
+
+        var call = Assert.Single(runner.Calls);
+        Assert.Equal("user-hook", call.Command);
+        using var input = JsonDocument.Parse(call.Input);
+        Assert.True(input.RootElement.GetProperty("workspace_trusted").GetBoolean());
+    }
+
+    [Fact]
+    public async Task A_plan_run_never_runs_its_workspaces_stop_hook()
+    {
+        WriteHooks(_workspace, """{"hooks":{"Stop":[{"command":"workspace-hook"}]}}""");
+        WriteHooks(_home, """{"hooks":{"Stop":[{"command":"user-hook"}]}}""");
+        var runner = new RecordingRunner(new HookResult(0, string.Empty, TimedOut: false));
+
+        Hooks(runner).RunFinished(Run(HarnessRunState.Completed, null, AgentPermissionPreset.Plan), "completed", _workspace);
+
+        await runner.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(200);
+        Assert.Equal("user-hook", Assert.Single(runner.Calls).Command);
     }
 
     [Fact]
@@ -73,7 +103,7 @@ public sealed class RunLifecycleHooksTests : IDisposable
         var runner = new RecordingRunner(new HookResult(0, string.Empty, TimedOut: false));
 
         await Hooks(runner).SubmitPromptAsync(
-            new string('x', RunLifecycleHooks.MaxPromptBytes + 1), "session-1", _workspace, workspaceTrusted: true, CancellationToken.None);
+            new string('x', RunLifecycleHooks.MaxPromptBytes + 1), "session-1", _workspace, workspaceTrusted: true, AgentPermissionPreset.Standard, CancellationToken.None);
 
         using var input = JsonDocument.Parse(Assert.Single(runner.Calls).Input);
         Assert.Equal(JsonValueKind.Null, input.RootElement.GetProperty("prompt").ValueKind);
@@ -155,7 +185,8 @@ public sealed class RunLifecycleHooksTests : IDisposable
         File.WriteAllText(Path.Combine(root, ".ru", "hooks.json"), json);
     }
 
-    private static AgentRun Run(HarnessRunState state, string? errorCode)
+    private static AgentRun Run(HarnessRunState state, string? errorCode,
+        AgentPermissionPreset preset = AgentPermissionPreset.Standard)
     {
         var now = DateTimeOffset.UtcNow;
         return new AgentRun(
@@ -168,7 +199,7 @@ public sealed class RunLifecycleHooksTests : IDisposable
             budgetWindow: 1,
             modelStepsInWindow: 0,
             toolCallsInWindow: 0,
-            AgentPermissionPreset.Standard,
+            preset,
             policySnapshotVersion: 1,
             policySnapshotSha256: new string('a', 64),
             createdAt: now,

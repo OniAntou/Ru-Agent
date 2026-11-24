@@ -11,10 +11,10 @@ export type {
   PolicyMatcher,
   PolicyRemoveResult,
   PolicyRule,
-  ReconcileOutcome,
   RunDetached,
   RunEvent,
   RunTransient,
+  RunSteerResult,
   RunTrustResult,
   RuAgentStartOptions,
 } from "./types.js";

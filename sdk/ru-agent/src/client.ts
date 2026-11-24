@@ -8,7 +8,7 @@ import { Run } from "./run.js";
 import type { HostStatus, RunHandleInfo, RuAgentStartOptions } from "./types.js";
 
 /** Keep in sync with package.json. */
-const SDK_VERSION = "0.1.3";
+const SDK_VERSION = "0.1.4";
 
 const REQUIRED_BRIDGE_METHODS = [
   "initialize",
@@ -24,7 +24,6 @@ const REQUIRED_BRIDGE_METHODS = [
   "run.cancel",
   "run.status",
   "run.command",
-  "run.reconcile",
   "run.output",
   "subagent.list",
   "subagent.get",

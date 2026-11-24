@@ -2,7 +2,7 @@ import { Subagents } from "./subagents.js";
 import { BridgeTransportError } from "./errors.js";
 import { BoundedQueue } from "./bounded-queue.js";
 import { RunSubscriptionOwnership } from "./run-subscription-ownership.js";
-import type { ApprovalDecision, ReconcileOutcome, RunEvent, RunTransient, RunTrustResult } from "./types.js";
+import type { ApprovalDecision, RunEvent, RunSteerResult, RunTransient, RunTrustResult } from "./types.js";
 import type { BridgeTransport } from "./transport.js";
 
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled", "canceled", "interrupted"]);
@@ -271,6 +271,17 @@ export class Run {
     await this.transport.request("run.cancel", { runId: this.runId });
   }
 
+  /**
+   * Sends a steer into the working run: the model receives `text` as a user message at its
+   * next step boundary, without the run stopping. Pass `steerId` (`steer_` + 32 lowercase hex)
+   * to retry safely. A run that is not working rejects it with `run_not_steerable`.
+   */
+  async steer(text: string, steerId?: string): Promise<RunSteerResult> {
+    const params: Record<string, unknown> = { runId: this.runId, text };
+    if (steerId !== undefined) params.steerId = steerId;
+    return await this.transport.request<RunSteerResult>("run.steer", params);
+  }
+
 
   /** Answers a pending workspace-trust challenge. The default denies, matching the bridge. */
   async trust(approve = false): Promise<RunTrustResult> {
@@ -280,11 +291,6 @@ export class Run {
   /** Dispatches a bounded run command through `run.command`. */
   async command(command: string): Promise<Record<string, unknown>> {
     return await this.transport.request<Record<string, unknown>>("run.command", { runId: this.runId, command });
-  }
-
-  /** Resolves a reconciliation request with an explicit outcome and 64-character hash. */
-  async reconcile(outcome: ReconcileOutcome, hash: string): Promise<Record<string, unknown>> {
-    return await this.transport.request<Record<string, unknown>>("run.reconcile", { runId: this.runId, outcome, hash });
   }
 
   async status(): Promise<Record<string, unknown>> {

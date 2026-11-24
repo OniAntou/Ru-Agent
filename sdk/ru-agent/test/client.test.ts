@@ -149,6 +149,19 @@ describe("RuAgent", () => {
     await ru.close();
   });
 
+  it("steers a working run through run.steer", async () => {
+    const ru = await start();
+    const run = await ru.runs.start({ workspace: "C:\w", prompt: "hello" });
+    const steerId = "steer_" + "d".repeat(32);
+    await expect(run.steer("also update the docs", steerId)).resolves.toEqual({
+      runId: run.runId,
+      steerId,
+      state: "pending",
+      deliveredPayloadId: "payload_" + "d".repeat(32),
+    });
+    await ru.close();
+  });
+
   it("decodes run.output base64 into a Buffer", async () => {
     const ru = await start();
     const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
@@ -178,16 +191,13 @@ describe("RuAgent", () => {
     await ru.close();
   });
 
-  it("trusts, commands and reconciles through the run handle", async () => {
+  it("trusts and commands through the run handle", async () => {
     const ru = await start();
     const run = await ru.runs.start({ workspace: "C:\\w", prompt: "hello" });
 
     await expect(run.trust(true)).resolves.toMatchObject({ status: "running" });
     await expect(run.trust()).resolves.toMatchObject({ status: "cancelled" });
     await expect(run.command("/status")).resolves.toEqual({ dispatched: "/status" });
-
-    const hash = "a".repeat(64);
-    await expect(run.reconcile("applied", hash)).resolves.toEqual({ outcome: "applied", hash });
     await ru.close();
   });
 

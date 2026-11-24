@@ -42,7 +42,14 @@ export interface RunTrustResult {
   status: string;
 }
 
-export type ReconcileOutcome = "applied" | "not_applied" | "unknown_continue";
+/** What `run.steer` answers: the steer is held until the run's next step boundary. */
+export interface RunSteerResult {
+  runId: string;
+  steerId: string;
+  state: "pending";
+  /** Payload id of the `run.note_added` event (safe code `user_steer`) that will deliver it. */
+  deliveredPayloadId: string;
+}
 
 export type PolicyDecision = "allow" | "ask" | "deny";
 

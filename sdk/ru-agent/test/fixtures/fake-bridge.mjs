@@ -18,8 +18,8 @@ const METHODS = [
   "run.cancel",
   "run.status",
   "run.command",
-  "run.reconcile",
   "run.output",
+  "run.steer",
   "subagent.list",
   "subagent.get",
   "policy.list",
@@ -102,6 +102,15 @@ rl.on("line", (line) => {
     send({ jsonrpc: "2.0", id: request.id, result: { ok: true, approvalId: request.params.approvalId, decision: request.params.decision } });
     return;
   }
+  if (request.method === "run.steer") {
+    const steerId = request.params.steerId ?? "steer_" + "c".repeat(32);
+    send({
+      jsonrpc: "2.0",
+      id: request.id,
+      result: { runId: request.params.runId, steerId, state: "pending", deliveredPayloadId: "payload_" + steerId.slice(6) },
+    });
+    return;
+  }
   if (request.method === "run.cancel") {
     send({ jsonrpc: "2.0", id: request.id, result: { cancelled: request.params.runId } });
     return;
@@ -125,10 +134,6 @@ rl.on("line", (line) => {
   }
   if (request.method === "run.command") {
     send({ jsonrpc: "2.0", id: request.id, result: { dispatched: request.params.command } });
-    return;
-  }
-  if (request.method === "run.reconcile") {
-    send({ jsonrpc: "2.0", id: request.id, result: { outcome: request.params.outcome, hash: request.params.hash } });
     return;
   }
   if (request.method === "policy.list") {

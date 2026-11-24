@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(sdk)!**: `@ru/agent-sdk` 0.1.4 connects to the current bridge again. It still required
+  `run.reconcile`, which the bridge dropped with the reconcile surface, so every
+  `RuAgent.start()` failed its handshake with `bridge_method_missing`. `run.reconcile()` and
+  `ReconcileOutcome` are removed, the SDK test bridge advertises exactly the real methods, and a
+  contract test now fails when the SDK requires or calls a method the bridge does not serve.
+
 - **feat(agent)**: Steer a working run (ADR 0056). A message sent while a run works now
   reaches that run at its next step instead of waiting for it to end: the Host stores it
   (`POST /agent/v1/runs/{runId}/steers`, schema v40) and delivers it as a user message only

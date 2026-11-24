@@ -4,7 +4,7 @@ TypeScript client for the Ru agent RPC bridge. It spawns `ru agent rpc` as a chi
 process, speaks newline-delimited JSON-RPC over stdio (protocol v1), and exposes
 typed session, run, policy and subagent handles, including streaming run events.
 
-Current package version: **0.1.3**, aligned with the product's 0.1.3 release line.
+Current package version: **0.1.4**, aligned with the product's 0.1.4 release line.
 It covers every method the v1 bridge advertises; the handshake rejects a bridge
 that is missing any method the wrapper can call.
 
@@ -27,6 +27,9 @@ const run = await ru.runs.start({ workspace: "C:\\work\\repo", prompt: "fix the 
 for await (const event of run.events()) {
   console.log(event.sequence, event.event_type, event.status ?? "");
 }
+
+// Steer the working run: the model reads this at its next step, without stopping.
+await run.steer("Also update the changelog");
 
 await run.cancel();
 await ru.close();
@@ -53,12 +56,13 @@ accident; the bridge enforces the same requirement.
 ```ts
 await run.trust(true);                       // approve; the default false denies
 await run.command("/status");                // bounded run command
-await run.reconcile("applied", hash);        // applied | not_applied | unknown_continue
+await run.steer("Also update the changelog"); // read at the run's next step
 ```
 
 `trust` answers a pending workspace-trust challenge. `command` dispatches a
-bounded run command. `reconcile` resolves a durable reconciliation request; both
-the outcome and the 64-character snapshot hash are required.
+bounded run command. `steer` sends a message into the working run (ADR 0056); a run
+that is not working rejects it with `run_not_steerable`. The bridge no longer has
+`run.reconcile`, so the SDK no longer offers `reconcile()`.
 
 `RuAgent.start` accepts `command`, `args`, `agentArgs`, `cwd`, and `env` to
 control how the bridge process is spawned, and rejects the handshake if the

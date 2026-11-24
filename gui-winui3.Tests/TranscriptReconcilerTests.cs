@@ -151,6 +151,58 @@ public sealed class TranscriptReconcilerTests
     }
 
     [Fact]
+    public void Rows_rebuilt_from_history_keep_the_output_the_live_command_streamed()
+    {
+        var liveCommand = Command("run-cmd", AgentActivityState.Completed);
+        liveCommand.AppendTerminalOutput("[1/2] build\n[2/2] test\n");
+        liveCommand.IsEditPreviewExpanded = true;
+        var live = new ChatMessageItem
+        {
+            Role = "assistant", Content = "Xong rồi", IsStreaming = true,
+            AgentActivities = new ObservableCollection<AgentActivityItem>([liveCommand]),
+        };
+        var rebuilt = Command("run-cmd", AgentActivityState.Completed);
+        var other = Command("other-cmd", AgentActivityState.Completed);
+        var restored = Row("assistant", "Xong rồi", 3, "run");
+        restored.AgentActivities = new([rebuilt, other]);
+        var (items, _) = Bound(Row("user", "Làm đi", 2, "run"), live);
+
+        TranscriptReconciler.Apply(items, [Row("user", "Làm đi", 2, "run"), restored], live, "run");
+
+        Assert.Same(restored.AgentActivities, live.AgentActivities);
+        Assert.Equal("[1/2] build\n[2/2] test\n", rebuilt.TerminalOutputText);
+        Assert.True(rebuilt.IsEditPreviewExpanded);
+        Assert.False(other.HasTerminalOutput);
+    }
+
+    [Fact]
+    public void A_reply_replaced_after_its_run_ended_keeps_its_command_output()
+    {
+        // With no live reply to keep, the reloaded row replaces the one on screen.
+        var shownCommand = Command("run-cmd", AgentActivityState.Completed);
+        shownCommand.AppendTerminalOutput("Passed! 42\n");
+        var shown = new ChatMessageItem
+        {
+            Role = "assistant", Content = "streamed text", SourceMessageIndex = 3, SourceRunId = "run",
+            AgentActivities = new ObservableCollection<AgentActivityItem>([shownCommand]),
+        };
+        var rebuilt = Command("run-cmd", AgentActivityState.Completed);
+        var restored = Row("assistant", "history text", 3, "run");
+        restored.AgentActivities = new([rebuilt]);
+        var (items, _) = Bound(shown);
+
+        var result = TranscriptReconciler.Apply(items, [restored]);
+
+        Assert.Equal(1, result.Replaced);
+        Assert.Same(restored, items[0]);
+        Assert.Equal("Passed! 42\n", rebuilt.TerminalOutputText);
+    }
+
+    private static AgentActivityItem Command(string id, AgentActivityState state) => new(
+        new AgentActivityModel(id, AgentActivityKind.Terminal, state,
+            null, null, null, null, null, null, null, 4000, "succeeded", null, null, null, Detail: "dotnet test"));
+
+    [Fact]
     public void A_streamed_reply_the_history_does_not_hold_is_replaced()
     {
         var live = new ChatMessageItem { Role = "assistant", Content = "{\"tool\":\"read\"}" };

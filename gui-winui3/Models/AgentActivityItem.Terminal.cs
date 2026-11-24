@@ -55,6 +55,32 @@ public sealed partial class AgentActivityItem
         NotifyTerminalOutputChanged();
     }
 
+    /// <summary>
+    /// Takes what the live row for the same activity streamed and how its card was left.
+    /// History does not keep streamed output, so the row rebuilt from it when a run's
+    /// reply settles would otherwise show "No streamed output captured" for a command
+    /// whose output the reader had just watched.
+    /// </summary>
+    public void AdoptLiveTerminalState(AgentActivityItem live)
+    {
+        ArgumentNullException.ThrowIfNull(live);
+        if (ReferenceEquals(live, this)
+            || !string.Equals(live.ActivityId, ActivityId, StringComparison.Ordinal)
+            || Kind != AgentActivityKind.Terminal)
+        {
+            return;
+        }
+
+        if (!HasTerminalOutput && live.HasTerminalOutput)
+        {
+            _terminalOutputText = live._terminalOutputText;
+            TerminalOutputTruncated = live.TerminalOutputTruncated;
+            NotifyTerminalOutputChanged();
+        }
+
+        if (live.IsEditPreviewExpanded) IsEditPreviewExpanded = true;
+    }
+
     public void ResetTerminalOutput()
     {
         if (_terminalOutputText.Length == 0 && !TerminalOutputTruncated) return;

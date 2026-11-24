@@ -22,6 +22,42 @@ public sealed class KnownSecretRedactorTests
     }
 
     [Fact]
+    public void A_streamed_line_that_cannot_start_a_secret_is_released_at_once()
+    {
+        // A configured provider key used to hold back the last (key length - 1)
+        // characters of every chunk, so a command's newest line showed up a line late.
+        var redactor = new KnownSecretRedactor(["sk-live-0123456789abcdefghijklmnop"]);
+        var stream = redactor.CreateSession();
+
+        Assert.Equal("[7/10] compiling module_7.py ...\r\n", stream.Append("[7/10] compiling module_7.py ...\r\n"));
+        Assert.Equal("[8/10] compiling", stream.Append("[8/10] compiling"));
+        Assert.Equal(string.Empty, stream.Complete());
+    }
+
+    [Fact]
+    public void Only_a_run_that_could_still_become_a_secret_is_held()
+    {
+        var redactor = new KnownSecretRedactor(["sk-live-0123456789abcdefghijklmnop"]);
+        var stream = redactor.CreateSession();
+
+        Assert.Equal("key=", stream.Append("key=sk-live-0123"));
+        Assert.Equal(KnownSecretRedactor.Replacement + " done", stream.Append("456789abcdefghijklmnop done"));
+    }
+
+    [Fact]
+    public void A_complete_secret_that_may_grow_into_a_longer_one_is_held_until_it_cannot()
+    {
+        var redactor = new KnownSecretRedactor(["token-123456", "token-123456-extended"]);
+        var stream = redactor.CreateSession();
+
+        Assert.Equal("x ", stream.Append("x token-123456"));
+        var output = string.Concat(stream.Append("-extended y"), stream.Complete());
+
+        Assert.Equal($"{KnownSecretRedactor.Replacement} y", output);
+        Assert.DoesNotContain("extended", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Longest_known_secret_wins_when_values_overlap()
     {
         var redactor = new KnownSecretRedactor(["token", "token-long"]);

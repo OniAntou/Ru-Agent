@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: Live command output and reply text no longer arrive a line late when a
+  provider key is configured. The Host's secret redactor held back the last (longest key
+  − 1) characters of every chunk, so a running command's newest line showed a stub such
+  as `[7/` until the next line came; it now holds only a trailing run that could still
+  become a known secret, as the Broker's terminal redactor already did.
+- **fix(gui)**: A finished command keeps the output it streamed. When the reply settled,
+  the rows rebuilt from history replaced the live ones and the card said "No streamed
+  output captured"; the rebuilt rows now take the live output and open card first.
+
 - **fix(harness)**: A run that stopped on an exception now carries a bounded fingerprint of
   the failure — `failure_kind` (store, protocol, transport, invalid_operation, …) and
   `failure_site` (the throwing type and method) — in the same terminal state commit and in

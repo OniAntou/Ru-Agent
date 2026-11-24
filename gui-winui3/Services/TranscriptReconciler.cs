@@ -32,6 +32,9 @@ internal static class TranscriptReconciler
     {
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(restored);
+        // Before any row is kept or replaced: whichever way a reloaded row lands, it is
+        // the one left on screen, and history alone would leave its command cards empty.
+        CarryLiveTerminalState(current, restored);
 
         int kept = 0, replaced = 0, added = 0;
         bool keptLive = false;
@@ -102,6 +105,32 @@ internal static class TranscriptReconciler
         if (live.Segments is null && next.Segments is not null) live.Segments = next.Segments;
         live.IsStreaming = false;
         live.SettleSegments();
+    }
+
+    // History keeps no streamed command output, so the activity rows a reload rebuilt
+    // take it from the rows on screen for the same activity before they replace them.
+    private static void CarryLiveTerminalState(
+        IEnumerable<ChatMessageItem> current, IEnumerable<ChatMessageItem> restored)
+    {
+        Dictionary<string, AgentActivityItem>? shown = null;
+        foreach (var message in current)
+        {
+            if (message.AgentActivities is not { } rows) continue;
+            foreach (var row in rows)
+            {
+                if (!row.HasTerminalOutput) continue;
+                shown ??= new Dictionary<string, AgentActivityItem>(StringComparer.Ordinal);
+                shown.TryAdd(row.ActivityId, row);
+            }
+        }
+
+        if (shown is null) return;
+        foreach (var message in restored)
+        {
+            if (message.AgentActivities is not { } rows) continue;
+            foreach (var row in rows)
+                if (shown.TryGetValue(row.ActivityId, out var source)) row.AdoptLiveTerminalState(source);
+        }
     }
 
     private static void AdoptIdentity(ChatMessageItem existing, ChatMessageItem next)

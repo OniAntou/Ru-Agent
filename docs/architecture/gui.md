@@ -245,8 +245,11 @@ multiline scripts and aligned output. The card opens before any output arrives;
 missing captured output is labelled explicitly, and clipped output has a notice.
 `AgentActivityItem.Terminal` keeps the Host's existing display-safe preview when
 a completion frame omits detail. Resetting a retried attempt clears only captured
-output and preserves the disclosure state. Copy carries that card's preview and
-captured output through the existing handler. This introduces no raw-argument
+output and preserves the disclosure state. History keeps no streamed output, so
+before a reload's rows are kept or replace the ones on screen, `TranscriptReconciler`
+copies each shown terminal row's output and open card onto its rebuilt twin by
+activity id; a reopened session still shows "No streamed output captured". Copy
+carries that card's preview and captured output through the existing handler. This introduces no raw-argument
 fetch, execution path, context-meter change or new activity-grouping policy.
 This card is the only place streamed command output appears: there is no
 separate docked terminal panel above the composer.

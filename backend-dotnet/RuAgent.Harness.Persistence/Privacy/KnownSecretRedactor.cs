@@ -25,7 +25,7 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
     private volatile SeedSet _seeds;
 
     /// <summary>One immutable seed set; sessions and payloads keep the set they started with.</summary>
-    private sealed record SeedSet(int Count, Regex? Pattern, int MaximumSecretLength);
+    private sealed record SeedSet(int Count, Regex? Pattern, string[] Secrets);
 
     public KnownSecretRedactor(IEnumerable<string> knownSecrets)
         : this(knownSecrets, acceptsStoredSecrets: true)
@@ -97,13 +97,13 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
                 : new Regex(
                     string.Join('|', ordered.Select(Regex.Escape)),
                     RegexOptions.CultureInvariant | RegexOptions.NonBacktracking),
-            ordered.Length == 0 ? 0 : ordered[0].Length);
+            ordered);
     }
 
     public KnownSecretRedactionSession CreateSession() => CreateSession(_seeds);
 
     private static KnownSecretRedactionSession CreateSession(SeedSet seeds) =>
-        new(seeds.Pattern, seeds.MaximumSecretLength);
+        new(seeds.Pattern, seeds.Secrets);
 
     ITransientContentRedactionSession ITransientContentRedactor.CreateSession() =>
         CreateSession();
@@ -208,14 +208,14 @@ public sealed class KnownSecretRedactor : ITransientContentRedactor
 public sealed class KnownSecretRedactionSession : ITransientContentRedactionSession
 {
     private readonly Regex? _pattern;
-    private readonly int _maximumSecretLength;
+    private readonly string[] _secrets;
     private readonly StringBuilder _pending = new();
     private bool _completed;
 
-    internal KnownSecretRedactionSession(Regex? pattern, int maximumSecretLength)
+    internal KnownSecretRedactionSession(Regex? pattern, string[] secrets)
     {
         _pattern = pattern;
-        _maximumSecretLength = maximumSecretLength;
+        _secrets = secrets;
     }
 
     public string Append(string chunk)
@@ -241,6 +241,31 @@ public sealed class KnownSecretRedactionSession : ITransientContentRedactionSess
         return Drain(final: true);
     }
 
+    private int LongestPossibleSecretSuffix(string combined)
+    {
+        var best = 0;
+        foreach (var secret in _secrets)
+        {
+            var first = secret[0];
+            // A suffix as long as the whole secret is a complete match, which the
+            // pattern already handles; only a strictly shorter run can still grow.
+            var start = Math.Max(0, combined.Length - secret.Length + 1);
+            for (var position = start; position < combined.Length; position++)
+            {
+                if (combined[position] != first) continue;
+                var length = combined.Length - position;
+                if (length <= best) break;
+                if (combined.AsSpan(position).SequenceEqual(secret.AsSpan(0, length)))
+                {
+                    best = length;
+                    break;
+                }
+            }
+        }
+
+        return best;
+    }
+
     private string Drain(bool final)
     {
         if (_pattern is null)
@@ -252,9 +277,15 @@ public sealed class KnownSecretRedactionSession : ITransientContentRedactionSess
 
         var combined = _pending.ToString();
         _pending.Clear();
+        // Only a trailing run that a later chunk could still turn into a secret is held:
+        // the longest suffix that is a prefix of some secret. Holding a fixed
+        // longest-secret-minus-one characters kept the end of every streamed line until
+        // the next one arrived, so a running command's newest line showed a stub such as
+        // "[7/" for a whole second whenever a provider key was configured (the Broker's
+        // ChunkRedactor fixed the same delay for its side of the stream).
         var safeStartLimit = final
             ? combined.Length
-            : Math.Max(0, combined.Length - _maximumSecretLength + 1);
+            : combined.Length - LongestPossibleSecretSuffix(combined);
         if (safeStartLimit == 0)
         {
             _pending.Append(combined);
@@ -265,8 +296,11 @@ public sealed class KnownSecretRedactionSession : ITransientContentRedactionSess
         var consumed = 0;
         foreach (Match match in _pattern.Matches(combined))
         {
-            if (match.Index >= safeStartLimit)
+            // A match reaching into the held run may still grow into a longer,
+            // overlapping secret: keep it pending with the rest of that run.
+            if (match.Index >= safeStartLimit || match.Index + match.Length > safeStartLimit)
             {
+                safeStartLimit = Math.Min(safeStartLimit, match.Index);
                 break;
             }
 

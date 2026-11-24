@@ -367,7 +367,55 @@ public sealed class ChatComposerViewModelTests
         Assert.Null(none);
     }
 
+    [Fact]
+    public void Files_of_a_steer_that_did_not_leave_come_back_ahead_of_files_attached_since()
+    {
+        var notes = new ImageAttachmentItem { FileName = "notes.md", TextContent = "# plan", FilePath = @"C:\w\notes.md" };
+        var later = new ImageAttachmentItem { FileName = "later.md", TextContent = "x", FilePath = @"C:\w\later.md" };
+        Assert.True(_composer.TryAddAttachment("sess-a", string.Empty, later));
+
+        _composer.ReturnAttachments("sess-a", "typed since", new[] { notes, later });
+
+        Assert.Equal(new[] { "notes.md", "later.md" }, _composer.Attachments.Select(item => item.FileName));
+        Assert.Equal(2, _drafts.RestoreAttachments("sess-a").Count);
+    }
+
     private static ImageAttachmentItem Image(string name) => new() { FileName = name, IsImage = true };
+}
+
+public sealed class SteerAttachmentWiringTests
+{
+    [Fact]
+    public void Enter_steers_with_files_and_images_and_queues_commands()
+    {
+        // Behavior: ChatComposerViewModelTests.Files_of_a_steer_that_did_not_leave_come_back_ahead_of_files_attached_since.
+        string code = GuiSource.ViewText("ChatView");
+        string steer = GuiSource.MethodBody(code, "SteerOrQueueCurrentComposerTurnAsync");
+        Assert.Contains("if (text.StartsWith('/'))", steer, StringComparison.Ordinal);
+        Assert.DoesNotContain("sent.ImageCount > 0", steer, StringComparison.Ordinal);
+        Assert.Contains("ChatComposerViewModel.TryBuildImagePayloads(sent.Attachments, out var imagePayloads)", steer, StringComparison.Ordinal);
+        Assert.Contains("ChatComposerViewModel.BuildEffectivePrompt(text, sent.Attachments)", steer, StringComparison.Ordinal);
+        Assert.Contains("controller.SteerAsync(steerText, imagePayloads", steer, StringComparison.Ordinal);
+        Assert.Contains("RestoreUnsentSteer(sessionId, sent)", steer, StringComparison.Ordinal);
+        Assert.Contains("var waiting = SteerMessage(text, attachments);", GuiSource.MethodBody(code, "ShowWaitingSteer"), StringComparison.Ordinal);
+        Assert.Contains("AttachedPromptDisplay.Apply(message);", code, StringComparison.Ordinal);
+        Assert.Contains("AgentSteerText.Split(text)", code, StringComparison.Ordinal);
+        string returned = GuiSource.MethodBody(code, "SendReturnedSteersAsync");
+        Assert.Contains("AttachedPromptText.Join(", returned, StringComparison.Ordinal);
+        Assert.Contains("ChatAttachmentPolicy.TakeImagesWithinTurnBound(images)", returned, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Images_of_returned_steers_that_exceed_one_turn_are_cut_to_the_turn_bound()
+    {
+        var images = Enumerable.Range(0, 6)
+            .Select(index => new ImageAttachmentItem { FileName = $"{index}.png", IsImage = true, Base64Data = "AAAA" })
+            .ToList();
+
+        var kept = ChatAttachmentPolicy.TakeImagesWithinTurnBound(images);
+
+        Assert.Equal(images.Take(ChatAttachmentPolicy.MaxImageCount), kept);
+    }
 }
 
 public sealed class DeclinedTrustWiringTests

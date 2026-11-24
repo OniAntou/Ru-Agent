@@ -60,6 +60,41 @@ public sealed class TranscriptSteerSplitterTests
     }
 
     [Fact]
+    public void A_steer_that_carried_a_file_shows_the_typed_text_and_a_file_chip()
+    {
+        var steer = Steer("act_" + new string('7', 32) + "_steer",
+            "[Attached file: notes.md (6 B)]\n```md\n# plan\n```\n\nuse these notes");
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            Segments = new ObservableCollection<AssistantSegment> { new ActivitySegment(steer.ActivityId, steer), new TextSegment("Done.") },
+        };
+
+        var said = TranscriptSteerSplitter.Split(message)[0];
+
+        Assert.Equal("use these notes", said.Content);
+        var file = Assert.Single(said.Attachments!);
+        Assert.Equal("notes.md", file.FileName);
+        Assert.Equal("# plan", file.TextContent);
+    }
+
+    [Fact]
+    public void A_steer_that_carried_images_shows_how_many_without_the_hosts_note()
+    {
+        var steer = Steer("act_" + new string('8', 32) + "_steer", AgentSteerText.WithImages("match this", 2));
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            Segments = new ObservableCollection<AssistantSegment> { new ActivitySegment(steer.ActivityId, steer), new TextSegment("Done.") },
+        };
+
+        var said = TranscriptSteerSplitter.Split(message)[0];
+
+        Assert.Equal("match this", said.Content);
+        Assert.Equal(2, said.MissingImageCount);
+    }
+
+    [Fact]
     public void A_reply_without_a_steer_is_left_as_it_is()
     {
         var segments = new ObservableCollection<AssistantSegment> { new TextSegment("Done.") };

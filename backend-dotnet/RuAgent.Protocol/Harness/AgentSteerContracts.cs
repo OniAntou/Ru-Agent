@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 
 namespace RuAgent.Protocol.Harness;
@@ -8,11 +9,26 @@ namespace RuAgent.Protocol.Harness;
 /// </summary>
 public static class AgentSteerLimits
 {
-    /// <summary>A steer is guidance, not a new prompt; the delivered activity row carries it whole.</summary>
-    public const int MaxCharacters = 4_000;
+    /// <summary>
+    /// Characters of one steer: the same bound as a run prompt, so anything a turn can carry
+    /// (typed text with inlined files) can steer. The delivered activity row carries it whole.
+    /// </summary>
+    public const int MaxCharacters = AgentRunLimits.MaxPromptChars;
 
     /// <summary>Steers waiting at once for one run.</summary>
     public const int MaxPending = 8;
+
+    /// <summary>
+    /// Characters of all steers waiting for one run together. It keeps the steer list, which
+    /// carries each waiting steer's text, well under a client's 8 MiB response bound.
+    /// </summary>
+    public const int MaxPendingCharacters = 1_000_000;
+
+    /// <summary>Images one steer may carry; the same per-message bound as a run.</summary>
+    public const int MaxImages = AgentRunLimits.MaxImages;
+
+    /// <summary>Delivered activity detail: the steer and its image note.</summary>
+    public const int MaxDeliveredCharacters = MaxCharacters + 256;
 
     public const string IdPrefix = "steer_";
 
@@ -45,12 +61,47 @@ public sealed record AgentSteerResponse(
     [property: JsonPropertyName("state")] string State,
     [property: JsonPropertyName("delivered_payload_id")] string DeliveredPayloadId);
 
+/// <summary>
+/// One steer of a run. <see cref="Text"/> is empty once the run has read it (the transcript
+/// holds it), so the list stays bounded however many steers a long run takes.
+/// </summary>
 public sealed record AgentSteerItem(
     [property: JsonPropertyName("steer_id")] string SteerId,
     [property: JsonPropertyName("state")] string State,
     [property: JsonPropertyName("text")] string Text,
     [property: JsonPropertyName("created_at")] string CreatedAt,
-    [property: JsonPropertyName("delivered_payload_id")] string DeliveredPayloadId);
+    [property: JsonPropertyName("delivered_payload_id")] string DeliveredPayloadId,
+    [property: JsonPropertyName("image_count")] int ImageCount = 0);
+
+/// <summary>
+/// The text a steer with images is delivered as. The images travel with the run's images,
+/// which every later request carries; a closing note in the steer's own text tells the model
+/// they came with this message, and display surfaces read the count back from it.
+/// </summary>
+public static partial class AgentSteerText
+{
+    public static string WithImages(string text, int imageCount)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (imageCount <= 0) return text;
+        var note = $"[Images attached to this message: {imageCount}. They are sent with this request's images.]";
+        return string.IsNullOrWhiteSpace(text) ? note : text.TrimEnd() + "\n\n" + note;
+    }
+
+    /// <summary>The steer as the user wrote it and how many images it carried.</summary>
+    public static (string Text, int ImageCount) Split(string? delivered)
+    {
+        if (string.IsNullOrEmpty(delivered)) return (string.Empty, 0);
+        var match = NoteAtEnd().Match(delivered);
+        if (!match.Success || !int.TryParse(match.Groups["count"].Value, out var count) || count <= 0)
+            return (delivered, 0);
+        return (delivered[..match.Index].TrimEnd(), count);
+    }
+
+    [GeneratedRegex(@"(?:^|\n)\[Images attached to this message: (?<count>\d{1,3})\. They are sent with this request's images\.\]\s*\z",
+        RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 250)]
+    private static partial Regex NoteAtEnd();
+}
 
 public sealed record AgentSteerListResponse(
     [property: JsonPropertyName("run_id")] string RunId,

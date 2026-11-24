@@ -22,6 +22,13 @@ public enum HarnessPayloadKind
     RuntimeContextSnapshot = 17,
     ToolImage = 18,
     SkillInvocation = 19,
+
+    /// <summary>
+    /// An image of a steer still waiting for its run (ADR 0056). No run-image listing reads
+    /// this kind, so the model sees the image only once delivery copies it into the run as a
+    /// <see cref="UserImage"/>.
+    /// </summary>
+    SteerImage = 20,
 }
 
 [Flags]
@@ -156,7 +163,7 @@ public sealed record HarnessPayloadIntent
                 nameof(kind));
         }
 
-        if (kind == HarnessPayloadKind.UserImage
+        if (kind is HarnessPayloadKind.UserImage or HarnessPayloadKind.SteerImage
             && (audience != (HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext)
                 || encoding != HarnessPayloadEncoding.Utf8Text))
         {

@@ -106,7 +106,7 @@ truncating it.
 | `run.status` | `runId` | run record (passthrough) | `GET /agent/v1/runs/{runId}` |
 | `run.command` | `runId`, `command` | command payload (passthrough) | `POST /agent/v1/runs/{runId}/commands` |
 | `run.output` | `runId`, `payloadId` | `{ "encoding": "base64", "data", "byte_length" }` | `GET /agent/v1/runs/{runId}/payloads/{payloadId}` |
-| `run.steer` | `runId`, `text` (1-4,000 chars), `steerId`? | `{ "runId", "steerId", "state": "pending", "deliveredPayloadId" }` | `POST /agent/v1/runs/{runId}/steers` (ADR 0056) |
+| `run.steer` | `runId`, `text` (1-200,000 chars), `steerId`? | `{ "runId", "steerId", "state": "pending", "deliveredPayloadId" }` | `POST /agent/v1/runs/{runId}/steers` (ADR 0056) |
 | `subagent.list` | `runId` (root) | root-owned snapshot and usage | `GET /agent/v1/runs/{runId}/subagents` |
 | `subagent.get` | `runId`, `agentId`, `resultVersion`?, `offset`?, `limit`? | child detail and optional UTF-8 result page | `GET .../subagents/{agentId}` |
 | `policy.list` | `scope`? | array of policy rules | `GET /agent/v1/policies` |
@@ -132,7 +132,8 @@ Details that are easy to get wrong:
 - `run.approve` — `decision` is one of `allow_once`, `allow_session_directory`,
   `allow_always`, `deny`.
 - `run.command` — `command` text is bounded to 8192 characters.
-- `run.steer` — `text` is 1 to 4,000 characters; `steerId` is optional (`steer_` and 32
+- `run.steer` — `text` is 1 to 200,000 characters (the run prompt bound); images are sent
+  through the HTTP route only; `steerId` is optional (`steer_` and 32
   lowercase hex) and makes a retry safe. A run that is not working fails with
   `run_not_steerable`; send the text as a new run instead.
 - `policy.import` and `policy.remove` require `confirm: true`; without it the call is

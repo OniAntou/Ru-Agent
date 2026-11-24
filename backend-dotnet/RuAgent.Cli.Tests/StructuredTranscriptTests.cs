@@ -175,6 +175,44 @@ public sealed class StructuredTranscriptTests
         }
     }
 
+    [Fact]
+    public void A_steer_with_a_file_shows_the_typed_text_and_a_file_label()
+    {
+        using var color = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var steer = new AgentActivityModel("act_" + new string('6', 32) + "_steer", AgentActivityKind.Steer,
+            AgentActivityState.Completed, null, null, null, null, null, null, null, null, "succeeded", null, 3, null,
+            Detail: "[Attached file: notes.md (6 B)]\n```md\n# plan\n```\n\nuse these notes");
+        var writer = new PresentationProbe();
+        var surface = new TuiSurface(writer);
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
+        transcript.BeginTurn();
+
+        transcript.ApplyActivity(steer);
+
+        Assert.Contains(writer.Rows, row => row.Text == "  ❯ use these notes");
+        Assert.Contains(writer.Rows, row => row.Text == "    [file 1: notes.md]");
+        Assert.DoesNotContain(writer.Rows, row => row.Text.Contains("# plan", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_steer_with_images_shows_one_label_per_image_instead_of_the_hosts_note()
+    {
+        using var color = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var steer = new AgentActivityModel("act_" + new string('8', 32) + "_steer", AgentActivityKind.Steer,
+            AgentActivityState.Completed, null, null, null, null, null, null, null, null, "succeeded", null, 3, null,
+            Detail: RuAgent.Protocol.Harness.AgentSteerText.WithImages("match this", 2));
+        var writer = new PresentationProbe();
+        var surface = new TuiSurface(writer);
+        var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
+        transcript.BeginTurn();
+
+        transcript.ApplyActivity(steer);
+
+        Assert.Contains(writer.Rows, row => row.Text == "  ❯ match this");
+        Assert.Contains(writer.Rows, row => row.Text == "    [image 2]");
+        Assert.DoesNotContain(writer.Rows, row => row.Text.Contains("Images attached", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData(TuiTurnOutcome.Completed)]
     [InlineData(TuiTurnOutcome.Cancelled)]

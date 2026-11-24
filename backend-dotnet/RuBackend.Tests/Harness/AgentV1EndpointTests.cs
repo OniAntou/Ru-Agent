@@ -269,11 +269,12 @@ public sealed class AgentV1EndpointTests
     }
 
     [Fact]
-    public async Task Create_run_rejects_five_images_with_image_limit_exceeded()
+    public async Task Create_run_rejects_more_images_than_one_message_carries()
     {
         using var factory = new BackendWebApplicationFactory();
         using var client = factory.CreateAuthenticatedClient();
-        var fiveImages = Enumerable.Repeat("data:image/png;base64,aGVsbG8=", 5).ToArray();
+        var fiveImages = Enumerable.Repeat("data:image/png;base64,aGVsbG8=",
+            RuAgent.Protocol.Harness.AgentRunLimits.MaxImages + 1).ToArray();
         using var response = await client.PostAsJsonAsync(
             "/agent/v1/runs",
             new

@@ -4,15 +4,17 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 using RuApp.Services;
+using RuApp.ViewModels;
 
 namespace RuApp.Views
 {
     /// <summary>
-    /// Enter while a run is working (ADR 0056). By default the message steers the run: the
-    /// Host holds it and the model reads it at its next step. Settings can make Enter queue
-    /// it as the next turn instead.
+    /// Enter while a run is working (ADR 0056). By default the message, with its files and
+    /// images, steers the run: the Host holds it and the model reads it at its next step.
+    /// Commands still need a turn. Settings can make Enter queue it as the next turn instead.
     /// </summary>
     /// <remarks>
     /// Presentation follows DeepSeek Harness. A sent steer appears at once as the user's
@@ -25,7 +27,9 @@ namespace RuApp.Views
     /// </remarks>
     public sealed partial class ChatView
     {
-        private const string SteerNeedsTurnStatus = "Attachments and commands cannot steer a run; queued as the next turn.";
+        private const string SteerNeedsTurnStatus = "Commands cannot steer a run; queued as the next turn.";
+        private const string SteerTooLongWithFilesStatus = "The message and its files are too long to steer the run; queued as the next turn.";
+        private const string SteerImagesNotReadyStatus = "An image is still being prepared, so the message was queued as the next turn.";
 
         /// <summary>Messages sent into the run and not yet read by it, by delivery activity id.</summary>
         private readonly Dictionary<string, Models.ChatMessageItem> _waitingSteers = new(StringComparer.Ordinal);
@@ -39,33 +43,57 @@ namespace RuApp.Views
             }
 
             var controller = _agentController;
-            var text = (ChatInputTextBox?.Text ?? string.Empty).Trim();
-            if (controller is null || text.Length == 0)
+            var sent = Composer.TakeSnapshot(ChatInputTextBox?.Text ?? string.Empty);
+            var text = sent.Text;
+            if (controller is null || sent.IsEmpty)
             {
                 QueueCurrentComposerTurn();
                 return;
             }
 
-            // A steer is plain text into the pinned run: files, images and commands need a turn.
-            if (Composer.Attachments.Count > 0 || text.StartsWith('/'))
+            // Text and code files travel inside the prompt text and images beside it, as they
+            // do for a turn, so a steer carries whatever a turn can. Commands need a turn.
+            if (text.StartsWith('/'))
             {
                 if (QueueCurrentComposerTurn()) ShowAgentInlineStatus(SteerNeedsTurnStatus);
                 return;
             }
 
-            if (text.Length > AgentSteerLimits.MaxCharacters)
+            if (!ChatComposerViewModel.TryBuildImagePayloads(sent.Attachments, out var imagePayloads)
+                || imagePayloads!.Count > AgentSteerLimits.MaxImages)
             {
+                if (QueueCurrentComposerTurn()) ShowAgentInlineStatus(SteerImagesNotReadyStatus);
+                return;
+            }
+
+            var steerText = ChatComposerViewModel.BuildEffectivePrompt(text, sent.Attachments);
+            if (string.IsNullOrWhiteSpace(steerText) && imagePayloads.Count == 0)
+            {
+                // Nothing the run could read (a file with no text yet): it needs a turn.
+                QueueCurrentComposerTurn();
+                return;
+            }
+
+            if (steerText.Length > AgentSteerLimits.MaxCharacters)
+            {
+                if (sent.Attachments.Count > 0)
+                {
+                    if (QueueCurrentComposerTurn()) ShowAgentInlineStatus(SteerTooLongWithFilesStatus);
+                    return;
+                }
+
                 ShowAgentInlineStatus($"A message to a working run is at most {AgentSteerLimits.MaxCharacters:N0} characters. Shorten it, or press Stop and send it as a new turn.");
                 return;
             }
 
             // Cleared before the request so a second Enter cannot send it twice; every
-            // outcome other than a sent steer puts the text back.
-            Composer.ClearText();
+            // outcome other than a sent steer puts the text and its files back.
+            var sessionId = _activeSessionId;
+            Composer.ClearAfterSend(sessionId);
             AgentSteerOutcome outcome;
             try
             {
-                outcome = await controller.SteerAsync(text, CancellationToken.None);
+                outcome = await controller.SteerAsync(steerText, imagePayloads, CancellationToken.None);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
@@ -76,18 +104,18 @@ namespace RuApp.Views
             switch (outcome.Attempt)
             {
                 case AgentSteerAttempt.Sent when AgentSteerLimits.IsValidSteerId(outcome.SteerId):
-                    ShowWaitingSteer(SteerActivityId(outcome.SteerId!), text);
+                    ShowWaitingSteer(SteerActivityId(outcome.SteerId!), steerText, sent.Attachments);
                     break;
                 case AgentSteerAttempt.Sent:
-                    ContinueTurnAfterSteer(text);
+                    ContinueTurnAfterSteer(SteerMessage(steerText, sent.Attachments));
                     break;
                 case AgentSteerAttempt.NotSteerable:
-                    // The run had just ended: the message is simply the next turn.
-                    RestoreToComposer(new[] { text });
+                    // The run had just ended: the message and its files are simply the next turn.
+                    RestoreUnsentSteer(sessionId, sent);
                     QueueCurrentComposerTurn();
                     break;
                 default:
-                    RestoreToComposer(new[] { text });
+                    RestoreUnsentSteer(sessionId, sent);
                     ShowAgentInlineStatus(SteerRefusedStatus(outcome.ErrorCode));
                     break;
             }
@@ -98,20 +126,46 @@ namespace RuApp.Views
             "act_" + steerId[AgentSteerLimits.IdPrefix.Length..] + "_steer";
 
         /// <summary>
-        /// The user's message at the tail of the chat, waiting for the run to read it. It is
-        /// drawn like any message; only its place says it has not been read yet.
+        /// A steer that was not sent goes back to the composer: its files as chips again,
+        /// its text in front of anything typed since.
         /// </summary>
-        private void ShowWaitingSteer(string activityId, string text)
+        private void RestoreUnsentSteer(string? sessionId, ComposerSnapshot sent)
         {
-            if (!_liveSteerActivityIds.Add(activityId)) return;
-            var waiting = new Models.ChatMessageItem
+            Composer.ReturnAttachments(sessionId, ChatInputTextBox?.Text ?? string.Empty, sent.Attachments);
+            if (sent.Text.Length > 0) RestoreToComposer(new[] { sent.Text });
+        }
+
+        /// <summary>
+        /// The user's message a steer becomes: the typed text, with the files it carried shown
+        /// as chips rather than as their inlined text. This window's own steer shows its images;
+        /// one read from the Host shows how many it carried, as a reopened turn does.
+        /// </summary>
+        private Models.ChatMessageItem SteerMessage(string text, IReadOnlyList<Models.ImageAttachmentItem>? sentAttachments = null)
+        {
+            var (written, imageCount) = AgentSteerText.Split(text);
+            var message = new Models.ChatMessageItem
             {
                 Role = "user",
                 ArrivesLive = true,
-                Content = text,
+                Content = written,
                 SessionId = _activeSessionId,
                 Attachments = new ObservableCollection<Models.ImageAttachmentItem>(),
             };
+            AttachedPromptDisplay.Apply(message);
+            var images = sentAttachments?.Where(attachment => attachment.IsImage).ToList() ?? new();
+            foreach (var image in images) message.Attachments!.Add(image);
+            if (images.Count == 0 && imageCount > 0) message.MissingImageCount = imageCount;
+            return message;
+        }
+
+        /// <summary>
+        /// The user's message at the tail of the chat, waiting for the run to read it. It is
+        /// drawn like any message; only its place says it has not been read yet.
+        /// </summary>
+        private void ShowWaitingSteer(string activityId, string text, IReadOnlyList<Models.ImageAttachmentItem> attachments)
+        {
+            if (!_liveSteerActivityIds.Add(activityId)) return;
+            var waiting = SteerMessage(text, attachments);
             _waitingSteers[activityId] = waiting;
             Messages.Add(waiting);
             ScrollChatToBottom();
@@ -125,13 +179,14 @@ namespace RuApp.Views
         {
             if (_waitingSteers.Remove(activityId, out var waiting))
             {
+                // The same message, with its file chips, moves to where the run read it.
                 Messages.Remove(waiting);
-                ContinueTurnAfterSteer(waiting.Content ?? text ?? string.Empty);
+                ContinueTurnAfterSteer(waiting);
                 return;
             }
 
             if (_liveSteerActivityIds.Add(activityId) && !string.IsNullOrWhiteSpace(text))
-                ContinueTurnAfterSteer(text);
+                ContinueTurnAfterSteer(SteerMessage(text));
         }
 
         /// <summary>
@@ -140,7 +195,7 @@ namespace RuApp.Views
         /// simply kept messaging. The run is the same one; only the transcript splits. Steers
         /// still waiting stay below, at the tail.
         /// </summary>
-        private void ContinueTurnAfterSteer(string text)
+        private void ContinueTurnAfterSteer(Models.ChatMessageItem steer)
         {
             var before = _activeAgentAssistantMessage;
             if (before is not null && Messages.Contains(before))
@@ -167,14 +222,7 @@ namespace RuApp.Views
                 }
             }
 
-            AddAboveWaitingSteers(new Models.ChatMessageItem
-            {
-                Role = "user",
-                ArrivesLive = true,
-                Content = text,
-                SessionId = _activeSessionId,
-                Attachments = new ObservableCollection<Models.ImageAttachmentItem>(),
-            });
+            AddAboveWaitingSteers(steer);
             // The run's one change card lands on its last reply and covers the replies above.
             var earlier = new List<Models.AgentActivityItem>();
             if (before is not null)
@@ -250,22 +298,36 @@ namespace RuApp.Views
 
             if (taken.Count == 0) return false;
             // Only the copies of messages actually taken leave the tail; the turn they start
-            // shows the message itself.
+            // shows the message itself, with the images those copies held (the Host's steer
+            // list carries no image data).
+            var images = new List<Models.ImageAttachmentItem>();
             foreach (var steer in taken)
             {
-                if (_waitingSteers.Remove(SteerActivityId(steer.SteerId), out var waiting)) Messages.Remove(waiting);
+                if (_waitingSteers.Remove(SteerActivityId(steer.SteerId), out var waiting))
+                {
+                    Messages.Remove(waiting);
+                    if (waiting.Attachments is { } held) images.AddRange(held.Where(attachment => attachment.IsImage));
+                }
             }
 
-            var returned = taken.Select(steer => steer.Text).ToArray();
-            var text = string.Join(Environment.NewLine + Environment.NewLine, returned);
+            // Files of every steer lead the turn, so it reads like one message with its files.
+            // A turn carries what one message may; images beyond that are said, not dropped silently.
+            var text = AttachedPromptText.Join(taken.Select(steer => steer.Text).ToArray(),
+                Environment.NewLine + Environment.NewLine);
+            var kept = ChatAttachmentPolicy.TakeImagesWithinTurnBound(images);
+            var shown = SteerMessage(text, kept);
             if (!ModelSelection.TryCaptureRunSelection(out var providerSelection))
             {
-                RestoreToComposer(returned);
+                Composer.ReturnAttachments(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty, shown.Attachments);
+                if (!string.IsNullOrEmpty(shown.Content)) RestoreToComposer(new[] { shown.Content });
                 ShowAgentInlineStatus("The run ended before reading your message, and the model selection is still loading. It is back in the box.");
                 return false;
             }
 
-            return await SendAgentTurnAsync(text, cancellationToken, providerSelection, displayUserText: text);
+            if (kept.Count < images.Count)
+                ShowAgentInlineStatus($"{images.Count - kept.Count} image(s) from waiting messages did not fit the next turn.");
+            return await SendAgentTurnAsync(text, cancellationToken, providerSelection,
+                attachments: shown.Attachments.ToList(), displayUserText: shown.Content ?? string.Empty);
         }
 
         /// <summary>

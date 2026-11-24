@@ -43,7 +43,8 @@ terminal smaller than 80 by 24.
 
 While a turn is running, `Enter` steers it: Ru reads your message at its next step, without
 stopping the run. `Tab` queues the message as the next turn instead (up to eight; queued prompts
-run in order). Commands and messages with attachments always queue. Your message appears in the
+run in order). Files and images you attached go with the steer, up to what a turn can carry;
+commands queue instead. Your message appears in the
 transcript where Ru reads it; until then the hint row says it is waiting. `Esc` stops the run
 and sends waiting messages right away as the next turn, which also happens if the run ends
 before reading them. The plain `--classic` mode reads input only between turns, so it does not
@@ -77,7 +78,7 @@ so switching never leaves the previous provider's model behind.
 
 ## Attachments
 
-Attach images with `--image PATH` at startup (up to four), a dropped path or
+Attach images with `--image PATH` at startup (up to ten), a dropped path or
 `Ctrl+V`. Ru resizes and validates images before sending them; for a model that reads no images, an
 image file is sent as a path instead. Any other file can be dropped too, whatever its type: text up to
 8 KB is added to the prompt as a code block, and anything else (PDFs, Word or Excel files, archives,

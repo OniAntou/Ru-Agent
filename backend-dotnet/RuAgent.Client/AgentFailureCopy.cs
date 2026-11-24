@@ -182,12 +182,12 @@ public static class AgentFailureCopy
             "retry, or ask for a narrower search");
         Add(table, ["image_limit_exceeded"],
             "Too many images",
-            "a turn can carry at most 4 images",
+            $"a turn can carry at most {RuAgent.Protocol.Harness.AgentRunLimits.MaxImages} images",
             "remove images (Backspace on an empty prompt in the terminal), then retry");
         Add(table, ["image_too_large"],
             "Image too large",
             "one image or the whole turn exceeded the size bound",
-            "images cap at 4MB each and 20MB per turn · resize or remove some");
+            "images cap at 4MB each and 16MB per turn · resize or remove some");
         Add(table, ["invalid_image_mime"],
             "Unsupported image type",
             "images must be png, jpeg or webp",

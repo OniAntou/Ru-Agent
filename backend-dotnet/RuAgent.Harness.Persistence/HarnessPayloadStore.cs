@@ -144,6 +144,10 @@ public sealed partial class HarnessPayloadStore
                 HarnessPayloadIntent.MaximumByteCap,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
+            [HarnessPayloadKind.SteerImage] = new(
+                HarnessPayloadIntent.MaximumByteCap,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                [HarnessPayloadEncoding.Utf8Text]),
             [HarnessPayloadKind.ToolImage] = new(
                 RuAgent.Protocol.ToolOutputImage.MaximumBytes,
                 HarnessPayloadAudience.ModelContext,

@@ -34,6 +34,13 @@ public interface IAgentRunClient
     Task<AgentSteerResponse> SteerAsync(string runId, string steerId, string text, CancellationToken cancellationToken = default) =>
         Task.FromException<AgentSteerResponse>(new AgentApiException("run_not_steerable", "steering unavailable"));
 
+    /// <summary>A steer with image data URLs; a client without image steering sends text only when there are none.</summary>
+    Task<AgentSteerResponse> SteerAsync(string runId, string steerId, string text, IReadOnlyList<string>? images,
+        CancellationToken cancellationToken = default) =>
+        images is not { Count: > 0 }
+            ? SteerAsync(runId, steerId, text, cancellationToken)
+            : Task.FromException<AgentSteerResponse>(new AgentApiException("run_not_steerable", "image steering unavailable"));
+
     /// <summary>The run's steers and the Host's state for each: pending, delivered or returned.</summary>
     Task<AgentSteerListResponse> ListSteersAsync(string runId, CancellationToken cancellationToken = default) =>
         Task.FromResult(new AgentSteerListResponse(runId, Array.Empty<AgentSteerItem>()));

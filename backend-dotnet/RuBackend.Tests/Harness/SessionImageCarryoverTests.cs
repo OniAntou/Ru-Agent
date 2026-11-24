@@ -77,7 +77,7 @@ public sealed class SessionImageCarryoverTests
     }
 
     [Fact]
-    public async Task Four_is_the_hard_cap_however_many_earlier_images_exist()
+    public async Task Earlier_images_fill_the_request_newest_turn_first()
     {
         await using var fixture = await BackendHarnessTestFixture.CreateAsync();
         var first = await SeedBaseEndedAsync(fixture, payloads:
@@ -103,9 +103,9 @@ public sealed class SessionImageCarryoverTests
 
         var result = await carryover.LoadAsync(current.Run.RunId, default);
 
-        Assert.Equal(4, result.Earlier.Count);
-        // Newest turn first: the third turn's image, then the second turn's two, then the
-        // first image of the first turn.
+        // All five fit the request bound. Newest turn first: the third turn's image, then the
+        // second turn's two, then the first turn's.
+        Assert.Equal(5, result.Earlier.Count);
         Assert.Equal("data:image/png;base64,bGFzdA==", result.Earlier[0]);
         Assert.Equal(ImageC, result.Earlier[1]);
         Assert.Equal("data:image/png;base64,ZHVtbXk=", result.Earlier[2]);

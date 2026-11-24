@@ -158,7 +158,14 @@ public sealed partial class AgentInputEndpointTests
             Assert.Equal(HttpStatusCode.BadRequest, await StatusAsync(client, $"/agent/v1/runs/{unknownRun}/steers",
                 new { steer_id = NewSteerId(), text = "  " }));
             Assert.Equal(HttpStatusCode.BadRequest, await StatusAsync(client, $"/agent/v1/runs/{unknownRun}/steers",
-                new { steer_id = NewSteerId(), text = new string('x', 4_001) }));
+                new { steer_id = NewSteerId(), text = new string('x', RuAgent.Protocol.Harness.AgentSteerLimits.MaxCharacters + 1) }));
+            Assert.Equal(HttpStatusCode.BadRequest, await StatusAsync(client, $"/agent/v1/runs/{unknownRun}/steers",
+                new { steer_id = NewSteerId(), text = "x", images = "data:image/png;base64,AAAA" }));
+            Assert.Equal(HttpStatusCode.BadRequest, await StatusAsync(client, $"/agent/v1/runs/{unknownRun}/steers",
+                new { steer_id = NewSteerId(), text = "x", images = new[] { "data:image/gif;base64,AAAA" } }));
+            Assert.Equal(HttpStatusCode.BadRequest, await StatusAsync(client, $"/agent/v1/runs/{unknownRun}/steers",
+                new { steer_id = NewSteerId(), text = "x", images = Enumerable.Repeat("data:image/png;base64,AAAA",
+                    RuAgent.Protocol.Harness.AgentSteerLimits.MaxImages + 1).ToArray() }));
             Assert.Equal(HttpStatusCode.NotFound, await StatusAsync(client, $"/agent/v1/runs/{unknownRun}/steers",
                 new { steer_id = NewSteerId(), text = "x" }));
             using var list = await client.GetAsync($"/agent/v1/runs/{unknownRun}/steers");

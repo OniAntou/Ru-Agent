@@ -11,15 +11,29 @@ public sealed partial class AgentApiClient
     /// receives it at the next step boundary. Reuse <paramref name="steerId"/> to retry safely.
     /// A run that is not working answers <c>run_not_steerable</c>: send the text as a new turn.
     /// </summary>
-    public async Task<AgentSteerResponse> SteerAsync(string runId, string steerId, string text, CancellationToken ct = default)
+    public Task<AgentSteerResponse> SteerAsync(string runId, string steerId, string text, CancellationToken ct = default) =>
+        SteerAsync(runId, steerId, text, null, ct);
+
+    /// <summary>
+    /// Sends a steer with up to <see cref="AgentSteerLimits.MaxImages"/> image data URLs; the
+    /// Host checks them as it checks a new run's images. Text may be empty when images carry it.
+    /// </summary>
+    public async Task<AgentSteerResponse> SteerAsync(
+        string runId, string steerId, string text, IReadOnlyList<string>? images, CancellationToken ct = default)
     {
         ValidateRunId(runId);
         if (!AgentSteerLimits.IsValidSteerId(steerId))
             throw new AgentApiException("invalid_steer_id", "steer_id invalid");
-        if (string.IsNullOrWhiteSpace(text) || text.Length > AgentSteerLimits.MaxCharacters)
-            throw new AgentApiException("invalid_steer_text", $"text must be 1..{AgentSteerLimits.MaxCharacters} characters");
+        text ??= string.Empty;
+        var imageCount = images?.Count ?? 0;
+        if (string.IsNullOrWhiteSpace(text) && imageCount == 0 || text.Length > AgentSteerLimits.MaxCharacters)
+            throw new AgentApiException("invalid_steer_text", $"text must be 1..{AgentSteerLimits.MaxCharacters} characters, or images must be attached");
+        if (imageCount > AgentSteerLimits.MaxImages)
+            throw new AgentApiException("image_limit_exceeded", $"at most {AgentSteerLimits.MaxImages} images");
         var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/steers");
-        var payload = JsonSerializer.Serialize(new { steer_id = steerId, text });
+        var payload = imageCount == 0
+            ? JsonSerializer.Serialize(new { steer_id = steerId, text })
+            : JsonSerializer.Serialize(new { steer_id = steerId, text, images });
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);

@@ -7,8 +7,8 @@ using static RuBackend.Harness.AgentV1Shared;
 namespace RuBackend.Harness;
 
 /// <summary>
-/// Steers sent into a working root run (ADR 0056). The Host stores the steer durably and
-/// answers at once; the run's coordinator delivers it at the next step boundary. A steer is
+/// Steers sent into a working root run (ADR 0056). The Host stores the steer and its images
+/// durably and answers at once; the run's coordinator delivers them at the next step boundary. A steer is
 /// a user prompt, so the user's prompt hooks see it first, under the same trust and preset
 /// rule as a new run's prompt.
 /// </summary>
@@ -45,18 +45,30 @@ public sealed class AgentSteersService
             return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
 
         string? steerId = null, text = null;
+        var images = new List<string>();
         if (body is { ValueKind: JsonValueKind.Object } value)
         {
             if (value.TryGetProperty("steer_id", out var idNode) && idNode.ValueKind == JsonValueKind.String)
                 steerId = idNode.GetString();
             if (value.TryGetProperty("text", out var textNode) && textNode.ValueKind == JsonValueKind.String)
                 text = textNode.GetString();
+            if (value.TryGetProperty("images", out var imagesNode) && imagesNode.ValueKind != JsonValueKind.Null)
+            {
+                if (imagesNode.ValueKind != JsonValueKind.Array
+                    || imagesNode.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String))
+                    return BoundedError(400, "invalid_image_mime", "images must be an array of image data URLs.");
+                images.AddRange(imagesNode.EnumerateArray().Select(item => item.GetString()!));
+            }
         }
 
         if (!RunSteerContract.IsValidId(steerId))
             return BoundedError(400, "invalid_steer_id", "steer_id must be 'steer_' followed by 32 lowercase hexadecimal characters.");
-        if (string.IsNullOrWhiteSpace(text) || text.Length > RunSteerContract.MaxCharacters || text.Contains('\0'))
-            return BoundedError(400, "invalid_steer_text", $"text must be 1..{RunSteerContract.MaxCharacters} characters.");
+        // Images may carry a steer on their own, as they may a new run's prompt.
+        text ??= string.Empty;
+        if (string.IsNullOrWhiteSpace(text) && images.Count == 0
+            || text.Length > RunSteerContract.MaxCharacters || text.Contains('\0'))
+            return BoundedError(400, "invalid_steer_text", $"text must be 1..{RunSteerContract.MaxCharacters:N0} characters, or images must be attached.");
+        if (UserImageDataUrls.Validate(images) is { } imageError) return imageError;
 
         var run = await _store.GetRunAsync(runId, ct).ConfigureAwait(false);
         if (run is null) return BoundedError(404, "run_not_found", "Run not found.");
@@ -75,7 +87,7 @@ public sealed class AgentSteersService
         RunSteerAppendOutcome outcome;
         try
         {
-            outcome = await _steers.AppendAsync(runId, steerId!, text, _time.UtcNow, ct).ConfigureAwait(false);
+            outcome = await _steers.AppendAsync(runId, steerId!, text, images, _time.UtcNow, ct).ConfigureAwait(false);
         }
         catch (HarnessStoreException error) when (error.Code == "steer_invalid")
         {
@@ -90,9 +102,9 @@ public sealed class AgentSteersService
             RunSteerAppendOutcome.RunNotFound => BoundedError(404, "run_not_found", "Run not found."),
             RunSteerAppendOutcome.RunNotSteerable => NotSteerable(),
             RunSteerAppendOutcome.QueueFull => BoundedError(409, "steer_queue_full",
-                $"At most {RunSteerContract.MaxPending} steers can wait for one run."),
+                $"At most {RunSteerContract.MaxPending} steers, {RunSteerContract.MaxPendingCharacters:N0} characters in all, can wait for one run."),
             RunSteerAppendOutcome.IdempotencyConflict => BoundedError(409, "idempotency_conflict",
-                "This steer_id was already used with other text."),
+                "This steer_id was already used with other text or images."),
             _ => BoundedError(500, "steer_failed", "The steer could not be stored."),
         };
     }
@@ -114,6 +126,7 @@ public sealed class AgentSteersService
                 text = steer.Text,
                 created_at = steer.CreatedAt.ToString("O"),
                 delivered_payload_id = RunSteerContract.DeliveredPayloadId(steer.SteerId).Value,
+                image_count = steer.ImageCount,
             }),
         });
     }

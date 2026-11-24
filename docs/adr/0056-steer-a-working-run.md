@@ -18,7 +18,8 @@ Three constraints shaped the design:
 - The provider's native history must stay valid. A user message must never land between a
   model step's tool calls and their results.
 - Provider, model, protocol and tool identities stay pinned for a run. A steer is text for
-  the same run; it cannot carry a new model choice or attachments.
+  the same run; it cannot carry a new model choice or attachments (text and code files were
+  later allowed to ride inside the text; see the amendment).
 - A steer is a user prompt. It must not bypass the user's prompt hooks, and text the user
   typed must never be silently dropped.
 
@@ -63,7 +64,8 @@ Three constraints shaped the design:
    user rows where the run reads it. No status line is shown, and the delivered `steer`
    activity never draws a row of the model's work. Desktop: Enter while a run works steers by default;
    Settings → "Sending while Ru is working" can make Enter queue instead (`composer.json`).
-   Attachments and commands always queue. TUI: Enter steers, Tab queues. The classic line
+   Commands always queue; files and images ride along (see the amendments).
+   TUI: Enter steers, Tab queues. The classic line
    mode keeps reading input only between turns, so it does not steer. RPC: `run.steer`.
 
 ## Consequences
@@ -72,6 +74,60 @@ Three constraints shaped the design:
 - A steer waits behind a step in flight (a long tool call, an approval, a question, or
   subagents being waited on) and is read only when that step settles.
 - Steer text is guidance for the pinned run, not a new turn: it cannot change the model or
-  carry files.
+  carry a command. Files ride inside its text and images beside it (amendments below).
 - Schema v40, two routes (59 public HTTP routes in all), a new activity kind and a new RPC
   method are part of the public contract.
+
+## Amendment (2026-11-25): text and code files ride along
+
+The owner asked for files in a steer. A turn already sends text and code files inside its
+prompt text: small text inlined as an `[Attached file: …]` block, anything else as an
+`[Attached workspace file: …]` path the model reads with its file tools (ADR 0053). A steer now
+carries them the same way, so the route, schema, prompt hooks and `run.steer` are unchanged:
+
+- Desktop and TUI compose the steer with the turn's composer (`BuildEffectivePrompt`,
+  `AttachedPrompt.Compose`) and check the composed text against the 4,000-character bound; over
+  it, the message and its files queue as the next turn.
+- The files leave the composer while the steer is in flight and come back with the text on any
+  outcome but a sent steer.
+- Every surface draws a steer's files as file chips or `[file n: name]` rows, live and on
+  replay, by splitting the envelope (`AttachedPromptText`). Returned steers become one turn with
+  the files of every steer leading it (`AttachedPromptText.Join`).
+- Images still queued at first; the second amendment lets them steer too.
+
+## Amendment (2026-11-25): images, and the bounds of a turn
+
+The owner asked for images in a steer and for limits that do not refuse ordinary messages.
+
+1. **Text bound.** A steer now takes what a run prompt takes: 200,000 characters
+   (`AgentRunLimits.MaxPromptChars`), so a message with its files no longer falls back to the
+   queue at 4,000. The steers route reads the run-creation body bound (24 MiB). The delivered
+   `steer` activity has its own detail bound (the steer plus its image note) instead of the
+   4,000 characters of other rows, so the row is never cut. All waiting steers of one run
+   together hold at most 1,000,000 characters, which keeps `GET …/steers` within a client's
+   8 MiB response bound; that list now returns text only for steers not yet read.
+2. **Images.** `POST …/steers` takes `images`: up to ten PNG, JPEG or WebP data URLs, checked
+   exactly as a new run's images (`UserImageDataUrls`). Images alone may steer. Schema v41 adds
+   `agent_run_steer_images`; each image waits in an encrypted `SteerImage` payload, which no
+   run-image listing reads, so no request carries it early. Delivery, in the same transaction
+   as the delivered mark, copies the images into the run as `UserImage` payloads and closes the
+   steer's text with `[Images attached to this message: N. …]`, which tells the model which
+   message they came with and lets clients show the count (`AgentSteerText`). The idempotency
+   check covers the images' hashes. `GET …/steers` reports `image_count`; the sender keeps its
+   own copy of the images until the steer settles, so a returned steer is resent with them.
+3. **No image error mid-run.** The run's images join every later request, as a turn's own
+   images do. A run can now hold more images than one request carries, so each request sends
+   the newest within its bound, in order, and tells the model how many older ones were left
+   out (`SessionImageCarryover.NewestWithinBound`).
+6. **Image count.** One message (a run's prompt or a steer) carries up to ten images, raised
+   from four. The decoded total per message and per request is 16 MiB, which is what four
+   images at the 4 MiB per-image bound already reached, so the base64 body still fits the
+   24 MiB transport bound and providers' request sizes. A hosted provider receives up to ten
+   images per request; a model served from this machine or the local network (loopback,
+   private addresses, `.local`/`.lan` and single-label hosts) keeps four
+   (`AgentRunLimits.MaxImagesPerLocalRequest`), since many local vision servers take few
+   images, and the newest are sent with the omitted note above. The Desktop draft store keeps
+   a full turn of images plus files.
+4. **Returned steers.** Their images go back into the next turn up to one message's bound;
+   any beyond it are named on screen, never refused by the Host.
+5. **RPC.** `run.steer` takes the larger text bound; it does not carry images.

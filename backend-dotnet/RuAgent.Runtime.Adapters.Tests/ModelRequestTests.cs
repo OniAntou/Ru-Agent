@@ -45,8 +45,11 @@ public sealed class ModelRequestTests
     [Fact]
     public void ModelRequest_rejects_too_many_images()
     {
-        var imgs = Enumerable.Range(0, 5).Select(_ => new ModelImage("image/png", "AQ==")).ToArray();
+        var imgs = Enumerable.Range(0, RuAgent.Protocol.Harness.AgentRunLimits.MaxImages + 1)
+            .Select(_ => new ModelImage("image/png", "AQ==")).ToArray();
         Assert.Throws<ArgumentException>(() => CreateRequest(imgs));
+        Assert.Equal(RuAgent.Protocol.Harness.AgentRunLimits.MaxImages,
+            CreateRequest(imgs[..^1]).Images.Count);
     }
 
     [Fact]
@@ -294,15 +297,16 @@ public sealed class ModelRequestTests
     }
 
     [Fact]
-    public void ModelRequest_accepts_four_images_at_the_decoded_per_image_limit()
+    public void ModelRequest_accepts_images_at_the_decoded_per_image_limit_up_to_the_total()
     {
         var maxImage = Convert.ToBase64String(new byte[ModelImage.MaximumDecodedBytes]);
         var maxImages = Enumerable.Range(0, 4).Select(_ => new ModelImage("image/png", maxImage)).ToArray();
         var req = CreateRequest(maxImages);
         Assert.Equal(4, req.Images.Count);
 
-        var five = Enumerable.Range(0, 5).Select(_ => new ModelImage("image/png", "AQ==")).ToArray();
-        Assert.Throws<ArgumentException>(() => CreateRequest(five));
+        // A fifth image at the per-image limit passes the 16 MiB decoded total.
+        var overTotal = Enumerable.Range(0, 5).Select(_ => new ModelImage("image/png", maxImage)).ToArray();
+        Assert.Throws<ArgumentException>(() => CreateRequest(overTotal));
     }
 
     [Fact]

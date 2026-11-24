@@ -76,6 +76,42 @@ public sealed class AttachedPromptTextTests
     }
 
     [Fact]
+    public void Join_leads_with_every_prompts_files_and_keeps_the_typed_texts_in_order()
+    {
+        var first = "[Attached file: a.md (4 B)]\n```md\n# a\n```\n\nfirst";
+        var second = "[Attached workspace file: src/b.cs (12 KB)]\n"
+            + "The file contents are not inlined. Read it from the workspace with the file-reading tool when needed.\n\n"
+            + "second";
+
+        var joined = AttachedPromptText.Join(["plain", first, second], "\n\n");
+
+        var parts = Assert.IsType<AttachedPromptParts>(AttachedPromptText.TrySplit(joined));
+        Assert.Equal(["a.md", "src/b.cs"], parts.Documents.Select(document => document.FileName));
+        Assert.Equal("# a", parts.Documents[0].Content);
+        Assert.Equal("src/b.cs", parts.Documents[1].ReferencePath);
+        Assert.Equal("plain\n\nfirst\n\nsecond", parts.Text);
+    }
+
+    [Fact]
+    public void Join_without_files_is_a_plain_join()
+    {
+        Assert.Equal("one\n\ntwo", AttachedPromptText.Join(["one", "two"], "\n\n"));
+    }
+
+    [Theory]
+    [InlineData("match this", 2)]
+    [InlineData("", 1)]
+    [InlineData("line one\nline two", 4)]
+    public void A_steers_image_note_splits_back_into_its_text_and_count(string text, int images)
+    {
+        var delivered = RuAgent.Protocol.Harness.AgentSteerText.WithImages(text, images);
+
+        Assert.Equal((text, images), RuAgent.Protocol.Harness.AgentSteerText.Split(delivered));
+        Assert.Equal(("no note", 0), RuAgent.Protocol.Harness.AgentSteerText.Split("no note"));
+        Assert.Equal(text, RuAgent.Protocol.Harness.AgentSteerText.WithImages(text, 0));
+    }
+
+    [Fact]
     public void Summary_prefers_the_typed_text()
     {
         Assert.Equal("fix it", AttachedPromptText.SummaryText("[Attached file: a.py (1 B)]\n```py\nx\n```\n\nfix it"));

@@ -14,10 +14,12 @@ namespace RuApp.Services;
 public sealed class ComposerDraftStore
 {
     public const int MaxRetainedSessions = 8;
-    public const int MaxRetainedBytes = 32 * 1024 * 1024;
+    public const int MaxRetainedBytes = 64 * 1024 * 1024;
     public const int MaxTextBytesPerSession = 1024 * 1024;
-    public const int MaxAttachmentsPerSession = 8;
-    public const int MaxAttachmentBytesPerSession = 24 * 1024 * 1024;
+
+    /// <summary>A full turn of images plus as many files again, so a draft never refuses what a turn may send.</summary>
+    public const int MaxAttachmentsPerSession = RuAgent.Protocol.Harness.AgentRunLimits.MaxImages + 8;
+    public const int MaxAttachmentBytesPerSession = 32 * 1024 * 1024;
     public const string RetentionLimitStatus = "This draft exceeds the bounded session storage limit. Remove some text or attachments before switching sessions.";
     private const int AttachmentMetadataAllowanceBytes = 512;
 

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)!**: A message carries up to ten images (was four), as a new turn or a steer.
+  The decoded total per message and per request is 16 MiB (was 20 MiB, which four images at
+  4 MiB each never reached), so requests stay within the 24 MiB body bound and providers'
+  request sizes. Hosted providers receive up to ten images per request; a model on this
+  machine or the local network keeps four, the newest sent with a note naming the rest. The
+  Desktop draft keeps a full turn of images plus files.
+
+- **feat(agent)**: A steer carries files and images (ADR 0056 amendments). Files and images
+  attached in Desktop or the TUI now go with a message sent into a working run instead of
+  forcing it into the queue: files inside its text exactly as a turn sends them, images (up to
+  four) beside it through the new `images` field of `POST /agent/v1/runs/{runId}/steers`. Images
+  alone may steer. Schema v41 adds `agent_run_steer_images`; a steer's images wait apart from
+  the run's and join them when the run reads the steer, with a note telling the model how many
+  came with that message. The steer shows its files and images as chips (`[file n]` and
+  `[image n]` rows in the TUI), live and on replay; a refused steer gives them back, and steers
+  the run never read become one turn carrying them. Only commands still queue.
+- **feat(agent)**: Steer limits match a turn's. A steer takes up to 200,000 characters (was
+  4,000), its activity row is never cut, and a run holding more images than one request
+  carries sends the newest and tells the model the rest were left out instead of failing.
+  The steer list returns text only for steers not yet read, and all waiting steers of one run
+  hold at most 1,000,000 characters.
+
 - **fix(sdk)!**: `@ru/agent-sdk` 0.1.4 connects to the current bridge again. It still required
   `run.reconcile`, which the bridge dropped with the reconcile surface, so every
   `RuAgent.start()` failed its handshake with `bridge_method_missing`. `run.reconcile()` and

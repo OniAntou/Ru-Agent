@@ -1,4 +1,8 @@
+using RuAgent.Cli.Attachments;
 using RuAgent.Cli.Chat;
+using RuAgent.Cli.Images;
+using RuAgent.Protocol;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Cli.Tests;
@@ -111,6 +115,111 @@ public sealed class ChatSessionEngineSteerTests
         Assert.Equal(string.Empty, harness.View.InputText);
     }
 
+    [Fact]
+    public async Task Enter_with_a_text_file_steers_the_run_with_the_file_inlined()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        var file = new CliTextAttachment("notes.md", "# plan", 6);
+        harness.AttachTexts(file);
+
+        harness.View.InputText = "use these notes";
+        harness.Engine.Submit();
+
+        var sent = await harness.Steered.Task.WaitAsync(Deadline);
+        Assert.Equal(AttachedPrompt.Compose("use these notes", [file]), sent);
+        Assert.Equal(0, harness.Engine.QueuedCount);
+        // The file left the pending list with the steer, so it is not sent twice.
+        Assert.Single(harness.Accepted);
+        Assert.Empty(harness.Returned);
+    }
+
+    [Fact]
+    public async Task A_file_alone_can_steer_the_run()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        var file = new CliTextAttachment("big.cs", string.Empty, 20_000, "src/big.cs");
+        harness.AttachTexts(file);
+
+        harness.View.InputText = string.Empty;
+        harness.Engine.Submit();
+
+        Assert.Equal(AttachedPrompt.Compose(string.Empty, [file]), await harness.Steered.Task.WaitAsync(Deadline));
+    }
+
+    [Fact]
+    public async Task Images_steer_the_run_with_the_text()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        var shot = new CliImageAttachment("shot.png", "image/png", "AAAA", 1, 1, 3);
+        harness.AttachImages(shot);
+
+        harness.View.InputText = "look at this";
+        harness.Engine.Submit();
+
+        Assert.Equal("look at this", await harness.Steered.Task.WaitAsync(Deadline));
+        Assert.Same(shot, Assert.Single(harness.SteeredSubmission!.Images));
+        Assert.Equal(0, harness.Engine.QueuedCount);
+    }
+
+    [Fact]
+    public async Task An_image_alone_can_steer_the_run()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        harness.AttachImages(new CliImageAttachment("shot.png", "image/png", "AAAA", 1, 1, 3));
+
+        harness.View.InputText = string.Empty;
+        harness.Engine.Submit();
+
+        Assert.Equal(string.Empty, await harness.Steered.Task.WaitAsync(Deadline));
+    }
+
+    [Fact]
+    public async Task Files_too_long_for_a_steer_queue_as_the_next_turn()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        harness.AttachTexts(new CliTextAttachment("long.txt", new string('x', AgentSteerLimits.MaxCharacters), AgentSteerLimits.MaxCharacters));
+
+        harness.View.InputText = "read it";
+        harness.Engine.Submit();
+
+        Assert.False(harness.Steered.Task.IsCompleted);
+        Assert.Equal(1, harness.Engine.QueuedCount);
+    }
+
+    [Fact]
+    public async Task A_refused_steer_gives_its_files_back()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Refused, "refused by hook"));
+        var file = new CliTextAttachment("notes.md", "# plan", 6);
+        harness.AttachTexts(file);
+
+        harness.View.InputText = "use these notes";
+        harness.Engine.Submit();
+        await harness.Steered.Task.WaitAsync(Deadline);
+
+        await WaitUntilAsync(() => harness.Returned.Count == 1);
+        Assert.Same(file, Assert.Single(harness.Returned[0].Texts));
+        await WaitUntilAsync(() => harness.View.InputText == "use these notes");
+    }
+
+    [Fact]
+    public async Task Returned_steers_with_files_become_one_turn_with_the_files_first()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        var withFile = AttachedPrompt.Compose("and this", [new CliTextAttachment("a.md", "# a", 3)]);
+
+        harness.Engine.SendReturnedSteers(["first", withFile]);
+        await WaitUntilAsync(() => harness.Engine.QueuedCount == 1);
+        harness.Release();
+        await WaitUntilAsync(() => { lock (harness.Prompts) return harness.Prompts.Count == 2; });
+
+        string turn;
+        lock (harness.Prompts) turn = harness.Prompts[1];
+        var parts = Assert.IsType<AttachedPromptParts>(AttachedPromptText.TrySplit(turn));
+        Assert.Equal("a.md", Assert.Single(parts.Documents).FileName);
+        Assert.Equal("first\n\nand this", parts.Text);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + Deadline;
@@ -139,6 +248,15 @@ public sealed class ChatSessionEngineSteerTests
         public List<string> Prompts { get; } = [];
         public TaskCompletionSource<string> Steered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource? SteerGate { get; set; }
+        public ChatSubmissionSnapshot? SteeredSubmission { get; private set; }
+        public List<ChatSubmissionSnapshot> Accepted { get; } = [];
+        public List<ChatSubmissionSnapshot> Returned { get; } = [];
+        private CliImageAttachment[] _images = [];
+        private CliTextAttachment[] _texts = [];
+
+        public void AttachTexts(params CliTextAttachment[] texts) => _texts = texts;
+
+        public void AttachImages(params CliImageAttachment[] images) => _images = images;
 
         public static async Task<BusyHarness> StartAsync(SteerResult answer)
         {
@@ -149,15 +267,36 @@ public sealed class ChatSessionEngineSteerTests
                 lock (harness.Prompts) harness.Prompts.Add(line);
                 if (line == "working") { entered.TrySetResult(); await harness._release.Task.WaitAsync(ct); }
             });
-            harness.Engine.SetSteerHandler(async text =>
+            harness.Engine.SetSteerHandler(async (text, submission) =>
             {
+                harness.SteeredSubmission = submission;
                 harness.Steered.TrySetResult(text);
                 if (harness.SteerGate is { } gate) await gate.Task;
                 return answer;
             });
+            // Stands in for the session's pending attachments: a submit takes them, a
+            // returned steer puts them back.
+            harness.Engine.SetAttachmentCountProvider(() => harness._images.Length + harness._texts.Length);
+            harness.Engine.SetSubmissionSnapshotFactory(line => ChatSubmissionSnapshot.Create(
+                line, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, harness._images, harness._texts));
+            harness.Engine.SetSubmissionOwnershipHandlers(
+                snapshot =>
+                {
+                    harness.Accepted.Add(snapshot);
+                    harness._images = [];
+                    harness._texts = [];
+                },
+                _ => { });
+            harness.Engine.SetSubmissionReturnHandler(snapshot =>
+            {
+                harness.Returned.Add(snapshot);
+                harness._images = [.. snapshot.Images];
+                harness._texts = [.. snapshot.Texts];
+            });
             harness.View.InputText = "working";
             harness.Engine.Submit();
             await entered.Task.WaitAsync(Deadline);
+            harness.Accepted.Clear();
             return harness;
         }
 

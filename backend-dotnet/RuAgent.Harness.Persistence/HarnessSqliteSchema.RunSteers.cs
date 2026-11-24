@@ -21,4 +21,20 @@ public static partial class HarnessSqliteSchema
             ON agent_run_steers(run_id, delivered_event_id, created_at_utc);
         SELECT 1;
         """;
+
+    /// <summary>
+    /// Images a steer carries (ADR 0056). Each waits in an encrypted <c>SteerImage</c> payload
+    /// that no run-image listing reads; delivery copies it into the run as a <c>UserImage</c>.
+    /// The hash makes a retried send with other images an idempotency conflict.
+    /// </summary>
+    private const string RunSteerImageMigration = """
+        CREATE TABLE IF NOT EXISTS agent_run_steer_images (
+            steer_id TEXT NOT NULL REFERENCES agent_run_steers(steer_id) ON DELETE CASCADE,
+            ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 63),
+            payload_id TEXT NOT NULL,
+            sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
+            PRIMARY KEY(steer_id, ordinal)
+        );
+        SELECT 1;
+        """;
 }

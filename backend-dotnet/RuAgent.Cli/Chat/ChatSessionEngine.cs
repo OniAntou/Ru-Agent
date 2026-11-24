@@ -329,14 +329,15 @@ public partial class ChatSessionEngine
             return;
         }
 
-        if (!forceQueue && steerFallback is null && ShouldSteer(line, hasAttachments, retainedContinuation))
+        if (!forceQueue && steerFallback is null && SteerText(line, submission, retainedContinuation) is { } steerText)
         {
             _view.InputText = string.Empty;
+            _submissionAccepted?.Invoke(submission);
             Remember(line);
             _historyIndex = _history.Count;
             _draft = string.Empty;
-            TuiDebug.Log("submit", $"steer len={line.Length}");
-            _ = SteerAsync(line.Trim());
+            TuiDebug.Log("submit", $"steer len={steerText.Length} files={submission.Texts.Length}");
+            _ = SteerAsync(line.Trim(), steerText, submission);
             return;
         }
 

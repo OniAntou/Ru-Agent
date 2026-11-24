@@ -1,4 +1,6 @@
+using System.Collections.Immutable;
 using RuAgent.Cli.Chat;
+using RuAgent.Cli.Images;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 
@@ -9,21 +11,26 @@ public sealed partial class AgentCommands
     private sealed partial class ChatSession
     {
         private readonly object steerGate = new();
-        private readonly List<(string RunId, string SteerId, string? SessionId)> sentSteers = [];
+        // Images stay here until the steer settles: a steer the run never reads is sent again
+        // as the next turn, and the Host's steer list carries no image data.
+        private readonly List<(string RunId, string SteerId, string? SessionId, ImmutableArray<CliImageAttachment> Images)> sentSteers = [];
 
         /// <summary>
-        /// Sends Enter's text into the working run (ADR 0056). The transcript shows it when the
-        /// model receives it, as the run's own <c>steer</c> activity.
+        /// Sends Enter's text and images into the working run (ADR 0056). The transcript shows
+        /// it when the model receives it, as the run's own <c>steer</c> activity.
         /// </summary>
-        private async Task<SteerResult> SteerActiveRunAsync(string text)
+        private async Task<SteerResult> SteerActiveRunAsync(string text, ImmutableArray<CliImageAttachment> images)
         {
             var runId = runSession.ActiveRunId;
             if (runId is null) return new SteerResult(SteerAttempt.NotSteerable);
             var steerId = AgentSteerLimits.NewSteerId();
             try
             {
-                await _agentClient.SteerAsync(runId, steerId, text, cancellationToken).ConfigureAwait(false);
-                lock (steerGate) sentSteers.Add((runId, steerId, sessionId));
+                await _agentClient.SteerAsync(runId, steerId, text,
+                    images.IsEmpty ? null : images.Select(image => image.ToDataUrl()).ToArray(), cancellationToken).ConfigureAwait(false);
+                lock (steerGate) sentSteers.Add((runId, steerId, sessionId, images));
+                // The Host holds the images now; only their in-memory copy is kept for a return.
+                ChatSubmissionState.Release(images);
                 return new SteerResult(SteerAttempt.Sent);
             }
             catch (AgentApiException error) when (error.ErrorCode is "run_not_steerable" or "run_not_found")
@@ -35,7 +42,7 @@ public sealed partial class AgentCommands
                 return new SteerResult(SteerAttempt.Refused, error.ErrorCode switch
                 {
                     "prompt_blocked_by_hook" => "a prompt hook refused the steer · your text is back in the prompt",
-                    "steer_queue_full" => $"{AgentSteerLimits.MaxPending} steers are already waiting · your text is back in the prompt",
+                    "steer_queue_full" => "too many messages are already waiting · your text is back in the prompt",
                     _ => $"steer refused ({error.ErrorCode}) · your text is back in the prompt",
                 });
             }
@@ -69,11 +76,12 @@ public sealed partial class AgentCommands
 
         private async Task SendSettledSteersAsync(CancellationToken ct)
         {
-            (string RunId, string SteerId, string? SessionId)[] tracked;
+            (string RunId, string SteerId, string? SessionId, ImmutableArray<CliImageAttachment> Images)[] tracked;
             lock (steerGate) tracked = [.. sentSteers];
             if (tracked.Length == 0) return;
 
             var returned = new List<string>();
+            var returnedImages = new List<CliImageAttachment>();
             var settled = new HashSet<string>(StringComparer.Ordinal);
             foreach (var runId in tracked.Select(item => item.RunId).Distinct(StringComparer.Ordinal))
             {
@@ -93,17 +101,26 @@ public sealed partial class AgentCommands
                     if (steer.State == AgentSteerLimits.StatePending) continue;
                     settled.Add(steer.SteerId);
                     // A message meant for another session's run is never sent into this chat.
-                    if (steer.State == AgentSteerLimits.StateReturned
-                        && tracked.Any(item => item.SteerId == steer.SteerId
-                            && string.Equals(item.SessionId, sessionId, StringComparison.Ordinal)))
+                    var mine = tracked.FirstOrDefault(item => item.SteerId == steer.SteerId
+                        && string.Equals(item.SessionId, sessionId, StringComparison.Ordinal));
+                    if (steer.State == AgentSteerLimits.StateReturned && mine.SteerId is not null)
                     {
                         returned.Add(steer.Text);
+                        returnedImages.AddRange(mine.Images);
                     }
                 }
             }
 
             lock (steerGate) sentSteers.RemoveAll(item => settled.Contains(item.SteerId));
-            if (returned.Count > 0) chatEngine?.SendReturnedSteers(returned);
+            if (returned.Count == 0) return;
+            // The images go back to the pending list, so the next turn carries them with the
+            // text; a turn holds what one message may, and any beyond that are said, not lost silently.
+            var dropped = returnedImages.Count(image => !submissions.TryAddImage(
+                image, CliImagePolicy.MaxImageCount, CliImagePolicy.MaxTotalImageBytes, out _));
+            if (returnedImages.Count > 0) RefreshAttachmentLabels();
+            if (dropped > 0)
+                chatEngine?.ShowFeedback($"{dropped} image(s) from waiting messages did not fit the next turn", true);
+            chatEngine?.SendReturnedSteers(returned);
         }
     }
 }

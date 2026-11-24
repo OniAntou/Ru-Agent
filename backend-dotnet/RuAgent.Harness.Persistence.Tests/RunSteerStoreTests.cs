@@ -38,8 +38,62 @@ public sealed class RunSteerStoreTests
         Assert.Equal(RunSteerContract.DeliveredPayloadId(SteerOne), note.PayloadId);
         var listed = Assert.Single(await steers.ListAsync(runId, default));
         Assert.Equal(RunSteerContract.StateDelivered, listed.State);
-        Assert.Equal("Dùng parser mới 🐈", listed.Text);
+        // A read steer lives in the transcript; the list keeps only text a sender may resend.
+        Assert.Equal(string.Empty, listed.Text);
     }
+
+    [Fact]
+    public async Task A_steers_images_wait_apart_from_the_runs_images_and_join_them_on_delivery()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        string[] images = [Png("a"), Png("b")];
+
+        Assert.Equal(RunSteerAppendOutcome.Accepted,
+            await steers.AppendAsync(runId, SteerOne, "look at these", images, HarnessStoreTestFixture.Timestamp, default));
+        // Waiting images are not the run's images, so no model request carries them early.
+        Assert.Empty(await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.UserImage, default));
+        Assert.Equal(2, Assert.Single(await steers.ListAsync(runId, default)).ImageCount);
+
+        var delivered = Assert.Single(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
+        Assert.Equal(images, delivered.ImageDataUrls);
+        Assert.Equal(("look at these", 2), RuAgent.Protocol.Harness.AgentSteerText.Split(delivered.DeliveredText));
+        Assert.Equal(2, (await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.UserImage, default)).Count);
+    }
+
+    [Fact]
+    public async Task Images_alone_can_steer_and_a_retry_with_other_images_conflicts()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        var now = HarnessStoreTestFixture.Timestamp;
+
+        Assert.Equal(RunSteerAppendOutcome.Accepted, await steers.AppendAsync(runId, SteerOne, "", [Png("a")], now, default));
+        Assert.Equal(RunSteerAppendOutcome.Duplicate, await steers.AppendAsync(runId, SteerOne, "", [Png("a")], now, default));
+        Assert.Equal(RunSteerAppendOutcome.IdempotencyConflict, await steers.AppendAsync(runId, SteerOne, "", [Png("b")], now, default));
+        var delivered = Assert.Single(await steers.DeliverAsync(runId, now, default));
+        Assert.Equal((string.Empty, 1), RuAgent.Protocol.Harness.AgentSteerText.Split(delivered.DeliveredText));
+    }
+
+    [Fact]
+    public async Task Waiting_steer_text_is_bounded_per_run_in_all()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        var large = new string('x', RunSteerContract.MaxCharacters);
+        var fits = RunSteerContract.MaxPendingCharacters / RunSteerContract.MaxCharacters;
+        for (var index = 0; index < fits; index++)
+        {
+            Assert.Equal(RunSteerAppendOutcome.Accepted, await steers.AppendAsync(runId,
+                "steer_" + index.ToString("x32"), large, HarnessStoreTestFixture.Timestamp, default));
+        }
+
+        Assert.Equal(RunSteerAppendOutcome.QueueFull,
+            await steers.AppendAsync(runId, SteerTwo, large, HarnessStoreTestFixture.Timestamp, default));
+    }
+
+    private static string Png(string seed) =>
+        "data:image/png;base64," + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("png-" + seed));
 
     [Theory]
     [InlineData("model.step_started")]

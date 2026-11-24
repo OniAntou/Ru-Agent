@@ -91,7 +91,7 @@ public sealed class HarnessModelContextBootstrapper : IHarnessModelContextBootst
             if (imageCount > 0)
             {
                 var fact = $"[Earlier user attachment: {imageCount} image attachment(s) were received with this message. "
-                    + "Up to four recent conversation images are re-attached as visual reference for a vision-capable model; "
+                    + "Recent conversation images are re-attached, within the request's image bound, as visual reference for a vision-capable model; "
                     + "older image contents are not included. This confirms receipt, not image understanding.]";
                 prompt = string.IsNullOrWhiteSpace(prompt) ? fact : prompt + "\n\n" + fact;
             }

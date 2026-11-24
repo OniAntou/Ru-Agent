@@ -349,7 +349,8 @@ public sealed class ChatMessageAttachmentTests
     [Fact]
     public void Final_attachment_admission_rechecks_image_cap_and_session_generation()
     {
-        Assert.False(ChatAttachmentIntakePresenter.CanAddImage(4));
+        Assert.True(ChatAttachmentIntakePresenter.CanAddImage(ChatAttachmentPolicy.MaxImageCount - 1));
+        Assert.False(ChatAttachmentIntakePresenter.CanAddImage(ChatAttachmentPolicy.MaxImageCount));
         Assert.False(ChatAttachmentIntakePresenter.OwnsSession("old", 4, "new", 5));
     }
 
@@ -410,7 +411,7 @@ public sealed class ChatMessageAttachmentTests
     public void The_image_cap_is_the_policy_constant()
     {
         // Pins the value itself, so a change on either side is deliberate.
-        Assert.Equal(4, ChatAttachmentPolicy.MaxImageCount);
+        Assert.Equal(10, ChatAttachmentPolicy.MaxImageCount);
     }
 
     [Fact]

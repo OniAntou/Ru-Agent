@@ -423,6 +423,55 @@ public sealed partial class InProcessModelStepRunnerTests
     }
 
     [Fact]
+    public async Task Older_run_images_left_out_of_a_request_are_named_to_the_model()
+    {
+        var provider = new ScriptedProvider((_, _) =>
+            Deltas(new ModelDelta("ok", [], completed: true, finishReason: "stop")));
+        var runner = new InProcessModelStepRunner(new ModelStepService(provider))
+        {
+            CreateProviderBootstrapAsync = (_, _) => Task.FromResult(Bootstrap(acceptsImageInput: true)),
+            LoadRunImagesAsync = (_, _) =>
+                Task.FromResult(new RunImageSet(["data:image/png;base64,aGVsbG8="], [], OmittedCurrentRun: 3)),
+        };
+
+        await runner.RunStepAsync(Request(), _ => ValueTask.CompletedTask, CancellationToken.None);
+
+        var request = provider.Requests[0];
+        Assert.Contains("[3 older images of this run are no longer attached", request.Prompt, StringComparison.Ordinal);
+        Assert.Single(request.Images);
+    }
+
+    [Theory]
+    [InlineData("https://api.anthropic.com/v1", 10)]
+    [InlineData("https://openrouter.ai/api/v1", 10)]
+    [InlineData("http://localhost:11434/v1", 4)]
+    [InlineData("http://127.0.0.1:1234/v1", 4)]
+    [InlineData("http://192.168.1.20:8080/v1", 4)]
+    [InlineData("http://10.0.0.5/v1", 4)]
+    [InlineData("http://gpu-box:8000/v1", 4)]
+    [InlineData("http://studio.local:8000/v1", 4)]
+    public void Hosted_providers_take_more_images_per_request_than_local_servers(string endpoint, int perRequest)
+    {
+        Assert.Equal(perRequest, InProcessModelStepRunner.ImagesPerRequest(new Uri(endpoint)));
+    }
+
+    [Fact]
+    public void A_run_with_more_images_than_one_request_carries_sends_the_newest_in_order()
+    {
+        string[] images = Enumerable.Range(0, 7)
+            .Select(index => "data:image/png;base64," + Convert.ToBase64String(new byte[] { (byte)index }))
+            .ToArray();
+
+        var (kept, omitted) = SessionImageCarryover.NewestWithinBound(images, 4);
+
+        Assert.Equal(images[3..], kept);
+        Assert.Equal(3, omitted);
+        var (few, none) = SessionImageCarryover.NewestWithinBound(images[..2], 4);
+        Assert.Equal(images[..2], few);
+        Assert.Equal(0, none);
+    }
+
+    [Fact]
     public async Task Unreadable_image_payloads_fail_the_step_before_the_provider_call()
     {
         var provider = new ScriptedProvider((_, _) =>

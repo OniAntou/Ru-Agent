@@ -223,6 +223,23 @@ public sealed partial class ChatComposerViewModel : ObservableObject
 
     private readonly Dictionary<string, ComposerSnapshot> _acceptedSends = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Puts back the files of a message that did not leave (a steer the Host refused), ahead
+    /// of any attached since. Files already in the composer are not added twice.
+    /// </summary>
+    internal void ReturnAttachments(string? sessionId, string liveText, IEnumerable<ImageAttachmentItem> attachments)
+    {
+        ArgumentNullException.ThrowIfNull(attachments);
+        var index = 0;
+        foreach (var attachment in attachments)
+        {
+            if (Attachments.Contains(attachment) || IsAlreadyAttached(attachment)) continue;
+            Attachments.Insert(index++, attachment);
+        }
+
+        if (index > 0) ReportRetention(_drafts.TrySave(sessionId, liveText, Attachments));
+    }
+
     /// <summary>Empties the text only, as when typed "Continue" resumes a run.</summary>
     internal void ClearText() => TextReplaced?.Invoke(string.Empty);
 

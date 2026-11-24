@@ -195,9 +195,12 @@ public sealed partial class AgentCommands
                 sessionRenderer.Status.SetTokens(lastTotalTokens);
                 if (!cmd.Json && !tgMode)
                 {
+                    // Files carried inside the text (steers the run never read) echo as labels too.
+                    var (typedLine, carriedLabels) = Tui.ChatPromptEcho.SplitStored(promptLine);
+                    var echoLabels = carriedLabels.Concat(attachmentLabels).ToList();
                     sessionRenderer.Surface.WriteLine(Tui.ChatPromptEcho.Format(
-                        promptLine,
-                        attachmentLabels: attachmentLabels.Count == 0 ? null : attachmentLabels));
+                        typedLine,
+                        attachmentLabels: echoLabels.Count == 0 ? null : echoLabels));
                 }
                 sessionRenderer.BeginTurn();
                 var resp = await _agentClient.CreateRunAsync(request, runSession.Token).ConfigureAwait(false);

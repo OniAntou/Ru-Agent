@@ -52,7 +52,9 @@ public static class AgentActivityProjector
 
     /// <summary>
     /// A steer the user sent into the run, at the point the model received it. The row's
-    /// text is the user's message (bounded by <see cref="Steering.RunSteerContract.MaxCharacters"/>).
+    /// text is the user's whole message as delivered, with its image note, so a client can
+    /// split its files and images back out; it has the steer's own bound, not the 4,000
+    /// characters of other rows.
     /// </summary>
     public static AgentActivity ProjectSteer(string steerId, string text) =>
         new(
@@ -60,7 +62,7 @@ public static class AgentActivityProjector
             AgentActivityKind.Steer,
             AgentActivityState.Completed,
             ToolDisplay: null,
-            Detail: ClampDetail(text));
+            Detail: ClampDetail(text, RuAgent.Protocol.Harness.AgentSteerLimits.MaxDeliveredCharacters));
 
     public static AgentActivity ProjectTool(
         ToolProposal proposal,
@@ -699,7 +701,7 @@ public static class AgentActivityProjector
     private static int? ClampDuration(int? durationMs) =>
         durationMs is >= 0 and <= MaximumDurationMilliseconds ? durationMs : null;
 
-    private static string? ClampDetail(string? detail)
+    private static string? ClampDetail(string? detail, int maximumLength = MaximumDetailLength)
     {
         if (string.IsNullOrWhiteSpace(detail))
         {
@@ -712,7 +714,7 @@ public static class AgentActivityProjector
             return null;
         }
 
-        return trimmed.Length <= MaximumDetailLength ? trimmed : trimmed[..MaximumDetailLength];
+        return trimmed.Length <= maximumLength ? trimmed : trimmed[..maximumLength];
     }    private static int? ClampCount(int? value) =>
         value is >= 0 and <= MaximumCount ? value : null;
 

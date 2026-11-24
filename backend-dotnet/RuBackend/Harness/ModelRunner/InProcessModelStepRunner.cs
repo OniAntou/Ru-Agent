@@ -307,7 +307,8 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         // Both the note and that response are durable context, so restart cannot extend the window.
         if (HasPendingTruncationRepair(request.Context))
             bootstrap = bootstrap.WithReducedEffort();
-        var loadedImages = await LoadImagesAsync(request.RunId, cancellationToken).ConfigureAwait(false);
+        var imagesPerRequest = ImagesPerRequest(bootstrap.Endpoint);
+        var loadedImages = await LoadImagesAsync(request.RunId, imagesPerRequest, cancellationToken).ConfigureAwait(false);
         var images = loadedImages.Images;
         var nativeText = (preparingSnapshot || request.Preparation is InProcessPreparedStep) && images.Count == 0;
         IReadOnlyList<ModelTurn>? modelMessages = null;
@@ -405,6 +406,11 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
             // they belong to earlier turns instead of reading them as new attachments.
             prompt = SessionImageCarryover.AppendEarlierImageNotice(prompt, loadedImages.EarlierImageCount);
         }
+        if (loadedImages.OmittedImageCount > 0)
+        {
+            // Steers can bring more images than one request carries; the newest are sent.
+            prompt = SessionImageCarryover.AppendOmittedImageNotice(prompt, loadedImages.OmittedImageCount, imagesPerRequest);
+        }
         var settings = BuildSettings(request.PromptContext);
         try
         {
@@ -485,10 +491,40 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         }
     }
 
-    private sealed record PreparedRunImages(IReadOnlyList<ModelImage> Images, int EarlierImageCount);
+    private sealed record PreparedRunImages(IReadOnlyList<ModelImage> Images, int EarlierImageCount, int OmittedImageCount = 0);
+
+    /// <summary>
+    /// Images one request carries for this provider. A model served from this machine or the
+    /// local network often takes only a few images per request, so it keeps the old bound;
+    /// hosted providers take the per-message bound.
+    /// </summary>
+    internal static int ImagesPerRequest(Uri endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        if (endpoint.IsLoopback
+            || endpoint.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
+            || endpoint.Host.EndsWith(".lan", StringComparison.OrdinalIgnoreCase)
+            || !endpoint.Host.Contains('.', StringComparison.Ordinal))
+            return RuAgent.Protocol.Harness.AgentRunLimits.MaxImagesPerLocalRequest;
+        if (System.Net.IPAddress.TryParse(endpoint.Host.Trim('[', ']'), out var address))
+        {
+            if (address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6UniqueLocal)
+                return RuAgent.Protocol.Harness.AgentRunLimits.MaxImagesPerLocalRequest;
+            var bytes = address.MapToIPv4().GetAddressBytes();
+            if (address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork || address.IsIPv4MappedToIPv6)
+            {
+                if (bytes[0] == 10 || bytes[0] == 192 && bytes[1] == 168 || bytes[0] == 172 && bytes[1] is >= 16 and <= 31
+                    || bytes[0] == 169 && bytes[1] == 254 || bytes[0] == 100 && bytes[1] is >= 64 and <= 127)
+                    return RuAgent.Protocol.Harness.AgentRunLimits.MaxImagesPerLocalRequest;
+            }
+        }
+
+        return RuAgent.Protocol.Harness.AgentRunLimits.MaxImages;
+    }
 
     private async Task<PreparedRunImages> LoadImagesAsync(
         RunId runId,
+        int imagesPerRequest,
         CancellationToken cancellationToken)
     {
         if (LoadRunImagesAsync is null)
@@ -500,8 +536,11 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         {
             var set = await LoadRunImagesAsync(runId, cancellationToken).ConfigureAwait(false)
                 ?? new RunImageSet(Array.Empty<string>(), Array.Empty<string>());
-            var all = set.CurrentRun.Concat(set.Earlier).ToArray();
-            return new PreparedRunImages(ParseRunImages(all), set.Earlier.Count);
+            // The run's own newest images first; earlier conversation images fill what is left.
+            var (current, omittedHere) = SessionImageCarryover.NewestWithinBound(set.CurrentRun, imagesPerRequest);
+            var earlier = set.Earlier.Take(Math.Max(0, imagesPerRequest - current.Count)).ToArray();
+            var all = current.Concat(earlier).ToArray();
+            return new PreparedRunImages(ParseRunImages(all), earlier.Length, set.OmittedCurrentRun + omittedHere);
         }
         catch (OperationCanceledException)
         {

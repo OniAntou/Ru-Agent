@@ -38,14 +38,21 @@ public sealed partial class AgentRunController
     private readonly SemaphoreSlim _returnedGate = new(1, 1);
     private readonly List<(string RunId, string SteerId)> _sentSteers = new();
 
-    public async Task<AgentSteerOutcome> SteerAsync(string text, CancellationToken cancellationToken = default)
+    public Task<AgentSteerOutcome> SteerAsync(string text, CancellationToken cancellationToken = default) =>
+        SteerAsync(text, null, cancellationToken);
+
+    /// <summary>Sends text and image data URLs into the run in hand.</summary>
+    public async Task<AgentSteerOutcome> SteerAsync(string text, IReadOnlyList<string>? images, CancellationToken cancellationToken = default)
     {
         var runId = CurrentRun?.RunId;
         if (string.IsNullOrWhiteSpace(runId)) return new AgentSteerOutcome(AgentSteerAttempt.NotSteerable);
         var steerId = AgentSteerLimits.NewSteerId();
         try
         {
-            await _client.SteerAsync(runId, steerId, text, cancellationToken).ConfigureAwait(false);
+            if (images is { Count: > 0 })
+                await _client.SteerAsync(runId, steerId, text, images, cancellationToken).ConfigureAwait(false);
+            else
+                await _client.SteerAsync(runId, steerId, text, cancellationToken).ConfigureAwait(false);
             lock (_steerGate) _sentSteers.Add((runId, steerId));
             return new AgentSteerOutcome(AgentSteerAttempt.Sent, SteerId: steerId);
         }

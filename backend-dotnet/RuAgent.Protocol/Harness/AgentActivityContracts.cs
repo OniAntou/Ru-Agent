@@ -368,7 +368,8 @@ public static class AgentActivityWireValidator
         }
 
         ValidateToolDisplay(activity.ToolDisplay);
-        ValidateDetail(activity.Detail);
+        ValidateDetail(activity.Detail,
+            activity.Kind == AgentActivityKind.Steer ? AgentSteerLimits.MaxDeliveredCharacters : MaximumDetailLength);
         ValidateTodos(activity.Todos);
     }
 
@@ -496,14 +497,15 @@ public static class AgentActivityWireValidator
         }
     }
 
-    private static void ValidateDetail(string? detail)
+    /// <remarks>A steer's detail is the user's whole message, so it has the steer's own bound.</remarks>
+    private static void ValidateDetail(string? detail, int maximumLength)
     {
         if (detail is null)
         {
             return;
         }
 
-        if (detail.Length is < 1 or > MaximumDetailLength || detail.Contains('\0'))
+        if (detail.Length < 1 || detail.Length > maximumLength || detail.Contains('\0'))
         {
             throw new JsonException("Detail is invalid.");
         }

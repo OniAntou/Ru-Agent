@@ -126,6 +126,41 @@ public static class AttachedPromptText
         return parts.Text.Length > 0 ? parts.Text : parts.Documents[0].FileName;
     }
 
+    /// <summary>
+    /// Joins several prompts into one, as when messages a run never read become the next
+    /// turn. The documents of every prompt lead the result, in order, followed by the typed
+    /// texts joined by <paramref name="separator"/>, so the joined prompt still splits back
+    /// into its files and text. A prompt that does not split is plain typed text.
+    /// </summary>
+    public static string Join(IReadOnlyList<string> prompts, string separator)
+    {
+        ArgumentNullException.ThrowIfNull(prompts);
+        ArgumentNullException.ThrowIfNull(separator);
+        var split = prompts.Select(prompt => (Prompt: prompt, Parts: TrySplit(prompt))).ToArray();
+        if (split.All(item => item.Parts is null)) return string.Join(separator, prompts);
+
+        var builder = new StringBuilder();
+        foreach (var document in split.Where(item => item.Parts is not null).SelectMany(item => item.Parts!.Documents))
+        {
+            if (document.ReferencePath is { Length: > 0 } reference)
+            {
+                builder.Append("[Attached workspace file: ").Append(reference).Append(" (").Append(document.SizeLabel).Append(")]\n");
+                builder.Append(ReferenceInstruction).Append("\n\n");
+                continue;
+            }
+
+            builder.Append("[Attached file: ").Append(document.FileName).Append(" (").Append(document.SizeLabel).Append(")]\n");
+            builder.Append(Fence).Append(document.Language).Append('\n');
+            builder.Append(document.Content).Append('\n');
+            builder.Append(Fence).Append("\n\n");
+        }
+
+        var texts = split.Select(item => item.Parts is { } parts ? parts.Text : item.Prompt.Trim())
+            .Where(text => text.Length > 0);
+        builder.Append(string.Join(separator, texts));
+        return builder.ToString().TrimEnd();
+    }
+
     // A closing fence is a line that is exactly the fence, followed by the end of the
     // prompt or a blank line. Several candidates are possible when the file itself holds
     // such a line; the recorded size picks the one whose content length fits best.

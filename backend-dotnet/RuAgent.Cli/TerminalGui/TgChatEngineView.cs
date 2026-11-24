@@ -38,7 +38,12 @@ internal sealed class TgChatEngineView(TgChatWindow window) : IChatSessionView
     {
         if (localCommand) return;
         window.Transcript.Append(string.Empty, TranscriptStyle.User);
-        var lines = prompt.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
+        // Files carried inside the text (steers the run never read) echo as labels.
+        var (typed, labels) = ChatPromptEcho.SplitStored(prompt);
+        var lines = (typed.Length == 0
+                ? Array.Empty<string>()
+                : typed.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n'))
+            .Concat(labels).ToArray();
         for (var index = 0; index < lines.Length; index++)
             window.Transcript.Append((index == 0 ? "  ❯ " : "    ") + TuiText.SanitizeUntrusted(lines[index]), TranscriptStyle.User);
         window.Transcript.Append(string.Empty, TranscriptStyle.User);

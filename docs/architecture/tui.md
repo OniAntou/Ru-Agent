@@ -46,15 +46,20 @@ JSON stdout. EOF and cancellation stop the controller and await owned settlement
 Stopped controllers refuse new input before routing and again at queue admission,
 so shutdown during snapshot validation does not consume a draft or its attachments.
 
-While a turn runs, `Submit` (Enter) sends a plain prompt into the working run as a steer
-(ADR 0056) and `QueueSubmit` (Tab, in Terminal.Gui) keeps it for the next turn. Commands,
-attachments, a paused queue and an open local surface never steer. The hint row says the
-message is waiting and that Esc sends it now; the transcript writes it with the `❯` user rows
-of a sent prompt where the run reads it, live and on replay alike. A steer the run can no
-longer take, or one it ends without reading (Esc included), is sent as the next turn ahead of
-queued prompts; a refused one goes back to the prompt in front of anything typed since.
-`ChatLineAdapter` reads input only between turns, so the line presentations never steer. `ChatLineAdapter` reads input only between turns, so the line presentations never
-steer.
+While a turn runs, `Submit` (Enter) sends the prompt into the working run as a steer
+(ADR 0056) and `QueueSubmit` (Tab, in Terminal.Gui) keeps it for the next turn. Pending text
+and code files ride inside the steer's text, in the envelope a turn uses
+(`AttachedPrompt.Compose`), and pending images beside it; both leave the pending list while the
+steer is in flight. Commands, a steer over the 200,000-character prompt bound, a paused queue
+and an open local surface never steer. The hint row says the message is waiting and that Esc sends it now; the
+transcript writes it with the `❯` user rows of a sent prompt where the run reads it, one
+`[file n: name]` row per file and one `[image n]` row per image, live and on replay alike. A steer the run can no longer take,
+or one it ends without reading (Esc included), is sent as the next turn ahead of queued
+prompts, its files leading (`AttachedPromptText.Join`) and its images, kept by the session
+until the steer settles, back in the pending list up to one turn's bound; a refused one goes
+back to the prompt in front of anything typed since, and its attachments back to the pending
+list.
+`ChatLineAdapter` reads input only between turns, so the line presentations never steer.
 
 `ChatPresentationSelection` selects capabilities once: interactive terminals use
 Terminal.Gui; redirected stdin/stdout, `--json`, `--classic`, any `NO_COLOR`,

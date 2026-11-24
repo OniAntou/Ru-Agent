@@ -683,7 +683,8 @@ public static partial class AgentV1Endpoints
         System.Text.Json.JsonElement? body = null;
         try
         {
-            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            // A steer carries what a new run's prompt can: long text and its images.
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct, MaxJsonBodyBytesAgentRun);
             if (!string.IsNullOrWhiteSpace(text))
             {
                 using var document = System.Text.Json.JsonDocument.Parse(text);

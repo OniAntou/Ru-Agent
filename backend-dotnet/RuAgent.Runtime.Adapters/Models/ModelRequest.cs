@@ -117,9 +117,10 @@ public sealed record ModelRequest
 
         if (images is not null)
         {
-            if (images.Count > 4)
+            if (images.Count > RuAgent.Protocol.Harness.AgentRunLimits.MaxImages)
             {
-                throw new ArgumentException("Too many images. Maximum is 4.", nameof(images));
+                throw new ArgumentException(
+                    $"Too many images. Maximum is {RuAgent.Protocol.Harness.AgentRunLimits.MaxImages}.", nameof(images));
             }
 
             if (images.Any(img => img is null))
@@ -127,7 +128,7 @@ public sealed record ModelRequest
                 throw new ArgumentException("Images contains null entry.", nameof(images));
             }
 
-            const long MaxTotalImagesBytes = 20L * 1024 * 1024;
+            const long MaxTotalImagesBytes = RuAgent.Protocol.Harness.AgentRunLimits.MaxTotalImageBytes;
 
             long totalDecoded = 0;
             foreach (var img in images)
@@ -149,7 +150,7 @@ public sealed record ModelRequest
                 totalDecoded += decodedLength;
                 if (totalDecoded > MaxTotalImagesBytes)
                 {
-                    throw new ArgumentException("Total decoded images exceed 20MB.", nameof(images));
+                    throw new ArgumentException("Total decoded images exceed 16MB.", nameof(images));
                 }
             }
         }

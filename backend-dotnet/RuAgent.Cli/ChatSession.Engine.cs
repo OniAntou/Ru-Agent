@@ -12,7 +12,7 @@ public sealed partial class AgentCommands
             chatEngine = loop;
             loop.SetTaskCommandHandler((argument, token) => RunCommandControlAsync("tasks", () => ShowTasksAsync(argument, token), token));
             loop.SetRetainedContinuationClassifier(IsRetainedContinuation);
-            loop.SetSteerHandler(SteerActiveRunAsync);
+            loop.SetSteerHandler((text, submission) => SteerActiveRunAsync(text, submission.Images));
             // A paused queue left by a failed submission resumes only when the operator
             // sends again while that failed submission is still held for retry.
             loop.SetPausedQueueRetryProbe(() => submissions.Retryable is not null);
@@ -28,6 +28,12 @@ public sealed partial class AgentCommands
                     RefreshAttachmentLabels();
                 },
                 snapshot => ChatSubmissionState.Release(snapshot.Images));
+            loop.SetSubmissionReturnHandler(snapshot =>
+            {
+                // A steer that was not sent gives its files back to the prompt.
+                submissions.Restore(snapshot.Images, snapshot.Texts);
+                RefreshAttachmentLabels();
+            });
             loop.SetStateChangingCommandClassifier(line => IsStateChangingSlashCommand(line)
                 || tgMode && line.TrimStart().Split(' ', 2)[0].Equals("/sessions", StringComparison.OrdinalIgnoreCase));
             if (tgMode) loop.SetLocalCommandClassifier(IsLocalInputCommand);

@@ -10,11 +10,17 @@ namespace RuAgent.Harness.Core.Steering;
 /// </summary>
 public static class RunSteerContract
 {
-    /// <summary>A steer is guidance, not a new prompt: one activity row carries it whole.</summary>
+    /// <summary>The same bound as a run prompt; one activity row carries it whole.</summary>
     public const int MaxCharacters = AgentSteerLimits.MaxCharacters;
 
     /// <summary>Steers waiting at once for one run. Past this the user is writing a new turn.</summary>
     public const int MaxPending = AgentSteerLimits.MaxPending;
+
+    /// <summary>Characters of all steers waiting for one run together.</summary>
+    public const int MaxPendingCharacters = AgentSteerLimits.MaxPendingCharacters;
+
+    /// <summary>Images one steer may carry.</summary>
+    public const int MaxImages = AgentSteerLimits.MaxImages;
 
     public const string IdPrefix = AgentSteerLimits.IdPrefix;
 
@@ -47,7 +53,16 @@ public static class RunSteerContract
             or HarnessRunState.WaitingSubagents;
 }
 
-public sealed record DeliveredSteer(string SteerId, string Text);
+/// <summary>
+/// A steer the run reads now: its text and the image data URLs it carried. The model reads
+/// <see cref="DeliveredText"/>, which tells it how many images came with the message.
+/// </summary>
+public sealed record DeliveredSteer(string SteerId, string Text, IReadOnlyList<string>? Images = null)
+{
+    public IReadOnlyList<string> ImageDataUrls => Images ?? [];
+
+    public string DeliveredText => AgentSteerText.WithImages(Text, ImageDataUrls.Count);
+}
 
 /// <summary>Durable steers of a root run, read by the coordinator at step boundaries.</summary>
 public interface IRunSteerInbox
@@ -65,7 +80,8 @@ public static class RunSteerDelivery
 {
     /// <summary>
     /// One <c>run.note_added</c> event per steer, each with a user-prompt payload the model
-    /// context binds as a user entry at that event's sequence.
+    /// context binds as a user entry at that event's sequence. A steer's images become the
+    /// run's own image payloads, which every later model request of the run carries.
     /// </summary>
     public static HarnessCommit CreateCommit(AgentRun run, IReadOnlyList<DeliveredSteer> steers, DateTimeOffset now)
     {
@@ -77,13 +93,21 @@ public static class RunSteerDelivery
         var payloads = new List<HarnessPayloadIntent>(steers.Count);
         foreach (var steer in steers)
         {
-            var bytes = System.Text.Encoding.UTF8.GetBytes(steer.Text);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(steer.DeliveredText);
             var payloadId = RunSteerContract.DeliveredPayloadId(steer.SteerId);
             payloads.Add(new HarnessPayloadIntent(payloadId, HarnessPayloadKind.UserPrompt,
                 HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
                 HarnessPayloadEncoding.Utf8Text, Math.Max(bytes.Length, 1), bytes));
             events.Add(new HarnessEventIntent(new EventId("evt_" + Guid.NewGuid().ToString("N")),
                 HarnessEventKind.RunNoteAdded, payloadId: payloadId, safeCode: RunSteerContract.DeliveredSafeCode));
+            foreach (var image in steer.ImageDataUrls)
+            {
+                var imageBytes = System.Text.Encoding.UTF8.GetBytes(image);
+                payloads.Add(new HarnessPayloadIntent(new PayloadId("payload_" + Guid.NewGuid().ToString("N")),
+                    HarnessPayloadKind.UserImage,
+                    HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                    HarnessPayloadEncoding.Utf8Text, Math.Max(imageBytes.Length, 1), imageBytes));
+            }
         }
 
         var next = run.Advance(run.Status, run.BudgetWindow, run.ModelStepsInWindow, run.ToolCallsInWindow,

@@ -19,6 +19,28 @@ internal static class ChatAttachmentPolicy
     internal static string TooManyImagesStatus =>
         $"Maximum {MaxImageCount} images per turn; please remove some images before sending.";
 
+    /// <summary>
+    /// The images, in order, that one turn may carry: at most <see cref="MaxImageCount"/>
+    /// and 20 MiB decoded together, as the Host checks them. Used when steers the run never
+    /// read become one turn, so the turn is never refused for carrying too many.
+    /// </summary>
+    internal static List<RuApp.Models.ImageAttachmentItem> TakeImagesWithinTurnBound(
+        IEnumerable<RuApp.Models.ImageAttachmentItem> images)
+    {
+        var kept = new List<RuApp.Models.ImageAttachmentItem>();
+        long totalBytes = 0;
+        foreach (var image in images)
+        {
+            if (kept.Count >= MaxImageCount) break;
+            long decoded = (image.Base64Data?.Length ?? 0) * 3L / 4;
+            if (totalBytes + decoded > RuAgent.Protocol.Harness.AgentRunLimits.MaxTotalImageBytes) continue;
+            kept.Add(image);
+            totalBytes += decoded;
+        }
+
+        return kept;
+    }
+
     internal static async Task<byte[]?> ReadBoundedBytesAsync(System.IO.Stream stream, int maximumBytes)
     {
         using var output = new System.IO.MemoryStream(System.Math.Min(maximumBytes, 81920));

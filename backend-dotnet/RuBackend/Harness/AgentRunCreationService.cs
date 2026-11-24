@@ -78,68 +78,9 @@ public sealed class AgentRunCreationService
             catch (ArgumentException) { return BoundedError(400, "invalid_provider_intent", "Provider and model must be bounded nonempty values."); }
         }
         var hasImages = request.ImageAttachments is { Count: > 0 };
-        if (hasImages)
+        if (UserImageDataUrls.Validate(request.ImageAttachments) is { } imageError)
         {
-            if (request.ImageAttachments!.Count > AgentRunLimits.MaxImages)
-            {
-                return BoundedError(400, "image_limit_exceeded", $"Too many images. Maximum is {AgentRunLimits.MaxImages}.");
-            }
-
-            const int MaxImageDataUrlChars = AgentRunLimits.MaxImageDataUrlChars;
-            const long MaxSingleImageBytes = AgentRunLimits.MaxImageBytes;
-            const long MaxTotalImagesBytes = AgentRunLimits.MaxTotalImageBytes;
-
-            long totalDecodedBytes = 0;
-            foreach (var url in request.ImageAttachments)
-            {
-                if (string.IsNullOrWhiteSpace(url))
-                {
-                    return BoundedError(400, "invalid_image_mime", "Image attachment cannot be empty.");
-                }
-
-                if (url.Length > MaxImageDataUrlChars)
-                {
-                    return BoundedError(413, "image_too_large", "Image attachment exceeds character limit.");
-                }
-
-                if (!url.StartsWith("data:image/", StringComparison.Ordinal))
-                {
-                    return BoundedError(400, "invalid_image_mime", "Image data URL must start with 'data:image/'.");
-                }
-
-                var semi = url.IndexOf(";base64,", StringComparison.Ordinal);
-                if (semi < 0)
-                {
-                    return BoundedError(400, "invalid_image_base64", "Image data URL must contain ';base64,'.");
-                }
-
-                var mime = url.Substring(5, semi - 5);
-                if (mime is not ("image/png" or "image/jpeg" or "image/webp"))
-                {
-                    return BoundedError(400, "invalid_image_mime", "Unsupported image mime type. Only image/png, image/jpeg, and image/webp are allowed.");
-                }
-
-                var b64 = url.Substring(semi + 8);
-                if (!BoundedBase64Validator.TryGetDecodedLength(
-                        b64,
-                        MaxImageDataUrlChars,
-                        int.MaxValue,
-                        out var decodedBytes))
-                {
-                    return BoundedError(400, "invalid_image_base64", "Image Base64 data is malformed.");
-                }
-
-                if (decodedBytes > MaxSingleImageBytes)
-                {
-                    return BoundedError(413, "image_too_large", "Image decoded size exceeds 4MB.");
-                }
-
-                totalDecodedBytes += decodedBytes;
-                if (totalDecodedBytes > MaxTotalImagesBytes)
-                {
-                    return BoundedError(413, "image_too_large", "Total images decoded size exceeds 20MB.");
-                }
-            }
+            return imageError;
         }
 
         var sessionIdRaw = request.SessionId?.Trim() ?? string.Empty;

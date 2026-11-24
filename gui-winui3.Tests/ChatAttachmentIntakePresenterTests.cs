@@ -19,7 +19,8 @@ public sealed class ChatAttachmentIntakePresenterTests
     [InlineData("large.pdf", 16777217, 0, false, "too_large")]
     [InlineData("photo.png", 104857600, 0, true, null)]
     [InlineData("photo.png", 104857601, 0, false, "too_large")]
-    [InlineData("large.png", 100, 4, false, "image_limit")]
+    [InlineData("large.png", 100, 9, true, null)]
+    [InlineData("large.png", 100, 10, false, "image_limit")]
     public void Intake_classifies_type_size_and_image_count(
         string fileName,
         long size,
@@ -47,7 +48,8 @@ public sealed class ChatAttachmentIntakePresenterTests
     [Fact]
     public void A_restored_turn_over_the_image_cap_is_rejected_before_submission()
     {
-        Assert.Null(ChatAttachmentIntakePresenter.TurnAdmissionStatus(4));
-        Assert.Equal(ChatAttachmentPolicy.TooManyImagesStatus, ChatAttachmentIntakePresenter.TurnAdmissionStatus(5));
+        Assert.Null(ChatAttachmentIntakePresenter.TurnAdmissionStatus(ChatAttachmentPolicy.MaxImageCount));
+        Assert.Equal(ChatAttachmentPolicy.TooManyImagesStatus,
+            ChatAttachmentIntakePresenter.TurnAdmissionStatus(ChatAttachmentPolicy.MaxImageCount + 1));
     }
 }

@@ -163,7 +163,7 @@ public sealed partial class AgentRunCoordinator
         {
             var steers = await _steerInbox.DeliverAsync(runId, _time.UtcNow, cancellationToken).ConfigureAwait(false);
             foreach (var steer in steers)
-                AgentActivityProjector.PublishSafe(_activitySink, runId, AgentActivityProjector.ProjectSteer(steer.SteerId, steer.Text));
+                AgentActivityProjector.PublishSafe(_activitySink, runId, AgentActivityProjector.ProjectSteer(steer.SteerId, steer.DeliveredText));
         }
         var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
         if (run.State != HarnessRunState.Running)

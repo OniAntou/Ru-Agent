@@ -20,7 +20,8 @@ projection does not replay earlier image bytes.
 
 - A run whose pinned model accepts image input loads its own attachments first,
   then the most recent visible earlier user-turn images, newest turn first,
-  until the request reaches four images or 20 MiB of decoded image data — the
+  until the request reaches its image bound (ten for a hosted provider, four for a local one,
+  ADR 0056) or 16 MiB of decoded image data — the
   same bounds the create-run path already enforces. Current-run attachments are
   never displaced.
 - Only images whose user message is still visible in the conversation are

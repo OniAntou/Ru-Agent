@@ -144,7 +144,7 @@ public sealed partial class TuiTranscript
     /// <summary>
     /// The user's steer, at the point the model received it, written as the user's own
     /// message: the same <c>❯</c> rows and user style as a prompt the user sent, because it
-    /// is one, not a row of the model's work.
+    /// is one, not a row of the model's work. Files it carried show as <c>[file n: name]</c>.
     /// </summary>
     private void WriteSteer(string? detail)
     {
@@ -155,9 +155,15 @@ public sealed partial class TuiTranscript
             _atLineStart = true;
         }
 
-        // Line by line like a sent prompt's echo; each line is sanitized as untrusted text.
-        var lines = detail.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n')
-            .Select(TuiText.SanitizeUntrusted).ToArray();
+        // Line by line like a sent prompt's echo, each file and image as one label instead of
+        // its inlined text or the Host's image note; each line is sanitized as untrusted text.
+        var (written, imageCount) = AgentSteerText.Split(detail);
+        var (typed, labels) = ChatPromptEcho.SplitStored(written);
+        var typedLines = typed.Length == 0
+            ? Array.Empty<string>()
+            : typed.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
+        var imageLabels = Enumerable.Range(1, imageCount).Select(index => $"[image {index}]");
+        var lines = typedLines.Concat(labels).Concat(imageLabels).Select(TuiText.SanitizeUntrusted).ToArray();
         if (_surface.Presentation is not null)
         {
             var rows = new List<TranscriptLine> { TranscriptLine.Plain(string.Empty, TranscriptRole.User) };

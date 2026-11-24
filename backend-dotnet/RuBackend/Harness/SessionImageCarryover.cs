@@ -7,8 +7,12 @@ using RuBackend.Business.Sessions;
 
 namespace RuBackend.Harness;
 
-/// <summary>Images a model step sends: the run's own attachments and earlier conversation images.</summary>
-public sealed record RunImageSet(IReadOnlyList<string> CurrentRun, IReadOnlyList<string> Earlier);
+/// <summary>
+/// Images a model step sends: the run's own attachments and earlier conversation images.
+/// <see cref="OmittedCurrentRun"/> counts the run's own older images left out so the request
+/// stays within its image bound.
+/// </summary>
+public sealed record RunImageSet(IReadOnlyList<string> CurrentRun, IReadOnlyList<string> Earlier, int OmittedCurrentRun = 0);
 
 /// <summary>
 /// Re-attaches recent earlier conversation images to a run so a follow-up turn can still
@@ -17,7 +21,7 @@ public sealed record RunImageSet(IReadOnlyList<string> CurrentRun, IReadOnlyList
 /// receipt fact.
 /// </summary>
 /// <remarks>
-/// Bounded on purpose: at most four images per request (the same request bound as a
+/// Bounded on purpose: at most <see cref="MaxImagesPerRequest"/> images per request (the same request bound as a
 /// normal turn), at most 20 MiB decoded in total, only for a run whose pinned model
 /// accepts image input, and only images whose user message is still visible in the
 /// session (rewind, pruning and fork prefixes are respected). The current run's own
@@ -27,7 +31,7 @@ public sealed record RunImageSet(IReadOnlyList<string> CurrentRun, IReadOnlyList
 /// </remarks>
 public sealed class SessionImageCarryover
 {
-    public const int MaxImagesPerRequest = 4;
+    public const int MaxImagesPerRequest = RuAgent.Protocol.Harness.AgentRunLimits.MaxImages;
     public const long MaxTotalImageBytes = RuAgent.Protocol.Harness.AgentRunLimits.MaxTotalImageBytes;
 
     private readonly HarnessPayloadStore _payloads;
@@ -52,10 +56,11 @@ public sealed class SessionImageCarryover
 
     public async Task<RunImageSet> LoadAsync(RunId runId, CancellationToken cancellationToken)
     {
-        var current = await ReadRunImagesAsync(runId, cancellationToken).ConfigureAwait(false);
-        if (current.Count >= MaxImagesPerRequest)
+        var (current, omitted) = NewestWithinBound(
+            await ReadRunImagesAsync(runId, cancellationToken).ConfigureAwait(false));
+        if (current.Count >= MaxImagesPerRequest || omitted > 0)
         {
-            return new RunImageSet(current, Array.Empty<string>());
+            return new RunImageSet(current, Array.Empty<string>(), omitted);
         }
 
         try
@@ -74,6 +79,39 @@ public sealed class SessionImageCarryover
             _logger?.LogWarning(error, "earlier session image carry-over skipped");
             return new RunImageSet(current, Array.Empty<string>());
         }
+    }
+
+    /// <summary>
+    /// The run's own images that one request carries. A run's first message and each steer
+    /// may bring their own images, so a run can hold more than one request may carry: the
+    /// newest are kept, in their order, within the count and decoded-byte bounds, and the
+    /// rest are counted instead of failing the step.
+    /// </summary>
+    internal static (IReadOnlyList<string> Kept, int Omitted) NewestWithinBound(
+        IReadOnlyList<string> images, int maxImages = MaxImagesPerRequest)
+    {
+        var kept = new List<string>();
+        long totalBytes = 0;
+        for (var index = images.Count - 1; index >= 0 && kept.Count < maxImages; index--)
+        {
+            var decoded = DecodedBytes(images[index]);
+            if (totalBytes + decoded > MaxTotalImageBytes) break;
+            kept.Add(images[index]);
+            totalBytes += decoded;
+        }
+
+        kept.Reverse();
+        return (kept, images.Count - kept.Count);
+    }
+
+    /// <summary>The prompt note saying older images of this run are no longer attached.</summary>
+    public static string AppendOmittedImageNotice(string prompt, int omittedCount, int perRequest = MaxImagesPerRequest)
+    {
+        if (omittedCount <= 0) return prompt;
+        var noun = omittedCount == 1 ? "image" : "images";
+        var note = $"[{omittedCount} older {noun} of this run are no longer attached; only the most recent "
+            + $"{perRequest} images are sent with each request.]";
+        return string.IsNullOrWhiteSpace(prompt) ? note : note + "\n\n" + prompt;
     }
 
     /// <summary>

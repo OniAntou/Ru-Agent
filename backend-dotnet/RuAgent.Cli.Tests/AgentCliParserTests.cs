@@ -45,14 +45,13 @@ public sealed class AgentCliParserTests
     }
 
     [Fact]
-    public void ParseRun_RejectsMoreThanFourImages()
+    public void ParseRun_RejectsMoreImagesThanOneMessageCarries()
     {
-        var args = new[]
-        {
-            "agent", "run", "--workspace", ValidWorkspace,
-            "--image", "1.png", "--image", "2.png", "--image", "3.png", "--image", "4.png", "--image", "5.png",
-            "go",
-        };
+        var args = new[] { "agent", "run", "--workspace", ValidWorkspace }
+            .Concat(Enumerable.Range(1, RuAgent.Protocol.Harness.AgentRunLimits.MaxImages + 1)
+                .SelectMany(index => new[] { "--image", $"{index}.png" }))
+            .Append("go")
+            .ToArray();
         var res = AgentCliParser.Parse(args);
 
         Assert.False(res.Success);

@@ -47,14 +47,19 @@ internal static class TranscriptSteerSplitter
             }
 
             part = new List<AssistantSegment>();
-            shown.Add(new ChatMessageItem
+            var (written, imageCount) = RuAgent.Protocol.Harness.AgentSteerText.Split(steer.Item.SteerText);
+            var said = new ChatMessageItem
             {
                 Role = "user",
-                Content = steer.Item.SteerText,
+                Content = written,
                 SessionId = message.SessionId,
                 SourceRunId = message.SourceRunId,
                 Attachments = new ObservableCollection<ImageAttachmentItem>(),
-            });
+                MissingImageCount = imageCount,
+            };
+            // Files the steer carried show as chips and its images as a count, as on a reopened turn.
+            AttachedPromptDisplay.Apply(said);
+            shown.Add(said);
         }
 
         // The reply after the last steer keeps the original instance, even when it is still

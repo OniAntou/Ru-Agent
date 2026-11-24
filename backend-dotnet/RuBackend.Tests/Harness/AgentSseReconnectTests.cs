@@ -11,7 +11,7 @@ using RuBackend.Harness;
 
 namespace RuBackend.Tests.Harness;
 
-public sealed class AgentSseReconnectTests
+public sealed partial class AgentSseReconnectTests
 {
     [Fact]
     public async Task Live_feed_closes_after_its_run_is_deleted()

@@ -318,7 +318,7 @@ public static partial class AgentV1Endpoints
 
         context.Response.ContentType = "text/event-stream";
 
-        // Streaming durable events without materializing
+        // Durable cursors stay independent of bounded output batches and transient IDs.
         long lastSent = effectiveAfter;
         long localTransientSeq = 0;
         var summaryWritten = false;
@@ -350,59 +350,68 @@ public static partial class AgentV1Endpoints
         // A resumed connection replays the usage at or before its cursor so its totals match the run's durable usage.
         async Task SeedUsageTotalsAsync(long cursor)
         {
-            await foreach (var envelope in store.ReadEventsAsync(runIdObj, 0, ct))
+            long scanned = 0;
+            var through = Math.Min(cursor, run.LastSequence);
+            while (scanned < through)
             {
-                if (envelope.Event.Sequence > cursor)
+                var batch = await HarnessEventReplayBatch.ReadAsync(store, runIdObj, scanned, through, ct);
+                if (batch.Count == 0) break;
+                foreach (var envelope in batch)
                 {
-                    break;
+                    await TrackUsageAsync(envelope.Event);
+                    scanned = envelope.Event.Sequence;
                 }
-
-                await TrackUsageAsync(envelope.Event);
             }
         }
 
-        // Helper to stream available durables
-        async Task<bool> StreamDurablesAsync()
+        async Task StreamDurablesAsync()
         {
-            var any = false;
-            await foreach (var envelope in store.ReadEventsAsync(runIdObj, lastSent, ct))
+            var through = run.LastSequence;
+            while (lastSent < through)
             {
-                any = true;
-                // Prompt receipts and provider continuations are durable host-internal evidence. Advance the
-                // durable cursor without mapping or exposing their payload reference;
-                // reconnecting clients must not replay the suppressed event.
-                if (envelope.Event.Kind is "model.prompt_composed" or "model.provider_continuation_recorded")
+                // The reader is disposed before enrichment or any network await.
+                var batch = await HarnessEventReplayBatch.ReadAsync(store, runIdObj, lastSent, through, ct);
+                if (batch.Count == 0) break;
+                foreach (var envelope in batch)
                 {
-                    lastSent = envelope.Event.Sequence;
-                    continue;
+                    var evt = envelope.Event;
+                    if (evt.Kind is "model.prompt_composed" or "model.provider_continuation_recorded")
+                    {
+                        lastSent = evt.Sequence;
+                        continue;
+                    }
+                    await TrackUsageAsync(evt);
+                    var safe = HarnessEventMapper.ToSafeEnvelope(evt, run);
+                    var (usedInput, usedOutput, usedTotal) = usageTracker.Snapshot();
+                    if (usedInput is not null || usedOutput is not null || usedTotal is not null)
+                        safe = safe with { InputTokens = usedInput, OutputTokens = usedOutput, TotalTokens = usedTotal };
+                    var urgent = evt.Kind is "approval.requested" or "input.requested" or "run.state_changed" or "run.failed";
+                    // The writer validates and serializes once. Suppressed frames still
+                    // advance this connection's scan cursor without exposing their data.
+                    await HarnessSseWriter.WriteDurableAsync(context.Response, safe, ct, flush: urgent);
+                    lastSent = evt.Sequence;
                 }
-
-                // Cumulative usage enrich: resolve ModelUsage payloads once per
-                // request and attach running totals to following envelopes.
-                await TrackUsageAsync(envelope.Event);
-
-                var safe = HarnessEventMapper.ToSafeEnvelope(envelope.Event, run);
-                var (usedInput, usedOutput, usedTotal) = usageTracker.Snapshot();
-                if (usedInput is not null || usedOutput is not null || usedTotal is not null)
-                {
-                    safe = safe with { InputTokens = usedInput, OutputTokens = usedOutput, TotalTokens = usedTotal };
-                }
-
-                // Verify safe envelope not containing forbidden fields
-                var json = JsonSerializer.Serialize(safe);
-                if (HarnessEventContractValidator.ContainsForbiddenField(json))
-                {
-                    // Should never happen, but drop
-                    continue;
-                }
-
-                await HarnessSseWriter.WriteDurableAsync(context.Response, safe, ct);
-                lastSent = envelope.Event.Sequence;
-                // Update run snapshot if state changed? Refresh run after each event maybe
-                // For simplicity keep original run for status, but lastSent advances.
+                await HarnessSseWriter.FlushAsync(context.Response, ct);
             }
+        }
 
-            return any;
+        const int transientBatchSize = 32;
+        async Task<int> StreamTransientsAsync(int maximum)
+        {
+            var sent = 0;
+            while (sent < maximum && hubLease is { } lease && lease.TryReadNext(out var frame))
+            {
+                ct.ThrowIfCancellationRequested();
+                localTransientSeq++;
+                if (frame.Kind == "agent.summary") summaryWritten = true;
+                var payload = new { kind = frame.Kind, data = frame.Data };
+                // Text-like deltas flush once per batch; every other frame flushes at once.
+                var urgent = frame.Kind is not ("assistant.delta" or "tool.output.delta" or "agent.reasoning_preview");
+                await HarnessSseWriter.WriteTransientAsync(context.Response, localTransientSeq, frame.Kind, payload, ct, flush: urgent);
+                sent++;
+            }
+            if (sent > 0) await HarnessSseWriter.FlushAsync(context.Response, ct);
+            return sent;
         }
 
         async Task WriteTerminalSummaryAsync(AgentRun terminalRun)
@@ -448,122 +457,111 @@ public static partial class AgentV1Endpoints
 
             await StreamDurablesAsync();
 
-        // If terminal, send final snapshot and close cleanly
-        if (isTerminal)
-        {
-            // Ensure we have sent up to LastSequence; if not, stream again
-            if (lastSent < run.LastSequence)
+            // If terminal, send final snapshot and close cleanly
+            if (isTerminal)
             {
-                await StreamDurablesAsync();
+                // Ensure we have sent up to LastSequence; if not, stream again
+                if (lastSent < run.LastSequence)
+                {
+                    await StreamDurablesAsync();
+                }
+
+                await WriteTerminalSummaryAsync(run);
+                await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
+                await HarnessSseWriter.FlushAsync(context.Response, ct);
+                return;
             }
 
-            await WriteTerminalSummaryAsync(run);
-            await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
-            await context.Response.Body.FlushAsync(ct);
-            return;
-        }
+            // Live tail: stream durables and this run's transient frames until the run
+            // reaches a terminal state, the client disconnects, or the server shuts down.
+            // `live=0` keeps the legacy snapshot-then-close behavior for replay/cursor checks.
+            var pollInterval = TimeSpan.FromMilliseconds(100);
+            // A run parked on a card changes only when a client answers it, and that POST
+            // signals the stream (HarnessLiveEventHub.NotifyRunChanged). The slower poll is
+            // the fallback for changes nothing signals, such as a deleted session.
+            var parkedPollInterval = TimeSpan.FromSeconds(1);
+            if (!live || isTerminal)
+            {
+                await HarnessSseWriter.FlushAsync(context.Response, ct);
+                return;
+            }
 
-        // Live tail: stream durables and this run's transient frames until the run
-        // reaches a terminal state, the client disconnects, or the server shuts down.
-        // `live=0` keeps the legacy snapshot-then-close behavior for replay/cursor checks.
-        var pollInterval = TimeSpan.FromMilliseconds(100);
-        // A run parked on a card changes only when a client answers it, and that POST
-        // signals the stream (HarnessLiveEventHub.NotifyRunChanged). The slower poll is
-        // the fallback for changes nothing signals, such as a deleted session.
-        var parkedPollInterval = TimeSpan.FromSeconds(1);
-        if (!live || isTerminal)
-        {
-            await context.Response.Body.FlushAsync(ct);
-            return;
-        }
-
-                while (!ct.IsCancellationRequested && !isTerminal)
+            var lastStoreCheck = System.Diagnostics.Stopwatch.GetTimestamp();
+            while (!ct.IsCancellationRequested && !isTerminal)
+            {
+                var changed = false;
+                var activityPending = false;
+                if (hubLease is { } lease)
                 {
-                    if (hubLease is { } changedLease)
+                    while (lease.ChangedReader.TryRead(out _)) changed = true;
+                    activityPending = lease.ActivityReader.TryPeek(out _);
+                }
+                var interval = IsParkedOnClient(run.State) ? parkedPollInterval : pollInterval;
+                var pollDue = System.Diagnostics.Stopwatch.GetElapsedTime(lastStoreCheck) >= interval;
+                // Text wakes only drain text. Activity boundaries and explicit run
+                // changes reload authority immediately; a fixed clock covers silent commits.
+                if (changed || activityPending || pollDue)
+                {
+                    var reloaded = await store.GetRunAsync(runIdObj, ct);
+                    if (reloaded is null)
                     {
-                        while (changedLease.ChangedReader.TryRead(out _)) { }
-                    }
-
-                    var reloadedRun = await store.GetRunAsync(runIdObj, ct);
-                    if (reloadedRun is null)
-                    {
-                        // Deletion removes the durable row. Close without fabricating a
-                        // terminal outcome; a reconnect/refresh receives run_not_found.
-                        await context.Response.Body.FlushAsync(ct);
+                        await HarnessSseWriter.FlushAsync(context.Response, ct);
                         return;
                     }
-                    if (reloadedRun is not null)
-                    {
-                        run = reloadedRun;
-                        isTerminal = run.State.IsTerminal();
-                    }
-
+                    run = reloaded;
+                    isTerminal = run.State.IsTerminal();
                     await StreamDurablesAsync();
-
-                    // Merge protected activity and delta queues in publication order.
-                    while (hubLease is { } activeLease && activeLease.TryReadNext(out var frame))
-                    {
-                        localTransientSeq++;
-                        if (frame.Kind == "agent.summary")
-                        {
-                            summaryWritten = true;
-                        }
-                        var payload = new { kind = frame.Kind, data = frame.Data };
-                        await HarnessSseWriter.WriteTransientAsync(context.Response, localTransientSeq, frame.Kind, payload, ct);
-                        // transient does not advance lastSent (durable cursor)
-                    }
-
-                    if (isTerminal)
-                    {
-                        break;
-                    }
-
-                    if (!ct.IsCancellationRequested && !isTerminal)
-                    {
-                        // Wait for the next transient frame, but never indefinitely: a
-                        // durable event can be committed while the run has nothing live to
-                        // publish (the approval request parks the run in WaitingApproval
-                        // right after the last activity frame), and the client must still
-                        // receive it. Bound the wait by the poll interval and re-check the
-                        // durable store when it elapses.
-                        if (hubLease is { } activeLease)
-                        {
-                            using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                            var parked = IsParkedOnClient(run.State);
-                            pollCts.CancelAfter(parked ? parkedPollInterval : pollInterval);
-                            try
-                            {
-                                var activityWait = activeLease.ActivityReader.WaitToReadAsync(pollCts.Token).AsTask();
-                                var deltaWait = activeLease.Reader.WaitToReadAsync(pollCts.Token).AsTask();
-                                var changedWait = parked
-                                    ? activeLease.ChangedReader.WaitToReadAsync(pollCts.Token).AsTask()
-                                    : Task.Delay(Timeout.Infinite, pollCts.Token);
-                                await Task.WhenAny(activityWait, deltaWait, changedWait).ConfigureAwait(false);
-                                // Release the waits that lost; a waiter left on a quiet
-                                // channel would otherwise stay queued until the stream ends.
-                                await pollCts.CancelAsync().ConfigureAwait(false);
-                            }
-                            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                            {
-                                // Poll interval elapsed with no live frame; loop to flush durables.
-                            }
-                        }
-                        else
-                        {
-                            await Task.Delay(pollInterval, ct);
-                        }
-                    }
+                    lastStoreCheck = System.Diagnostics.Stopwatch.GetTimestamp();
                 }
 
-                await StreamDurablesAsync();
                 if (isTerminal)
                 {
-                    await WriteTerminalSummaryAsync(run);
-                    await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
+                    // Drain a bounded snapshot of the backlog. A late producer must
+                    // not keep a completed run's stream open indefinitely.
+                    var queued = hubLease?.PendingCount ?? 0;
+                    while (queued > 0)
+                    {
+                        var drained = await StreamTransientsAsync(Math.Min(transientBatchSize, queued));
+                        if (drained == 0) break;
+                        queued -= drained;
+                    }
+                    break;
                 }
+                var sent = await StreamTransientsAsync(transientBatchSize);
+                if (sent == transientBatchSize) continue;
 
-                await context.Response.Body.FlushAsync(ct);
+                interval = IsParkedOnClient(run.State) ? parkedPollInterval : pollInterval;
+                var remaining = interval - System.Diagnostics.Stopwatch.GetElapsedTime(lastStoreCheck);
+                if (remaining <= TimeSpan.Zero) continue;
+                // Timer APIs truncate sub-millisecond delays; avoid spinning at
+                // the very end of an otherwise quiet polling interval.
+                var waitDuration = remaining < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : remaining;
+                if (hubLease is { } activeLease)
+                {
+                    using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    wait.CancelAfter(waitDuration);
+                    try
+                    {
+                        var activity = activeLease.ActivityReader.WaitToReadAsync(wait.Token).AsTask();
+                        var delta = activeLease.Reader.WaitToReadAsync(wait.Token).AsTask();
+                        var state = activeLease.ChangedReader.WaitToReadAsync(wait.Token).AsTask();
+                        await Task.WhenAny(activity, delta, state).ConfigureAwait(false);
+                        await wait.CancelAsync().ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+                }
+                else await Task.Delay(waitDuration, ct);
             }
+
+            await StreamDurablesAsync();
+            if (isTerminal)
+            {
+                await WriteTerminalSummaryAsync(run);
+                await HarnessSseWriter.WriteFinalSnapshotAsync(context.Response, AgentV1Service.MapRunState(run.Status), ct);
+            }
+
+            await HarnessSseWriter.FlushAsync(context.Response, ct);
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // client disconnected
@@ -581,7 +579,7 @@ public static partial class AgentV1Endpoints
                 .LogWarning(error, "agent event stream for run {RunId} closed after a server-side failure", runId);
             try
             {
-                await context.Response.Body.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+                await HarnessSseWriter.FlushAsync(context.Response, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(host)**: A run's event stream reads the store less and writes less. Durable events are
+  read in closed batches of 128 before any payload enrichment or network write, a text-only wake
+  no longer reloads the run, SSE frames are serialized once, and assistant text, tool output and
+  live reasoning previews are flushed per batch while approval, input and run-state frames
+  still flush at once. A finished run drains only the frames queued when it ended.
+
 - **perf(host)**: Reopening a long run decrypts only what its newest 500 activity rows need.
   The replay walks from the newest event back and stops once the tail is full and the latest
   checklist is found, keeping chronological order, interrupted tools, steers, full-reasoning

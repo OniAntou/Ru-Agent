@@ -211,6 +211,20 @@ remain outside durable history. WinUI keeps its cumulative reconnect retry
 bound, while CLI progress can refill its retry budget. Consumer callback errors
 propagate and are not retried as transport failures.
 
+Live text wakes drain the transient queue without reloading run state for every
+chunk. Activity boundaries and explicit run-change notifications trigger an
+immediate check. An independent monotonic clock retains the 100 ms active and
+one-second client-wait fallback, so continuous text cannot postpone a silent
+durable transition. The durable tail is queried only when the run watermark
+advances beyond the connection cursor.
+
+Replay and usage seeding read at most 128 events per batch and close the store
+iterator before payload enrichment or network writes. SSE frames are serialized
+once into the response pipe; transient drains use batches of at most 32 frames.
+Control/state boundaries and final snapshots flush promptly. A terminal run
+drains a bounded snapshot of its queued frames in publication order before
+closing, so a late producer cannot hold the stream open indefinitely.
+
 Protocol v1 durable envelopes expose optional `model_step_id`, copied from the
 stored event when present. It correlates per-request context usage with transient
 request estimates without comparing durable and connection-local transient cursors.

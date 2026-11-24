@@ -184,6 +184,11 @@ public sealed class HarnessLiveEventHub
         public ChannelReader<TransientFrame> ActivityReader { get; }
         public ChannelReader<bool> ChangedReader { get; }
 
+        internal int PendingCount
+        {
+            get { lock (_hub._publishGate) return Reader.Count + ActivityReader.Count; }
+        }
+
         // Separate capacities protect activity from delta bursts; delivery still
         // follows publication order, so an activity cannot cut earlier prose.
         public bool TryReadNext(out TransientFrame frame)

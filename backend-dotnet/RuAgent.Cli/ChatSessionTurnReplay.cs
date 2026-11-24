@@ -27,7 +27,8 @@ internal static class ChatSessionTurnReplay
 
     /// <returns>The turns, or null when the message page cannot be read (callers fall back to text).</returns>
     public static async Task<ImmutableArray<ChatReplayTurn>?> LoadAsync(
-        SessionApiClient sessions, AgentApiClient agents, string sessionId, CancellationToken cancellationToken)
+        SessionApiClient sessions, AgentApiClient agents, string sessionId, CancellationToken cancellationToken,
+        IReadOnlyList<GetAgentRunResponse>? knownRuns = null)
     {
         JsonElement page;
         try
@@ -39,6 +40,10 @@ internal static class ChatSessionTurnReplay
         catch (Exception) { return null; }
 
         var turns = Group(page);
+        // A live summary can finish while messages are loading. Only terminal
+        // snapshots are immutable enough to reuse for the detailed transcript.
+        var summaries = knownRuns?.Where(run => run.SessionId == sessionId && run.TerminalAt is not null)
+            .ToDictionary(run => run.RunId, StringComparer.Ordinal);
         var loaded = new ChatReplayTurn[turns.Count];
         using var gate = new SemaphoreSlim(MaximumConcurrentReads);
         await Task.WhenAll(turns.Select((turn, index) => LoadTurnAsync(index, turn))).ConfigureAwait(false);
@@ -51,7 +56,9 @@ internal static class ChatSessionTurnReplay
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var run = await agents.GetRunAsync(turn.RunId, cancellationToken).ConfigureAwait(false);
+                var run = summaries?.GetValueOrDefault(turn.RunId)
+                    ?? await agents.GetRunAsync(turn.RunId, cancellationToken).ConfigureAwait(false);
+                if (run.SessionId != sessionId) return;
                 AgentRunActivityReplay? activity = null;
                 if (run.TerminalAt is not null)
                     activity = await agents.ListRunActivityReplayAsync(turn.RunId, cancellationToken).ConfigureAwait(false);

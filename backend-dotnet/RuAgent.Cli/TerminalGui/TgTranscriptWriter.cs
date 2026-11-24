@@ -13,7 +13,8 @@ namespace RuAgent.Cli.TerminalGui;
 /// reports, diagnostics and existing callers; their ANSI parsing is outside that path.
 /// </summary>
 public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptView transcript,
-    Action<IReadOnlyList<AgentTodoWire>>? updateTodos = null) : TextWriter, ITranscriptLineWriter, ITranscriptStepRewriter,
+    Action<IReadOnlyList<AgentTodoWire>>? updateTodos = null, Action<Action>? dispatcher = null) : TextWriter,
+    ITranscriptLineWriter, ITranscriptStepRewriter,
     ITranscriptTurnRewriter, ITranscriptActivityWriter, ITranscriptPresentationWriter, ITranscriptToolResultFilter, ITranscriptTodoWriter
 {
     private readonly StringBuilder _pending = new();
@@ -26,10 +27,17 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
     private long _turnRetentionVersion;
     private readonly BoundedInsertionMap<string, (int Row, long Version)> _toolRows = new(64, StringComparer.Ordinal);
 
+    private void Dispatch(Action action)
+    {
+        // Replay may collect these callbacks, then apply them together in order on the UI thread.
+        if (dispatcher is not null) dispatcher(action);
+        else app.Invoke(action);
+    }
+
     bool ITranscriptTodoWriter.TryWriteTodos(IReadOnlyList<AgentTodoWire> todos)
     {
         if (updateTodos is null) return false;
-        try { app.Invoke(() => updateTodos(todos)); }
+        try { Dispatch(() => updateTodos(todos)); }
         catch (NotInitializedException) { }
         return true;
     }
@@ -39,7 +47,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         var clean = TuiText.SanitizeUntrusted(text);
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 transcript.ClearLive();
                 transcript.Append(clean, TranscriptStyle.Tool);
@@ -54,7 +62,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         var clean = TuiText.SanitizeUntrusted(text);
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 if (_toolRows.TryGetValue(activityId, out var mark) && mark.Version == transcript.RetentionVersion)
                     transcript.ReplaceToolRow(mark.Row, clean);
@@ -67,7 +75,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
     {
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 _turnMark = transcript.CommittedRowCount;
                 _turnRetentionVersion = transcript.RetentionVersion;
@@ -94,7 +102,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 if (completion.Task.IsCompleted) return;
                 if (_turnMark < 0 || _turnMark > transcript.CommittedRowCount
@@ -131,7 +139,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         _assistantStepId = modelStepId;
         try
         {
-            app.Invoke(() => _assistantStepMark = transcript.CommittedRowCount);
+            Dispatch(() => _assistantStepMark = transcript.CommittedRowCount);
         }
         catch (NotInitializedException)
         {
@@ -156,7 +164,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         _rowOpen = false;
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 // Invoke queues worker-thread calls. Read the mark here, after
                 // BeginAssistantStep has executed, rather than before that queued
@@ -175,7 +183,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
     public void RetainDetails(IReadOnlyList<string> rows)
     {
         var clean = rows.Select(TuiText.SanitizeUntrusted).ToArray();
-        try { app.Invoke(() => transcript.SetCollapsedDetails(clean, TranscriptStyle.Meta)); }
+        try { Dispatch(() => transcript.SetCollapsedDetails(clean, TranscriptStyle.Meta)); }
         catch (NotInitializedException) { }
     }
 
@@ -190,7 +198,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         var (clean, spans) = text is null ? (null, (IReadOnlyList<TgSpan>?)null) : TgAnsiPaint.Parse(text);
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 var style = Classify(clean ?? string.Empty);
                 if (style == TranscriptStyle.Tool)
@@ -331,7 +339,7 @@ public sealed partial class TgTranscriptWriter(IApplication app, TgTranscriptVie
         // plain rows both arrive with null spans and keep their old single-attribute path.
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 if (style == TranscriptStyle.Tool)
                 {

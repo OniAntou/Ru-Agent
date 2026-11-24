@@ -89,6 +89,7 @@ public sealed partial class AgentCommands
                     try { await sessionLoad.ConfigureAwait(false); }
                     catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
                 }
+                await StopSessionEnrichmentAsync().ConfigureAwait(false);
                 loop.SetViewActive(null);
                 submissions.ClearPending();
                 stopTerminalGui = null;

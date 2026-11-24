@@ -474,6 +474,22 @@ The WinUI 3 desktop client connects to the shared local Public Host via loopback
 
 ## Session and history lifecycle
 
+The native terminal opens saved sessions in two phases. It first applies recent
+message text, resolves workspace/permission/model selection and classifies any
+retained run from one shared run-summary list. Completed list entries do not
+need individual status reads. Potentially active entries are revalidated before
+adoption. Detailed history, retained todos, catalog metadata and context usage
+then load independently of prompt readiness. Only immutable terminal summaries
+are reused by detailed replay; a live entry may have finished since listing.
+
+Optional reads belong to the opening session generation and are invalidated
+before an accepted submission, queued submission execution or session change.
+Native replay is staged offscreen and committed as one guarded UI batch; saved
+usage is staged in a separate tracker. Late results cannot clear a new prompt
+or rebind live context to an older run. Optional I/O has a 30-second deadline
+and drains for at most two seconds on native shutdown. Line/JSON loading remains
+sequential, with execution authority and retained-run continuation unchanged.
+
 Conversation history is retained as indexed message rows; GUI and CLI read bounded
 pages with absolute indices. Rewind invalidates older history cursors, while append
 preserves older-page navigation. The initial display window is not a retention

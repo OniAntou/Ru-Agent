@@ -43,7 +43,7 @@ public sealed partial class TgTranscriptWriter
         var native = rows.SelectMany(ParagraphRows).ToArray();
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 var unchanged = 0;
                 while (unchanged < Math.Min(_projectedNative.Length, native.Length)
@@ -63,7 +63,7 @@ public sealed partial class TgTranscriptWriter
     public void AppendPresentation(TranscriptLine row)
     {
         var native = NativeRow(row);
-        try { app.Invoke(() =>
+        try { Dispatch(() =>
         {
             if (row.Role == TranscriptRole.Tool) transcript.ClearLive();
             transcript.Append(native.Text, native.Style, native.Spans);
@@ -76,7 +76,7 @@ public sealed partial class TgTranscriptWriter
         var native = NativeRow(row);
         var append = _rowOpen;
         _rowOpen = true;
-        try { app.Invoke(() =>
+        try { Dispatch(() =>
         {
             if (append) transcript.AppendChunk(native.Text, native.Spans);
             else transcript.Append(native.Text, native.Style, native.Spans);
@@ -90,7 +90,7 @@ public sealed partial class TgTranscriptWriter
         var hidden = details?.Select(TuiText.SanitizeUntrusted).ToArray();
         try
         {
-            app.Invoke(() =>
+            Dispatch(() =>
             {
                 transcript.ClearLive();
                 if (hidden is { Length: > 0 }) transcript.AppendCollapsed(native.Text, hidden, native.Style, native.Spans);
@@ -105,7 +105,7 @@ public sealed partial class TgTranscriptWriter
     {
         var native = NativeRow(row);
         var hidden = details?.Select(TuiText.SanitizeUntrusted).ToArray();
-        try { app.Invoke(() =>
+        try { Dispatch(() =>
         {
             if (_toolRows.TryGetValue(activityId, out var mark) && mark.Version == transcript.RetentionVersion)
                 transcript.ReplaceToolRow(mark.Row, native, hidden);
@@ -118,7 +118,7 @@ public sealed partial class TgTranscriptWriter
 
     public void RemoveActivityPresentation(string activityId)
     {
-        try { app.Invoke(() =>
+        try { Dispatch(() =>
         {
             if (!_toolRows.TryGetValue(activityId, out var mark)
                 || mark.Version != transcript.RetentionVersion || !transcript.RemoveToolRow(mark.Row)) return;

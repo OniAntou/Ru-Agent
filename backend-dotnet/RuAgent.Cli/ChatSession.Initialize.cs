@@ -51,6 +51,8 @@ public sealed partial class AgentCommands
         private async Task LoadInitialSessionAsync()
         {
             var reopening = !string.IsNullOrWhiteSpace(cmd.SessionId);
+            var openingGeneration = tgMode && reopening ? CancelSessionEnrichment() : 0;
+            ChatSessionReplayResult? nativeReplay = null;
             if (!tgMode || !reopening)
                 await RefreshModelSelectionAsync().ConfigureAwait(false);
 
@@ -67,7 +69,12 @@ public sealed partial class AgentCommands
                 }
                 if (replay.Messages.Length > 0)
                 {
-                    await RenderSessionHistoryAsync(sessionId, replay, cancellationToken).ConfigureAwait(false);
+                    if (tgMode)
+                    {
+                        RenderSessionReplay(sessionId, replay);
+                        nativeReplay = replay;
+                    }
+                    else await RenderSessionHistoryAsync(sessionId, replay, cancellationToken).ConfigureAwait(false);
                 }
                 else if (replay.Error is not null)
                 {
@@ -77,7 +84,7 @@ public sealed partial class AgentCommands
             }
 
             if (tgMode && reopening)
-                await RefreshModelSelectionAsync().ConfigureAwait(false);
+                await RefreshModelSelectionAsync(refreshUsage: false).ConfigureAwait(false);
 
             if (modelWarning is not null)
             {
@@ -109,13 +116,19 @@ public sealed partial class AgentCommands
                 }
             }
 
-            await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
-
-            if (reopening)
+            if (tgMode && reopening)
             {
+                var runs = await ReadSessionSummariesAsync(sessionId).ConfigureAwait(false);
+                var retained = await AdoptSessionRunAsync(sessionId, runs).ConfigureAwait(false);
+                StartSessionEnrichment(sessionId, nativeReplay ?? new ChatSessionReplayResult([], 0, 0, null, null),
+                    runs, retained, openingGeneration);
+            }
+            else
+            {
+                await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
                 // Only an explicit --session reopens someone else's session; a fresh session
                 // has no run to adopt and must not spend the round trip.
-                await AdoptSessionRunAsync(sessionId).ConfigureAwait(false);
+                if (reopening) await AdoptSessionRunAsync(sessionId).ConfigureAwait(false);
             }
         }
 

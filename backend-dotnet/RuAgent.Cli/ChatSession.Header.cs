@@ -37,7 +37,7 @@ public sealed partial class AgentCommands
                 isRetainedRun ? retainedModel : activeModel,
                 isRetainedRun, retainedContextWindow, retainedProtocol), tgMode, ct);
 
-        async Task ShowRetainedRunProviderAsync(GetAgentRunResponse run)
+        async Task ShowRetainedRunProviderAsync(GetAgentRunResponse run, bool deferUsage = false)
         {
             if (!tgMode)
             {
@@ -60,7 +60,7 @@ public sealed partial class AgentCommands
                 // Retained run summaries do not expose their pinned reasoning level.
                 tgWindow.Composer.SetReasoningEffort(null);
             });
-            await RefreshModelUsageInfoAsync(
+            if (!deferUsage) await RefreshModelUsageInfoAsync(
                 cancellationToken,
                 run.ProviderBackend,
                 run.ProviderModel,
@@ -137,7 +137,7 @@ public sealed partial class AgentCommands
             }
         }
 
-        async Task RefreshModelSelectionAsync()
+        async Task RefreshModelSelectionAsync(bool refreshUsage = true)
         {
             try
             {
@@ -169,7 +169,7 @@ public sealed partial class AgentCommands
                     activeModel = curModel;
                 }
 
-                if (backendChanged || modelChanged)
+                if (refreshUsage && (backendChanged || modelChanged))
                 {
                     await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
                 }

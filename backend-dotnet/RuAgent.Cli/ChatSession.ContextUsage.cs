@@ -171,7 +171,7 @@ public sealed partial class AgentCommands
             if (usage.ObserveEstimate(estimate)) PaintContextUsage();
         }
 
-        private void PaintContextUsage()
+        private void PaintContextUsage(Func<bool>? canApply = null)
         {
             if (!tgMode) return;
             var reading = usage.ContextTokens;
@@ -183,7 +183,10 @@ public sealed partial class AgentCommands
                 : baseline is { } fixedPrompt && limit is > 0 ? Math.Clamp(100d * fixedPrompt / limit.Value, 0, 999) : null;
             var cost = usage.CostKnown ? (decimal?)usage.SessionCost : null;
             var estimated = usage.ContextIsEstimated || baseline is not null;
-            RunOnTgUi(() => tgWindow!.Header.UpdateUsage(tokens, percent, cost, estimated));
+            RunOnTgUi(() =>
+            {
+                if (canApply?.Invoke() != false) tgWindow!.Header.UpdateUsage(tokens, percent, cost, estimated);
+            });
         }
 
         /// <summary>Runs read back when a session is opened; the newest report wins.</summary>
@@ -199,30 +202,29 @@ public sealed partial class AgentCommands
         /// Best effort: a failure leaves the meter to the next run's frames rather than
         /// inventing a number.
         /// </remarks>
-        private async Task RestoreSessionUsageAsync(string targetSessionId, CancellationToken ct)
+        private async Task RestoreSessionUsageAsync(string targetSessionId,
+            IReadOnlyList<GetAgentRunResponse> runs, TuiUsageTracker targetUsage, CancellationToken ct)
         {
             if (!tgMode) return;
             try
             {
-                var runIds = await _agentClient.ListSessionRunIdsAsync(targetSessionId, ct).ConfigureAwait(false);
                 var scanned = 0;
-                for (var index = runIds.Count - 1; index >= 0 && scanned < SessionUsageRunScan; index--, scanned++)
+                for (var index = runs.Count - 1; index >= 0 && scanned < SessionUsageRunScan; index--, scanned++)
                 {
-                    var runId = runIds[index];
+                    var run = runs[index];
+                    if (run.SessionId != targetSessionId) continue;
+                    var runId = run.RunId;
                     var lines = await _agentClient.ListRunEventLinesAsync(runId, ct).ConfigureAwait(false);
                     if (SessionUsageReplayPolicy.FindLatestUsageReport(lines) is not { } report) continue;
                     var payload = await _agentClient.GetPayloadContentAsync(runId, report.PayloadRef, ct).ConfigureAwait(false);
                     if (payload.Kind != "modelusage" || payload.Encoding != "json") continue;
-                    var run = await _agentClient.GetRunAsync(runId, ct).ConfigureAwait(false);
-                    if (run.SessionId != targetSessionId) continue;
                     ProviderPromptTokens.TryRead(payload.Content, run.ProviderProtocol, out var prompt, out var breakdown);
-                    usage.UseRoute(run.ProviderProtocol, run.ProviderModel);
-                    usage.ProviderProtocol = run.ProviderProtocol;
-                    usage.ContextLimit = run.ProviderProtocol is "chat_completions" or "openai_responses" or "anthropic_messages"
+                    targetUsage.UseRoute(run.ProviderProtocol, run.ProviderModel);
+                    targetUsage.ProviderProtocol = run.ProviderProtocol;
+                    targetUsage.ContextLimit = run.ProviderProtocol is "chat_completions" or "openai_responses" or "anthropic_messages"
                         ? run.ContextWindowTokens : null;
-                    usage.BindRun(runId);
-                    usage.ObserveUsage(report.Sequence, report.ModelStepId, prompt, breakdown);
-                    PaintContextUsage();
+                    targetUsage.BindRun(runId);
+                    targetUsage.ObserveUsage(report.Sequence, report.ModelStepId, prompt, breakdown);
                     return;
                 }
             }

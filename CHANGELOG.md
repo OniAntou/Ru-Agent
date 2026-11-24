@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(tui)**: Opening or switching to a saved session reuses the session's run summaries
+  instead of reading every completed run again. The prompt is accepted once the workspace,
+  permission, model and active run are known; history, todos and usage load in the background
+  and are dropped if a new prompt or another session takes over first.
+
 - **fix(host)**: Session run lists return the same pinned provider, model, protocol and
   context-window fields as a single run read, loaded in one bounded batch, so a client restoring
   a saved session reads the saved run's model without fetching every run. Credential accounts,

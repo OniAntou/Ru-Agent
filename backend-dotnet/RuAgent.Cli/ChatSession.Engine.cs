@@ -24,6 +24,7 @@ public sealed partial class AgentCommands
             loop.SetSubmissionOwnershipHandlers(
                 snapshot =>
                 {
+                    CancelSessionEnrichment();
                     submissions.Admit(snapshot);
                     RefreshAttachmentLabels();
                 },
@@ -39,6 +40,7 @@ public sealed partial class AgentCommands
             if (tgMode) loop.SetLocalCommandClassifier(IsLocalInputCommand);
             loop.SetSubmissionHandler(async (submission, ct) =>
             {
+                CancelSessionEnrichment();
                 if (submission.Prompt.TrimStart().StartsWith('/'))
                 {
                     await HandleSlashLineWithDocumentAsync(submission.Prompt, ct).ConfigureAwait(false);

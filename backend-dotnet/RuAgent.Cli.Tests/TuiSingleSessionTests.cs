@@ -217,7 +217,6 @@ public sealed partial class TuiSingleSessionTests
         internal readonly TaskCompletionSource AllowFirstPolicy = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly ConcurrentDictionary<string, string> AdmittedModels = new();
         internal readonly ConcurrentDictionary<string, string> Workspaces = new();
-        private string? _externalRun;
         internal readonly ConcurrentDictionary<string, string> Streams = new();
         internal readonly ConcurrentDictionary<string, string> Prompts = new();
         internal readonly ConcurrentDictionary<string, string> Cancels = new();
@@ -239,11 +238,12 @@ public sealed partial class TuiSingleSessionTests
             _runSessions[run] = session;
             _completed[run] = true;
         }
-        internal void SeedExternalRun()
+        internal string SeedExternalRun(string session = "session_1")
         {
-            _externalRun = "run_" + Guid.NewGuid().ToString("N");
-            _runSessions[_externalRun] = "session_1";
-            _release[_externalRun] = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var run = "run_" + Guid.NewGuid().ToString("N");
+            _runSessions[run] = session;
+            _release[run] = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            return run;
         }
         internal static HttpResponseMessage Json(object body, HttpStatusCode status = HttpStatusCode.OK) => new(status)
         { Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json") };
@@ -279,7 +279,12 @@ public sealed partial class TuiSingleSessionTests
                 return Json(new { status = "ok", session_id = id });
             }
             if (path.StartsWith("/agent/v1/sessions/", StringComparison.Ordinal) && path.EndsWith("/runs", StringComparison.Ordinal))
-                return Json(new { items = _externalRun is null ? Array.Empty<object>() : [new { run_id = _externalRun }] });
+            {
+                var session = path.Split('/')[4];
+                return Json(new { items = _runSessions.Where(pair => pair.Value == session)
+                    .OrderByDescending(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => RunSummary(pair.Key, pair.Value)).ToArray() });
+            }
             if (path == "/agent/v1/policies")
             {
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
@@ -308,6 +313,9 @@ public sealed partial class TuiSingleSessionTests
             if (path.EndsWith("/events"))
             {
                 var run = path.Split('/')[4];
+                if (request.RequestUri.Query.Contains("live=0", StringComparison.Ordinal) || _completed.ContainsKey(run))
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new StringContent(string.Empty, Encoding.UTF8, "text/event-stream") };
                 Streams[_runSessions[run]] = run;
                 await _release[run].Task.WaitAsync(ct);
                 var frame = JsonSerializer.Serialize(new { protocol_version = 1, event_id = "evt_" + Guid.NewGuid().ToString("N"),
@@ -333,14 +341,21 @@ public sealed partial class TuiSingleSessionTests
             if (_runSessions.TryGetValue(path.Split('/').Last(), out var owner))
             {
                 var run = path.Split('/').Last();
-                var done = _completed.ContainsKey(run);
-                return Json(new { run_id = run, session_id = owner, workspace_id = "ws_" + new string('a', 32),
-                    status = done ? "completed" : "running", preset = owner == "session_2" ? SavedPreset ?? "standard" : "standard", version = 1, last_sequence = done ? 1 : 0,
-                    policy_snapshot_version = 1, policy_snapshot_sha256 = new string('a', 64),
-                    created_at = "2026-10-30T00:00:00Z", updated_at = "2026-10-30T00:00:01Z",
-                    terminal_at = done ? "2026-10-30T00:00:01Z" : null });
+                return Json(RunSummary(run, owner));
             }
             return Json(new { status = "ok", items = Array.Empty<object>(), providers = Array.Empty<object>(), models = Array.Empty<object>() });
+        }
+
+        private object RunSummary(string run, string owner)
+        {
+            var done = _completed.ContainsKey(run);
+            return new { run_id = run, session_id = owner, workspace_id = "ws_" + new string('a', 32),
+                status = done ? "completed" : "running", preset = owner == "session_2" ? SavedPreset ?? "standard" : "standard", version = 1, last_sequence = done ? 1 : 0,
+                policy_snapshot_version = 1, policy_snapshot_sha256 = new string('a', 64),
+                provider_backend = "OpenAI", provider_model = "gpt-4o", provider_model_label = "gpt-4o",
+                provider_protocol = "chat_completions", context_window_tokens = 128000,
+                created_at = "2026-10-30T00:00:00Z", updated_at = "2026-10-30T00:00:01Z",
+                terminal_at = done ? "2026-10-30T00:00:01Z" : null };
         }
     }
 }

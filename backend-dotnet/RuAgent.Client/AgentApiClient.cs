@@ -235,7 +235,14 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
     /// shape error surfaces as AgentApiException and the caller keeps the
     /// text-only transcript instead of a partial activity feed.
     /// </summary>
-    public async Task<IReadOnlyList<string>> ListSessionRunIdsAsync(string sessionId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<string>> ListSessionRunIdsAsync(string sessionId, CancellationToken ct = default) =>
+        (await ListSessionRunsAsync(sessionId, ct).ConfigureAwait(false)).Select(item => item.RunId).ToArray();
+
+    /// <summary>
+    /// Lists a session's run summaries oldest-first, including the status and
+    /// provider metadata already returned by the session run list endpoint.
+    /// </summary>
+    public async Task<IReadOnlyList<GetAgentRunResponse>> ListSessionRunsAsync(string sessionId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
             throw new AgentApiException("invalid_session_id", "Session id invalid.");
@@ -255,7 +262,7 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
             if (result?.Items is null)
                 throw new AgentApiException("invalid_response", "Missing session run items.");
             // Newest-first on the wire; the transcript aligns oldest-first.
-            return result.Items.Select(item => item.RunId).Reverse().ToArray();
+            return result.Items.Reverse().ToArray();
         }
         catch (JsonException ex)
         {

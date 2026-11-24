@@ -38,61 +38,35 @@ public sealed partial class AgentCommands
             ChatSessionReplayResult fallback,
             CancellationToken cancellationToken)
         {
-            if (tgMode) RenderSessionReplay(targetSessionId, fallback);
-
             var turns = await ChatSessionTurnReplay.LoadAsync(_sessionClient, _agentClient, targetSessionId, cancellationToken)
                 .ConfigureAwait(false);
             if (turns is not { Length: > 0 } loaded)
             {
-                if (!tgMode) RenderSessionReplay(targetSessionId, fallback);
+                RenderSessionReplay(targetSessionId, fallback);
                 return;
             }
 
-            if (!tgMode)
-            {
-                sessionRenderer.Note(
-                    $"↺ replayed the last {loaded.Length} {(loaded.Length == 1 ? "turn" : "turns")} from session {targetSessionId}",
-                    Tui.TuiToken.Meta);
-                RenderSessionTurns(loaded);
-                return;
-            }
-
-            // The switch still owns the submission lane, so the only rows to replace
-            // are this session's preview. Keep the reader's distance from the tail.
-            var transcript = tgWindow!.Transcript;
-            var rowsBelow = 0;
-            RunOnTgUi(() =>
-            {
-                rowsBelow = transcript.RowsBelowViewport;
-                transcript.Clear();
-                transcript.DeferWrapping = true;
-            });
-            try
-            {
-                RenderSessionTurns(loaded);
-            }
-            finally
-            {
-                RunOnTgUi(() =>
-                {
-                    transcript.DeferWrapping = false;
-                    if (rowsBelow > 0) transcript.ScrollRows(-rowsBelow);
-                });
-            }
+            sessionRenderer.Note(
+                $"↺ replayed the last {loaded.Length} {(loaded.Length == 1 ? "turn" : "turns")} from session {targetSessionId}",
+                Tui.TuiToken.Meta);
+            RenderSessionTurns(loaded);
         }
 
-        private void RenderSessionTurns(ImmutableArray<ChatReplayTurn> loaded)
+        private void RenderSessionTurns(ImmutableArray<ChatReplayTurn> loaded,
+            TuiSessionRenderer? renderer = null, Action<string>? writePrompt = null)
         {
+            renderer ??= sessionRenderer;
+            writePrompt ??= WriteReplayPrompt;
             foreach (var turn in loaded)
             {
                 foreach (var prompt in turn.Prompts)
                 {
-                    WriteReplayPrompt(prompt);
+                    writePrompt(prompt);
                 }
                 if (turn.Run is { TerminalAt: not null } run)
                 {
-                    sessionRenderer.BeginTurn();
-                    sessionRenderer.Transcript.ReplayTurn(turn.Activity, turn.Replies,
+                    renderer.BeginTurn();
+                    renderer.Transcript.ReplayTurn(turn.Activity, turn.Replies,
                         ChatSessionTurnReplay.Time(run.CreatedAt), ChatSessionTurnReplay.Time(run.TerminalAt),
                         ChatSessionTurnReplay.Outcome(run.Status), run.TerminalErrorCode);
                 }
@@ -101,15 +75,15 @@ public sealed partial class AgentCommands
                     // No record (or an unreadable one): the reply text is all there is.
                     foreach (var reply in turn.Replies)
                     {
-                        sessionRenderer.Transcript.AppendAssistant(reply);
-                        sessionRenderer.Flush();
-                        sessionRenderer.Surface.Line();
+                        renderer.Transcript.AppendAssistant(reply);
+                        renderer.Flush();
+                        renderer.Surface.Line();
                     }
                 }
                 // A run still working is drawn by the follow that adopts it next.
             }
 
-            sessionRenderer.Flush();
+            renderer.Flush();
         }
 
         /// <summary>
@@ -167,26 +141,32 @@ public sealed partial class AgentCommands
         /// run would sit parked forever. The newest run only is adopted, matching the
         /// GUI. Fail-soft: a read fault prints nothing and never breaks the REPL start.
         /// </summary>
-        async Task AdoptSessionRunAsync(string targetSessionId)
+        async Task<GetAgentRunResponse?> AdoptSessionRunAsync(string targetSessionId,
+            IReadOnlyList<GetAgentRunResponse>? knownRuns = null)
         {
             try
             {
-                var runIds = await _agentClient
-                    .ListSessionRunIdsAsync(targetSessionId, cancellationToken)
+                var runs = knownRuns ?? await _agentClient
+                    .ListSessionRunsAsync(targetSessionId, cancellationToken)
                     .ConfigureAwait(false);
-                foreach (var candidateRunId in runIds.TakeLast(100).Reverse())
+                foreach (var summary in runs.TakeLast(100).Reverse())
                 {
-                    var run = await _agentClient.GetRunAsync(candidateRunId, cancellationToken).ConfigureAwait(false);
-                    if (run.TerminalAt is not null || IsTerminalRunStatus(run.Status))
+                    if (summary.TerminalAt is not null || IsTerminalRunStatus(summary.Status))
                     {
                         continue;
                     }
 
+                    // Only a potentially live run needs fresh authority state. Terminal
+                    // list entries already contain everything required to skip them.
+                    var candidateRunId = summary.RunId;
+                    var run = await _agentClient.GetRunAsync(candidateRunId, cancellationToken).ConfigureAwait(false);
+                    if (run.SessionId != targetSessionId || run.TerminalAt is not null || IsTerminalRunStatus(run.Status)) continue;
+
                     if (IsParkedRunStatus(run.Status))
                     {
-                        await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
+                        await ShowRetainedRunProviderAsync(run, deferUsage: tgMode).ConfigureAwait(false);
                         runSession.RememberParked(candidateRunId);
-                        var notice = Tui.TuiTranscript.FormatParkedNotice(candidateRunId);
+                        var notice = RetainedRunNotice(run);
                         if (cmd.Json)
                         {
                             await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.Warn(notice)).ConfigureAwait(false);
@@ -195,8 +175,7 @@ public sealed partial class AgentCommands
                         {
                             sessionRenderer.Note(notice, Tui.TuiToken.Warn);
                         }
-                        await RestoreRetainedTodosAsync(candidateRunId).ConfigureAwait(false);
-                        return;
+                        return run;
                     }
 
                     if (!ChatRunWorkflow.IsFollowable(run))
@@ -204,13 +183,9 @@ public sealed partial class AgentCommands
                         continue;
                     }
 
-                    await ShowRetainedRunProviderAsync(run).ConfigureAwait(false);
+                    await ShowRetainedRunProviderAsync(run, deferUsage: tgMode).ConfigureAwait(false);
                     runSession.RememberFollowable(candidateRunId);
-                    var followNotice = string.Equals(run.Status, "waiting_input", StringComparison.OrdinalIgnoreCase)
-                        ? $"run {candidateRunId} is waiting for an answer · type Continue"
-                        : string.Equals(run.Status, "waiting_approval", StringComparison.OrdinalIgnoreCase)
-                        ? $"run {candidateRunId} is waiting for approval · type Continue"
-                        : $"run {candidateRunId} is still running · attach with 'ru agent attach {candidateRunId}' or type Continue here";
+                    var followNotice = RetainedRunNotice(run);
                     if (cmd.Json)
                     {
                         await WriteDiagnosticLineAsync(_err, Tui.TuiPalette.DimPaint(followNotice)).ConfigureAwait(false);
@@ -219,8 +194,7 @@ public sealed partial class AgentCommands
                     {
                         sessionRenderer.Note(followNotice, Tui.TuiToken.Meta);
                     }
-                    await RestoreRetainedTodosAsync(candidateRunId).ConfigureAwait(false);
-                    return;
+                    return run;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -233,13 +207,7 @@ public sealed partial class AgentCommands
                 // REPL start; the headless 'ru agent attach <run-id>' remains available.
                 Tui.TuiDebug.Log("adopt", $"session run adoption failed: {CliErrorText.ShortMessage(ex.Message)}");
             }
-        }
-
-        async Task RestoreRetainedTodosAsync(string runId)
-        {
-            if (!tgMode || cmd.Json) return;
-            var replay = await _agentClient.ListRunActivityReplayAsync(runId, cancellationToken).ConfigureAwait(false);
-            sessionRenderer.Transcript.RestoreTodos(replay);
+            return null;
         }
 
         async Task<SessionDeleteResult> DeleteSessionAsync(string targetId, CancellationToken ct)
@@ -272,6 +240,7 @@ public sealed partial class AgentCommands
         /// </summary>
         async Task LeaveDeletedSessionAsync(CancellationToken ct)
         {
+            CancelSessionEnrichment();
             sessionId = string.Empty;
             cmd = cmd with { SessionId = null };
             sessionTitle = null;
@@ -362,6 +331,8 @@ public sealed partial class AgentCommands
                 return;
             }
 
+            var openingGeneration = CancelSessionEnrichment();
+
             // Resolve the target's workspace and permission before replacing any
             // current state. A failed read must not inherit this session's grants.
             var nextWorkspace = (Path: canonicalWorkspace, Label: workspaceLabel);
@@ -416,24 +387,21 @@ public sealed partial class AgentCommands
                 });
             }
 
-            // History and the restored meter load together, so saved messages appear without
-            // waiting on the usage replay. The session payload carries no usage, so the meter
-            // comes from the target's newest run rather than staying empty until its next turn.
-            var history = replay.Messages.Length > 0 && !cmd.Json
-                ? RenderSessionHistoryAsync(targetSessionId, replay, cancellationToken)
-                : Task.CompletedTask;
-            await Task.WhenAll(history, RestoreSwitchedSessionUsageAsync(targetSessionId, cancellationToken))
-                .ConfigureAwait(false);
-            // The restored reading is the last request; the reply it produced came after it.
-            if (replay.Messages.LastOrDefault() is { } lastMessage && !string.Equals(lastMessage.Role, "user", StringComparison.Ordinal))
+            if (tgMode)
             {
-                usage.ObserveReplyTail(lastMessage.Text.Length);
-                PaintContextUsage();
+                if (!cmd.Json) RenderSessionReplay(targetSessionId, replay);
+                await RefreshModelSelectionAsync(refreshUsage: false).ConfigureAwait(false);
+                var runs = await ReadSessionSummariesAsync(targetSessionId).ConfigureAwait(false);
+                var retained = await AdoptSessionRunAsync(targetSessionId, runs).ConfigureAwait(false);
+                StartSessionEnrichment(targetSessionId, replay, runs, retained, openingGeneration);
             }
-
-            await AdoptSessionRunAsync(targetSessionId).ConfigureAwait(false);
-
-            await RefreshModelSelectionAsync().ConfigureAwait(false);
+            else
+            {
+                if (replay.Messages.Length > 0 && !cmd.Json)
+                    await RenderSessionHistoryAsync(targetSessionId, replay, cancellationToken).ConfigureAwait(false);
+                await AdoptSessionRunAsync(targetSessionId).ConfigureAwait(false);
+                await RefreshModelSelectionAsync().ConfigureAwait(false);
+            }
             // The native switch already resolved and adopted the recorded workspace.
             // Line mode keeps its launch workspace and reports any difference.
             if (!tgMode && await ChatSessionWorkflow.ReadWorkspaceLabelAsync(
@@ -452,12 +420,6 @@ public sealed partial class AgentCommands
             }
 
             await ReportSessionNavigationAsync($"switch to session \"{sessionTitle ?? "Untitled session"}\"").ConfigureAwait(false);
-        }
-
-        private async Task RestoreSwitchedSessionUsageAsync(string targetSessionId, CancellationToken ct)
-        {
-            await RefreshModelUsageInfoAsync(ct).ConfigureAwait(false);
-            await RestoreSessionUsageAsync(targetSessionId, ct).ConfigureAwait(false);
         }
 
         private Task ReportSessionNavigationAsync(string notice)

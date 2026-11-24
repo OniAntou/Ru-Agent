@@ -38,6 +38,16 @@ button or On/Low/Off modes. Tab stays in the composer for slash completion.
 Local command cancellation keeps the welcome visible; short results use the
 hint row and multiline results open a closable document.
 
+Opening a saved session shows its recent messages first. One run-summary list
+supplies terminal state for adoption, rich history and saved context usage;
+only potentially active runs need an immediate status check. Workspace,
+permissions and model selection are resolved before sending another prompt.
+Detailed activity, retained todos, model metadata and saved token readings load
+afterward without holding the composer. A new submission or session change
+invalidates those reads before they can replace newer transcript or usage state.
+Optional reads have a 30-second deadline and a bounded shutdown drain. Plain
+and JSON chat keep their ordered loading behavior.
+
 Terminal.Gui is the default interactive surface on supported terminals. Ctrl+P
 opens a searchable palette backed by the same slash catalog as help and command
 completion. Enter selects a command into the composer; arguments can be completed

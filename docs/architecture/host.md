@@ -219,6 +219,21 @@ remain run-cumulative billing totals; request occupancy comes from the reference
 `modelusage` payload (`json` encoding), not those totals.
 _Avoid_: replaying transient frames as durable history or hiding callback errors
 
+## Activity replay
+
+Activity replay reads event metadata to recover proposal/receipt links, then
+rebuilds the newest 500 valid activity rows from newest to oldest. Reasoning
+payloads are decrypted only for retained thinking rows. Once the tail is full,
+older successful tool proposals are inspected for the latest valid checklist;
+other tool results are skipped. Checklist clears remain meaningful, and an
+unreadable or malformed update preserves the preceding valid snapshot.
+
+The metadata scan remains necessary for historical runs whose tool identity lives
+inside encrypted arguments. Narration retains its separate 64-segment/131,072-
+character budget and chronological merge. Payload audience checks, read failures,
+live/interrupted tool state and durable sequence ordering keep their existing
+behavior. No decrypted replay cache is retained between requests.
+
 ## Multimodal Image Payload
 
 A client-attached image (`image/png`, `image/jpeg`, `image/webp`) resized to at

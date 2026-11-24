@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **perf(host)**: Reopening a long run decrypts only what its newest 500 activity rows need.
+  The replay walks from the newest event back and stops once the tail is full and the latest
+  checklist is found, keeping chronological order, interrupted tools, steers, full-reasoning
+  references and redaction. The newest checklist still replays when it is older than the tail.
+
 - **perf(tui)**: Opening or switching to a saved session reuses the session's run summaries
   instead of reading every completed run again. The prompt is accepted once the workspace,
   permission, model and active run are known; history, todos and usage load in the background

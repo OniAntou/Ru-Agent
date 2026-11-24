@@ -3,7 +3,6 @@ using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Persistence;
-using CoreAgentActivity = RuAgent.Harness.Core.AgentActivity;
 using ProtocolActivityWire = RuAgent.Protocol.Harness.AgentActivityWire;
 using ProtocolTodoWire = RuAgent.Protocol.Harness.AgentTodoWire;
 using RuAgent.Protocol.Harness;
@@ -18,7 +17,7 @@ namespace RuBackend.Harness;
 /// so a fresh client that only reads persisted session messages would otherwise see
 /// the assistant prose with none of the tool rows that produced it.
 /// </summary>
-public sealed class AgentActivitiesService
+public sealed partial class AgentActivitiesService
 {
     private readonly IHarnessEventStore _store;
     private readonly HarnessPayloadStore _payloadStore;
@@ -163,148 +162,25 @@ public sealed class AgentActivitiesService
             }
         }
 
-        var rows = new List<ReplayedActivityRow>();
-        // A steer replays where the model received it, as the user's own words (ADR 0056).
-        foreach (var steer in steers)
-        {
-            if (await ReadSteerTextAsync(runId, steer.PayloadId, cancellationToken).ConfigureAwait(false) is { } steerText)
-            {
-                rows.Add(new ReplayedActivityRow(
-                    steer.Sequence,
-                    AgentActivityProjector.ProjectSteer("steer_" + steer.PayloadId.Value["payload_".Length..], steerText)));
-            }
-        }
-
-        foreach (var compaction in compactions)
-        {
-            rows.Add(new ReplayedActivityRow(
-                compaction.Sequence,
-                new CoreAgentActivity(
-                    RuAgent.Harness.Core.AgentActivityProjector.CompactionActivityId(runId.Value, compaction.Sequence),
-                    AgentActivityKind.Compaction,
-                    AgentActivityState.Completed,
-                    Count: compaction.CoveredCount,
-                    SafeCode: "context_compacted")));
-        }
-        foreach (var call in completed)
-        {
-            if (!proposed.TryGetValue(call.ToolCallId.Value, out var proposalCall))
-            {
-                continue;
-            }
-
-            var proposal = await RebuildProposalAsync(runId, proposalCall, cancellationToken).ConfigureAwait(false);
-            if (proposal is null
-                || !string.Equals(
-                    proposal.ProviderCallId,
-                    call.ProviderCallId,
-                    StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var receipt = await RebuildReceiptAsync(runId, call, cancellationToken).ConfigureAwait(false);
-            if (receipt is null)
-            {
-                continue;
-            }
-
-            requestedAt.TryGetValue(call.ExecutionId.Value, out var requested);
-            int? durationMs = requested == default
-                ? null
-                : (int?)Math.Max(0, (call.CompletedAt - requested).TotalMilliseconds);
-            var state = receipt.Outcome == ToolExecutionOutcome.Succeeded
-                ? AgentActivityState.Completed
-                : AgentActivityState.Failed;
-            var activity = WithEditPreview(
-                AgentActivityProjector.ProjectTool(proposal, state, receipt, durationMs),
-                proposal);
-
-            rows.Add(new ReplayedActivityRow(call.Sequence, activity));
-
-            // The task list rides on the same durable completion as the tool row it came
-            // from, because that is where it lives: the payload the model received. Emitting
-            // it here is what makes the checklist survive leaving a session -- without it
-            // the feed rebuilds and the plan is silently absent, which is indistinguishable
-            // from a turn that never wrote one.
-            if (proposal.ToolId is "todo_write" && state == AgentActivityState.Completed
-                && AgentTodoPayload.TryRead(receipt.ModelContent.Span) is { } todos)
-            {
-                rows.Add(new ReplayedActivityRow(
-                    call.Sequence,
-                    AgentActivityProjector.ProjectTodos(
-                        $"act_todo_replay_{call.ToolCallId.Value}", todos)));
-            }
-        }
-
-        // A call that was proposed but never completed is still in flight when the
-        // run itself is alive, and settled as interrupted only once the run is
-        // terminal. The live feed settles the same way on run end.
-        bool runTerminal = run.State.IsTerminal();
-        foreach (var entry in proposed.Values)
-        {
-            if (completedCallIds.Contains(entry.ToolCallId.Value))
-            {
-                continue;
-            }
-
-            var proposal = await RebuildProposalAsync(runId, entry, cancellationToken).ConfigureAwait(false);
-            if (proposal is null)
-            {
-                continue;
-            }
-
-            var pending = runTerminal
-                ? AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Failed, safeCode: "interrupted")
-                : AgentActivityProjector.ProjectTool(proposal, AgentActivityState.Started);
-            rows.Add(new ReplayedActivityRow(entry.Sequence, WithEditPreview(pending, proposal)));
-        }
-
-        // Reasoning is recorded beside the step completion, so join it back onto
-        // the thinking row it belongs to. Only steps with a thinking row pay for
-        // a payload read; anything else stays untouched.
-        var thinkingSteps = new HashSet<string>(
-            thinking.Select(row => row.ModelStepId.Value),
-            StringComparer.Ordinal);
-        var reasoningDetails = new Dictionary<string, (string Text, PayloadId PayloadId)>(StringComparer.Ordinal);
-        foreach (var entry in reasoning)
-        {
-            if (!thinkingSteps.Contains(entry.Key))
-            {
-                continue;
-            }
-
-            var detail = await ReadReasoningDetailAsync(runId, entry.Value.PayloadId, cancellationToken).ConfigureAwait(false);
-            if (detail is not null)
-            {
-                reasoningDetails[entry.Key] = (detail, entry.Value.PayloadId);
-            }
-        }
-
-        foreach (var row in thinking)
-        {
-            // A long reasoning replays as an excerpt that names its payload, read whole on demand.
-            var found = reasoningDetails.TryGetValue(row.ModelStepId.Value, out var reasoningDetail);
-            rows.Add(new ReplayedActivityRow(
-                row.Sequence,
-                AgentActivityProjector.ProjectModelStep(row.ModelStepId, AgentActivityState.Completed, row.DurationMs,
-                    detail: found ? reasoningDetail.Text : null,
-                    reasoningPayloadId: found ? reasoningDetail.PayloadId : null)));
-        }
-
-        var wires = new List<JsonElement>();
-        var orderedRows = rows.OrderBy(item => item.Sequence).ToArray();
-        var cappedRows = orderedRows.TakeLast(MaxReplayedActivities).ToList();
-        // The checklist is a snapshot. Keep the latest update (including a clear)
-        // even when newer activity fills the replay budget.
-        var latestTodos = orderedRows.LastOrDefault(item => item.Activity.Todos is not null);
-        if (latestTodos is not null && !cappedRows.Contains(latestTodos)) cappedRows[0] = latestTodos;
+        var candidates = compactions.Select(row => new ReplayCandidate(row.Sequence, Compaction: row))
+            .Concat(steers.Select(row => new ReplayCandidate(row.Sequence, Steer: row.PayloadId)))
+            .Concat(completed.Select(row => new ReplayCandidate(row.Sequence, Completed: row)))
+            .Concat(proposed.Values.Where(row => !completedCallIds.Contains(row.ToolCallId.Value))
+                .Select(row => new ReplayCandidate(row.Sequence, Pending: row)))
+            .Concat(thinking.Select(row => new ReplayCandidate(row.Sequence, Thinking: row)));
+        var cappedRows = await RebuildNewestRowsAsync(runId, run.State.IsTerminal(), candidates,
+            proposed, requestedAt, reasoning, cancellationToken).ConfigureAwait(false);
+        var wires = new List<JsonElement>(cappedRows.Count);
         foreach (var row in cappedRows)
         {
             JsonElement wire;
             try
             {
-                wire = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(row.Activity with { Detail = AgentActivityDetailRedaction.Redact(row.Activity.Detail, _secrets) }, row.Sequence))).RootElement.Clone();
+                // Replayed details get the live feed's redaction.
+                using var document = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(
+                    row.Activity with { Detail = AgentActivityDetailRedaction.Redact(row.Activity.Detail, _secrets) },
+                    row.Sequence)));
+                wire = document.RootElement.Clone();
             }
             catch (JsonException)
             {

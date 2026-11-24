@@ -22,6 +22,13 @@ Session lists use `SessionWorkspaceResolver` to resolve the latest durable run's
 encrypted workspace metadata. Sessions without a readable workspace retain an
 unset working directory. External session import/export routes and format
 adapters are retired; native Ru fork, rewind and retained history remain.
+Run-list entries expose the same safe pinned provider, model, protocol, context
+window and tool-profile metadata as individual run reads. One bounded batch
+reads selections for the returned page of at most 100 runs. Missing or unpinned
+historical selections retain empty metadata. Both query paths share their public
+projection, and saved context usage follows the run's pin across later settings
+changes. Credential accounts, endpoint addresses and raw request options remain
+inside the Host.
 Both run-create routes (`/agent/v1/runs` and `/agent/v1/runs/selected`) use the
 larger run body bound; only the selected route's path check used to fall back to
 the general 8 MiB cap.

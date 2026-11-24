@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(host)**: Session run lists return the same pinned provider, model, protocol and
+  context-window fields as a single run read, loaded in one bounded batch, so a client restoring
+  a saved session reads the saved run's model without fetching every run. Credential accounts,
+  endpoint addresses and request options stay private.
+
 - **fix(gui)**: Ru no longer closes when the title bar's input regions cannot be updated.
   `InputNonClientPointerSource.GetForWindowId` sometimes refuses with `E_INVALIDARG` while the
   window relayouts or closes (seen when the side panel preview changed), and the crash policy

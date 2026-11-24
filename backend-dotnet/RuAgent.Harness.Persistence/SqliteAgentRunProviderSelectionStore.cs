@@ -30,6 +30,12 @@ public sealed record AgentRunProviderSelectionState(
 public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOptions options)
 {
     private const string NativeCallingMode = "native";
+    private const string SelectionColumns = """
+        backend, alias, protocol, base_uri, model, account,
+        request_options_json, maximum_output_tokens, model_label,
+        calling_mode, context_window_tokens, context_window_source,
+        context_window_version, output_token_reserve
+        """;
 
     public async Task<AgentRunProviderSelectionState?> GetAsync(
         RunId runId,
@@ -133,11 +139,8 @@ public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOp
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            SELECT backend, alias, protocol, base_uri, model, account,
-                   request_options_json, maximum_output_tokens, model_label,
-                   calling_mode, context_window_tokens, context_window_source,
-                   context_window_version, output_token_reserve
+        command.CommandText = $"""
+            SELECT {SelectionColumns}
             FROM agent_run_provider_selections
             WHERE run_id = $run_id
             """;
@@ -148,6 +151,11 @@ public sealed partial class SqliteAgentRunProviderSelectionStore(HarnessSqliteOp
             return null;
         }
 
+        return ReadSelectionState(reader);
+    }
+
+    private static AgentRunProviderSelectionState ReadSelectionState(SqliteDataReader reader)
+    {
         if (reader.IsDBNull(0))
         {
             return new AgentRunProviderSelectionState(true, null);

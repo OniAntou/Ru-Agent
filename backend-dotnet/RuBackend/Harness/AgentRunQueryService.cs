@@ -62,20 +62,9 @@ public sealed class AgentRunQueryService
         var (trustRequestId, displayHash) = await _workspaceTrust.ResolveTrustChallengeAsync(run, cancellationToken).ConfigureAwait(false);
         var isWaitingInput = await IsParkedOnInputAsync(run, cancellationToken).ConfigureAwait(false);
         var providerSelection = await _providerSelections.GetAsync(run.RunId, cancellationToken).ConfigureAwait(false);
-        var response = MapRun(run, trustRequestId, displayHash, isWaitingInput) with
+        var response = WithProviderMetadata(MapRun(run, trustRequestId, displayHash, isWaitingInput),
+            providerSelection?.Selection) with
         {
-            ProviderBackend = providerSelection?.Selection?.Backend,
-            ProviderModel = providerSelection?.Selection?.Model,
-            ProviderProtocol = providerSelection?.Selection?.Protocol,
-            ProviderModelLabel = providerSelection?.Selection?.ModelLabel,
-            ProviderCallingMode = providerSelection?.Selection?.CallingMode,
-            ContextWindowTokens = providerSelection?.Selection?.ContextWindowTokens,
-            ContextWindowSource = providerSelection?.Selection?.ContextWindowSource,
-            ContextWindowVersion = providerSelection?.Selection?.ContextWindowVersion,
-            OutputTokenReserve = providerSelection?.Selection?.OutputTokenReserve,
-            ToolProfile = providerSelection?.Selection is { } pinnedSelection
-                ? RuAgent.Protocol.AgentToolProfiles.ReadSupportedLabel(System.Text.Json.Nodes.JsonNode.Parse(pinnedSelection.RequestOptionsJson)!.AsObject())
-                : null,
             ImagePayloads = await ReadImagePayloadsAsync(run.RunId, cancellationToken).ConfigureAwait(false),
         };
         return new AgentServiceResult(200, response);
@@ -230,7 +219,10 @@ public sealed class AgentRunQueryService
             runs = runs.Take(limit).ToList();
         }
 
-        var items = runs.Select(run => MapRun(run)).ToList();
+        var providerSelections = await _providerSelections.GetManyAsync(
+            runs.Select(run => run.RunId).ToArray(), cancellationToken).ConfigureAwait(false);
+        var items = runs.Select(run => WithProviderMetadata(MapRun(run),
+            providerSelections.GetValueOrDefault(run.RunId)?.Selection)).ToList();
         var resp = new SessionRunsResponse(items, nextCursor);
         return new AgentServiceResult(200, resp);
     }
@@ -369,6 +361,24 @@ public sealed class AgentRunQueryService
     }
 
     // Helpers (slice 1: pure logic lives in AgentV1Shared; wrappers keep API stable)
+
+    // Single and paged reads expose the same pinned display/context fields.
+    // Endpoint addresses, credential accounts and raw request options stay private.
+    private static GetAgentRunResponse WithProviderMetadata(GetAgentRunResponse response,
+        AgentRunProviderSelection? selection) => response with
+    {
+        ProviderBackend = selection?.Backend,
+        ProviderModel = selection?.Model,
+        ProviderProtocol = selection?.Protocol,
+        ProviderModelLabel = selection?.ModelLabel,
+        ProviderCallingMode = selection?.CallingMode,
+        ContextWindowTokens = selection?.ContextWindowTokens,
+        ContextWindowSource = selection?.ContextWindowSource,
+        ContextWindowVersion = selection?.ContextWindowVersion,
+        OutputTokenReserve = selection?.OutputTokenReserve,
+        ToolProfile = selection is null ? null : RuAgent.Protocol.AgentToolProfiles.ReadSupportedLabel(
+            System.Text.Json.Nodes.JsonNode.Parse(selection.RequestOptionsJson)!.AsObject()),
+    };
 
     internal static GetAgentRunResponse MapRun(
         AgentRun run,

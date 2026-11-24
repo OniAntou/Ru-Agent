@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trusted workspace: a PreToolUse, UserPromptSubmit or Stop hook a cloned repository
   declares could run commands in the read-only preset before policy was evaluated. Plan
   runs keep the user's and approved plugins' hooks.
+- **docs(harness)**: The approval route documents the other command spellings it also
+  accepts (`once`, `always`, `reject`, `approved`, `decision`).
 
 - **fix(harness)**: Live command output and reply text no longer arrive a line late when a
   provider key is configured. The Host's secret redactor held back the last (longest key

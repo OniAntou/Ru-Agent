@@ -92,11 +92,14 @@ public sealed class AgentApprovalsService
             return BoundedError(400, "invalid_approval_id", "approval_id invalid.");
         }
 
-        // Parse command. Pi-style UX: exactly 3 commands — allow_once,
-        // allow_session_directory (external folders only), deny — plus
+        // Parse command. Four canonical commands: allow_once,
+        // allow_session_directory (external folders only), deny, and
         // allow_always, which authorizes once and remembers the exact intent
         // as a project-scope allow rule (Claude-style "yes, and remember").
-        // run/project/global are rejected outright below. Any allow also
+        // These spellings are also accepted and normalize to those four:
+        // allowonce/once, allowsessiondirectory, allowalways/always, reject,
+        // `approved: true|false` and `decision: "allow"`. Nothing else is
+        // accepted; run/project/global are rejected outright below. Any allow also
         // remembers the exact intent for the Agent session; only allow_always
         // creates a durable project rule.
         string? decisionRaw = null;

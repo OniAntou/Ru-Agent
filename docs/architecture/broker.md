@@ -83,6 +83,9 @@ reconciliation surfaces from Phase 3:
   - The approval route accepts exactly `allow_once`, `allow_session_directory` for external folders
     only, `allow_always` which additionally saves the durable matcher the Broker built for that approval
     as a project rule ([Remembered Approval](#remembered-approval)), or `deny`.
+    These spellings are also accepted and normalize to the four (`allowonce`/`once`, `allowsessiondirectory`,
+    `allowalways`/`always`, `reject`, `approved: true|false`, `decision: "allow"`); anything else is
+    `invalid_approval_command`.
   - An allow of a rememberable call also remembers the approved intent for the Agent session in an in-process, expiring
     ledger that the runtime loop materializes into the session's later policy snapshots — the
     durable pattern when one was saved, the exact intent otherwise, and external-directory approvals

@@ -9,14 +9,18 @@ public sealed class AgentRunPanelViewModelTests
     private static readonly DateTimeOffset Now = new(2026, 10, 21, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void Enter_queues_while_a_run_is_in_hand_and_the_face_only_changes_on_a_flip()
+    public void Enter_steers_while_a_run_is_in_hand_and_the_face_only_changes_on_a_flip()
     {
         var panel = new AgentRunPanelViewModel();
         var changes = new List<string?>();
         panel.PropertyChanged += (_, e) => changes.Add(e.PropertyName);
 
         panel.SetRunning(true);
+        // Steering is just messaging: the composer keeps its ordinary hint while Ru works.
+        Assert.Equal(AgentComposerPresentation.MessagePlaceholder, panel.ComposerPlaceholder);
+        panel.SetWhileRunning(ComposerWhileRunning.Queue);
         Assert.Equal(AgentComposerPresentation.QueuePlaceholder, panel.ComposerPlaceholder);
+        Assert.Contains(nameof(AgentRunPanelViewModel.ComposerPlaceholder), changes);
         Assert.Equal(AgentComposerPresentation.StopGlyph, panel.SendGlyph);
         Assert.Equal(AgentComposerPresentation.StopName, panel.SendName);
 

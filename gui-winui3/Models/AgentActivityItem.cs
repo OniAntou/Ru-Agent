@@ -199,7 +199,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
 
     public bool ShowPlainDetail => HasDetail
         && !IsThinking
-        && Kind is not (AgentActivityKind.Terminal or AgentActivityKind.Narration);
+        && Kind is not (AgentActivityKind.Terminal or AgentActivityKind.Narration or AgentActivityKind.Steer);
 
     public bool ShowThinkingDetail => HasThinkingDetail && IsThinkingExpanded;
 
@@ -616,6 +616,8 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
 
     public string DisplayText => Kind == AgentActivityKind.Narration
         ? NarrationText
+        : Kind == AgentActivityKind.Steer
+        ? SteerRowText
         : State switch
     {
         AgentActivityState.Started => StartedText,
@@ -634,6 +636,14 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
     /// model said, the same way they read a reply.
     /// </remarks>
     private string NarrationText => string.IsNullOrWhiteSpace(Detail) ? "Speaking" : Detail!;
+
+    /// <summary>
+    /// A message the user sent into the working run (ADR 0056), shown where the model read it.
+    /// </summary>
+    private string SteerRowText => string.IsNullOrWhiteSpace(Detail) ? "You steered the run" : "You: " + Detail;
+
+    /// <summary>The user's steer as typed, for the user message the transcript shows for it.</summary>
+    public string SteerText => Detail ?? string.Empty;
 
     /// <summary>
     /// Applies a newer frame for the same activity id. A stale <c>Started</c>
@@ -792,6 +802,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         // can change its tense or wording.
         if (propertyName is nameof(State) or nameof(Kind) or nameof(ToolDisplay) or nameof(SafeCode))
             OnPropertyChanged(nameof(RowVerb));
+
         return true;
     }
 

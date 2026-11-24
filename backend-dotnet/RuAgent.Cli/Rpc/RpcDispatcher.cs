@@ -53,6 +53,7 @@ public sealed partial class RpcDispatcher
         "run.status",
         "run.command",
         "run.output",
+        "run.steer",
         "subagent.list",
         "subagent.get",
         "policy.list",
@@ -134,6 +135,7 @@ public sealed partial class RpcDispatcher
                 "run.status" => await RunStatusAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.command" => await RunCommandAsync(request, cancellationToken).ConfigureAwait(false),
                 "run.output" => await RunOutputAsync(request, cancellationToken).ConfigureAwait(false),
+                "run.steer" => await RunSteerAsync(request, cancellationToken).ConfigureAwait(false),
                 "subagent.list" or "subagent.get"
                     => await DispatchSubagentAsync(request, cancellationToken).ConfigureAwait(false),
                 "policy.list" => await PolicyListAsync(request, cancellationToken).ConfigureAwait(false),
@@ -397,6 +399,29 @@ public sealed partial class RpcDispatcher
             ? await _agentClient.DenyAsync(runId, approvalId, ct).ConfigureAwait(false)
             : await _agentClient.ApproveAsync(runId, approvalId, decision, ct).ConfigureAwait(false);
         return JsonNode.Parse(result.GetRawText()) ?? new JsonObject();
+    }
+
+    /// <summary>
+    /// Sends a steer into the working run (ADR 0056). <c>steerId</c> is optional; pass the same
+    /// one to retry safely. A run that is not working fails with <c>run_not_steerable</c>.
+    /// </summary>
+    private async Task<JsonNode> RunSteerAsync(RpcRequest request, CancellationToken ct)
+    {
+        var runId = RequireRunId(request);
+        var text = RequireString(request, "text", RuAgent.Protocol.Harness.AgentSteerLimits.MaxCharacters);
+        var steerId = request.Params.TryGetProperty("steerId", out var idElement) && idElement.ValueKind == JsonValueKind.String
+            ? idElement.GetString()
+            : RuAgent.Protocol.Harness.AgentSteerLimits.NewSteerId();
+        if (!RuAgent.Protocol.Harness.AgentSteerLimits.IsValidSteerId(steerId))
+            throw new RpcDispatchException(RpcProtocol.InvalidParams, "invalid_params: steerId must be 'steer_' and 32 lowercase hex characters.");
+        var result = await _agentClient.SteerAsync(runId, steerId!, text, ct).ConfigureAwait(false);
+        return new JsonObject
+        {
+            ["runId"] = result.RunId,
+            ["steerId"] = result.SteerId,
+            ["state"] = result.State,
+            ["deliveredPayloadId"] = result.DeliveredPayloadId,
+        };
     }
 
     private async Task<JsonNode> RunCancelAsync(RpcRequest request, CancellationToken ct)

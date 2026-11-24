@@ -109,9 +109,9 @@ def validate_route_contract(repo_root: Path) -> tuple[int, int]:
     websocket_count = sum(
         transport == "websocket" for _, _, transport in identities
     )
-    if (http_count, websocket_count) != (57, 0):
+    if (http_count, websocket_count) != (59, 0):
         raise ValueError(
-            "expected 57 HTTP routes and no WebSocket route, "
+            "expected 59 HTTP routes and no WebSocket route, "
             f"found {http_count} and {websocket_count}"
         )
     return http_count, websocket_count

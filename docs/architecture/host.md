@@ -83,7 +83,7 @@ file, terminal and network actions stay in the Broker. Behaviour and limits:
 
 The canonical Public Contract is
 [`backend-dotnet/public-route-contract.json`](../../backend-dotnet/public-route-contract.json):
-57 HTTP method/path pairs with no WebSocket route (33 `/agent/v1/*` and 24
+59 HTTP method/path pairs with no WebSocket route (35 `/agent/v1/*` and 24
 non-Agent routes); REST and SSE clients authenticate with the desktop secret
 (bearer for HTTP/SSE). ASP.NET Core maps
 every public response and error; `GET /agent/v1/runs/{runId}/events` is SSE
@@ -156,7 +156,7 @@ _Avoid_: Edge, proxy, FastAPI backend
 ## Public Contract
 
 The stable authenticated surface of HTTP method/path pairs with no WebSocket
-route (24 non-Agent plus 33 `/agent/v1/*`; Agent v2 is
+route (24 non-Agent plus 35 `/agent/v1/*`; Agent v2 is
 the current generation path at `/agent/v1/*`). Text turns use
 the authenticated Agent HTTP/SSE path; there is no public Chat transport. An
 external tool drives the same surface over stdio through the local JSON-RPC

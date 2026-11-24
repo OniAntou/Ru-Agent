@@ -216,6 +216,11 @@ A second provider/model the user selects for one session with `/advisor` in the 
 Implementation: [agent tools](docs/operations/agent-tools.md#advisor), [ADR 0047](docs/adr/0047-advisor-consultation.md).
 _Avoid_: a Broker tool, a fallback model, verification evidence, or an approval source
 
+**Steer**:
+A message the user sends into a root run that is still working. The Host stores it durably and the run's coordinator delivers it as a user entry of the model context at the next step boundary, never between a tool call and its result; a steer pending when the model writes its final reply keeps the run going. A steer is text for the pinned run (no attachments, no model change), passes the user's prompt hooks, and is sent as the next turn when the run ends without reading it (Stop does this at once). Desktop and TUI steer on Enter by default; queueing is Tab in the TUI and a Desktop setting.
+Implementation: [ADR 0056](docs/adr/0056-steer-a-working-run.md).
+_Avoid_: a queued turn, an interrupt, or a new run
+
 
 **Markdown Skill**:
 A discovered `SKILL.md` package identified by its canonical directory ID, with metadata advertised separately from its on-demand workflow body. Explicit chat invocation captures a bounded, versioned workflow snapshot for that run; successful skill receipts can restore the same snapshot after compaction or restart. Metadata and referenced files never grant execution authority or run automatically. Built-in skills ship with Ru in `skills-builtin` next to the Host and have the lowest precedence, below plugin skills.

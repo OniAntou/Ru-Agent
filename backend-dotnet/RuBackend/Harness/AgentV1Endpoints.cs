@@ -30,6 +30,8 @@ public static partial class AgentV1Endpoints
         app.MapGet("/agent/v1/runs/{runId}/payloads/{payloadId}", GetPayloadAsync);
         app.MapPost("/agent/v1/runs/{runId}/approvals/{approvalId}", PostApprovalAsync);
         app.MapPost("/agent/v1/runs/{runId}/inputs/{inputId}", PostInputAsync);
+        app.MapGet("/agent/v1/runs/{runId}/steers", GetSteersAsync);
+        app.MapPost("/agent/v1/runs/{runId}/steers", PostSteerAsync);
         app.MapPost("/agent/v1/runs/{runId}/trust", PostTrustAsync);
         app.MapPost("/agent/v1/runs/{runId}/cancel", PostCancelAsync);
         app.MapPost("/agent/v1/runs/{runId}/compact", PostCompactAsync);
@@ -667,6 +669,41 @@ public static partial class AgentV1Endpoints
         }
 
         var result = await service.HandleInputAsync(runId, inputId, hasBody ? body : null, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> GetSteersAsync(string runId, AgentSteersService service, CancellationToken ct)
+    {
+        var result = await service.ListAsync(runId, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> PostSteerAsync(string runId, HttpContext context, AgentSteersService service, CancellationToken ct)
+    {
+        System.Text.Json.JsonElement? body = null;
+        try
+        {
+            var text = await ReadBoundedBodyTextAsync(context.Request, ct);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(text);
+                body = document.RootElement.Clone();
+            }
+        }
+        catch (RequestBodyTooLargeException)
+        {
+            return Results.Json(new { error_code = "request_too_large" }, statusCode: 413);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+        catch (DecoderFallbackException)
+        {
+            return Results.Json(new { error_code = "invalid_request" }, statusCode: 400);
+        }
+
+        var result = await service.SteerAsync(runId, body, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

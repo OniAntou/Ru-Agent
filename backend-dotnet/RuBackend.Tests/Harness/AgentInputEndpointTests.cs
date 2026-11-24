@@ -14,7 +14,7 @@ namespace RuBackend.Tests.Harness;
 /// processes and a shared workspace, so it runs in the non-parallel collection.
 /// </summary>
 [Collection(nameof(TerminalProcessHeavyCollection))]
-public sealed class AgentInputEndpointTests
+public sealed partial class AgentInputEndpointTests
 {
     private static readonly TimeSpan StateDeadline = TimeSpan.FromSeconds(90);
 

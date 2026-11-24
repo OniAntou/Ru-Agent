@@ -32,7 +32,7 @@ public sealed partial class AgentActivityItem
     {
         get
         {
-            if (Kind is AgentActivityKind.Narration or AgentActivityKind.Status or AgentActivityKind.Retry)
+            if (Kind is AgentActivityKind.Narration or AgentActivityKind.Steer or AgentActivityKind.Status or AgentActivityKind.Retry)
                 return DisplayText;
             if (State == AgentActivityState.Waiting) return WaitingText;
             if (State == AgentActivityState.Failed && Kind == AgentActivityKind.Thinking) return FailedText;

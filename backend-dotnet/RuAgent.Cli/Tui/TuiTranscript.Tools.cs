@@ -31,6 +31,12 @@ public sealed partial class TuiTranscript
                 WriteNarration(activity.Detail);
                 return;
 
+            // The user's steer, where the model received it (ADR 0056).
+            // The user's message, where the run read it (ADR 0056).
+            case AgentActivityKind.Steer:
+                WriteSteer(activity.Detail);
+                return;
+
             case AgentActivityKind.Compaction:
                 if (activity.State is AgentActivityState.Started or AgentActivityState.Waiting)
                 {
@@ -133,6 +139,45 @@ public sealed partial class TuiTranscript
             default:
                 return;
         }
+    }
+
+    /// <summary>
+    /// The user's steer, at the point the model received it, written as the user's own
+    /// message: the same <c>❯</c> rows and user style as a prompt the user sent, because it
+    /// is one, not a row of the model's work.
+    /// </summary>
+    private void WriteSteer(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail)) return;
+        if (!_atLineStart)
+        {
+            _surface.Line();
+            _atLineStart = true;
+        }
+
+        // Line by line like a sent prompt's echo; each line is sanitized as untrusted text.
+        var lines = detail.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n')
+            .Select(TuiText.SanitizeUntrusted).ToArray();
+        if (_surface.Presentation is not null)
+        {
+            var rows = new List<TranscriptLine> { TranscriptLine.Plain(string.Empty, TranscriptRole.User) };
+            for (var index = 0; index < lines.Length; index++)
+            {
+                var bounded = TuiText.SafeCut(lines[index], 16_000).TrimEnd();
+                rows.Add(TranscriptLine.Plain((index == 0 ? "  ❯ " : "    ") + bounded, TranscriptRole.User, TuiToken.Bright));
+            }
+
+            rows.Add(TranscriptLine.Plain(string.Empty, TranscriptRole.User));
+            foreach (var row in rows) _surface.AppendPresentation(row);
+            return;
+        }
+
+        var plain = new List<string> { string.Empty };
+        for (var index = 0; index < lines.Length; index++)
+            plain.Add(TuiPalette.Paint(index == 0 ? "  ❯ " : "    ", TuiToken.Line)
+                + TuiPalette.Paint(TuiText.SafeCut(lines[index], 16_000).TrimEnd(), TuiToken.Bright));
+        plain.Add(string.Empty);
+        WriteLines(string.Join("\n", plain));
     }
 
     /// <summary>

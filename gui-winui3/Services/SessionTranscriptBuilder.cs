@@ -142,7 +142,7 @@ internal static class SessionTranscriptBuilder
             {
                 var item = new ChatMessageItem { Role = "assistant", SourceRunId = id };
                 ApplyReplay(item, replay);
-                messages.Add(item);
+                messages.AddRange(TranscriptSteerSplitter.Split(item));
                 applied.Add(id);
             }
             pendingUserRun = null;
@@ -187,6 +187,9 @@ internal static class SessionTranscriptBuilder
                     item.SourceRunId = replay.RunId;
                     ApplyReplay(item, replay);
                 }
+                // A steer the run read is drawn as the user's message between two replies.
+                messages.AddRange(TranscriptSteerSplitter.Split(item));
+                continue;
             }
             messages.Add(item);
         }

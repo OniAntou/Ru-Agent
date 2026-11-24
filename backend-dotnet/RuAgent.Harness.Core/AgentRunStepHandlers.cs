@@ -615,6 +615,91 @@ internal sealed partial class AgentRunStepHandlers
     }
 
     /// <summary>
+    /// Commits a would-be final reply as narration because the user steered the run while
+    /// it was written (ADR 0056). The step keeps its model history (text, usage, reasoning
+    /// and provider continuation, as a tool step does) and the run stays running, so the
+    /// next step delivers the steer at this text-only boundary. It never reaches the
+    /// conversation outbox: the reply the user keeps is the one that ends the run.
+    /// </summary>
+    public async Task<AgentRunStepResult> HandleSteerContinueStepAsync(
+        AgentRun run,
+        ModelStepId modelStepId,
+        AssistantStep step,
+        int droppedCount,
+        HarnessPayloadIntent promptReceiptPayload,
+        HarnessEventIntent promptComposedEvent,
+        CancellationToken cancellationToken,
+        string? reasoningText = null,
+        ProviderContinuation? providerContinuation = null)
+    {
+        if (!string.IsNullOrWhiteSpace(step.Text))
+        {
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectNarration(modelStepId, step.Text));
+        }
+
+        var assistantBytes = AssistantStepJsonCodec.Serialize(step);
+        var assistantPayloadId = _ids.NewPayloadId();
+        var payloads = new List<HarnessPayloadIntent>
+        {
+            promptReceiptPayload,
+            new(
+                assistantPayloadId,
+                HarnessPayloadKind.AssistantStep,
+                HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
+                HarnessPayloadEncoding.Json,
+                Math.Max(assistantBytes.Length, 1),
+                assistantBytes),
+        };
+        var events = new List<HarnessEventIntent>
+        {
+            promptComposedEvent,
+            new(
+                _ids.NewEventId(),
+                HarnessEventKind.ModelStepCompleted,
+                modelStepId: modelStepId,
+                payloadId: assistantPayloadId,
+                safeCount: step.ToolCalls.Count),
+        };
+        var (reasoningPayload, reasoningEvent) = BuildReasoningCommit(modelStepId, reasoningText);
+        if (reasoningEvent is not null && reasoningPayload is not null)
+        {
+            events.Add(reasoningEvent);
+            payloads.Add(reasoningPayload);
+        }
+
+        AddStepUsage(events, payloads, modelStepId, step);
+        AddProviderContinuation(events, payloads, modelStepId, providerContinuation);
+        if (droppedCount > 0)
+        {
+            events.Add(new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.TransientFramesDropped,
+                modelStepId: modelStepId,
+                safeCount: droppedCount));
+        }
+
+        var next = run.Advance(
+            run.Status,
+            run.BudgetWindow,
+            run.ModelStepsInWindow,
+            run.ToolCallsInWindow,
+            events.Count,
+            _time.UtcNow);
+        var committed = await CommitAsync(
+                run,
+                next,
+                events,
+                payloads,
+                Array.Empty<ConversationOutboxIntent>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new AgentRunStepResult(committed, Array.Empty<ToolExecutionReceipt>());
+    }
+
+    /// <summary>
     /// Commits an accepted non-blank final reply. Blank replies are decided earlier by the
     /// policy (empty-reply rule), so this is reached only with visible text.
     /// </summary>

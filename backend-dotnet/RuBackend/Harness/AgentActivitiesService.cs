@@ -76,6 +76,7 @@ public sealed class AgentActivitiesService
         var reasoning = new Dictionary<string, ReasoningReplayCall>(StringComparer.Ordinal);
         var stepTexts = new List<StepTextReplayRow>();
         var compactions = new List<CompactionReplayRow>();
+        var steers = new List<(PayloadId PayloadId, long Sequence)>();
 
         await foreach (var envelope in _store.ReadEventsAsync(runId, 0, cancellationToken).ConfigureAwait(false))
         {
@@ -144,6 +145,11 @@ public sealed class AgentActivitiesService
                     when evt.PayloadId is { } blockedPayloadId:
                     stepTexts.Add(new StepTextReplayRow(blockedPayloadId, evt.Sequence));
                     break;
+                case "run.note_added"
+                    when evt.PayloadId is { } steerPayloadId
+                        && string.Equals(evt.SafeCode, RuAgent.Harness.Core.Steering.RunSteerContract.DeliveredSafeCode, StringComparison.Ordinal):
+                    steers.Add((steerPayloadId, evt.Sequence));
+                    break;
                 case "context.compacted"
                     when string.Equals(evt.SafeCode, "context_compacted", StringComparison.Ordinal):
                     compactions.Add(new CompactionReplayRow(evt.Sequence, evt.SafeCount));
@@ -152,6 +158,17 @@ public sealed class AgentActivitiesService
         }
 
         var rows = new List<ReplayedActivityRow>();
+        // A steer replays where the model received it, as the user's own words (ADR 0056).
+        foreach (var steer in steers)
+        {
+            if (await ReadSteerTextAsync(runId, steer.PayloadId, cancellationToken).ConfigureAwait(false) is { } steerText)
+            {
+                rows.Add(new ReplayedActivityRow(
+                    steer.Sequence,
+                    AgentActivityProjector.ProjectSteer("steer_" + steer.PayloadId.Value["payload_".Length..], steerText)));
+            }
+        }
+
         foreach (var compaction in compactions)
         {
             rows.Add(new ReplayedActivityRow(
@@ -539,6 +556,23 @@ public sealed class AgentActivitiesService
     /// not a client-visible UTF-8 reasoning payload is skipped, never surfaced
     /// as a failure: replay must degrade to a duration-only thinking row.
     /// </summary>
+    private async Task<string?> ReadSteerTextAsync(RunId runId, PayloadId payloadId, CancellationToken cancellationToken)
+    {
+        HarnessPayloadContent content;
+        try
+        {
+            content = await _payloadStore.ReadForClientAsync(runId, payloadId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (HarnessStoreException)
+        {
+            return null;
+        }
+
+        return content.Kind == HarnessPayloadKind.UserPrompt && content.Encoding == HarnessPayloadEncoding.Utf8Text
+            ? Encoding.UTF8.GetString(content.Plaintext.Span)
+            : null;
+    }
+
     private async Task<string?> ReadReasoningDetailAsync(
         RunId runId,
         PayloadId payloadId,

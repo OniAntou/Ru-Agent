@@ -63,6 +63,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly RuAgent.Harness.Core.Subagents.ISubagentInbox _subagentInbox;
     private readonly ILogger<AgentRuntimeCoordinatorFactory>? _budgetLogger;
     private readonly RuAgent.Broker.Tools.Mcp.McpServerHost? _mcpServers;
+    private readonly RuAgent.Harness.Core.Steering.IRunSteerInbox? _steerInbox;
 
     public AgentRuntimeCoordinatorFactory(
         IModelStepRunner model,
@@ -87,9 +88,11 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         IAgentRunModelMetadataResolver? runModelMetadataResolver = null,
         SessionWorkStateStore? workStates = null,
         ILogger<AgentRuntimeCoordinatorFactory>? logger = null,
-        RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null)
+        RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null,
+        RuAgent.Harness.Core.Steering.IRunSteerInbox? steerInbox = null)
     {
         _mcpServers = mcpServers;
+        _steerInbox = steerInbox;
         _budgetLogger = logger;
         _familyBudget = familyBudget ?? throw new ArgumentNullException(nameof(familyBudget));
         _subagentInbox = subagentInbox ?? throw new ArgumentNullException(nameof(subagentInbox));
@@ -240,7 +243,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             internalRun: internalRun,
             familyBudget: _familyBudget,
             subagentInbox: _subagentInbox,
-            recommendAdvisor: advisorSelected);
+            recommendAdvisor: advisorSelected,
+            steerInbox: _steerInbox);
     }
 
     /// <summary>

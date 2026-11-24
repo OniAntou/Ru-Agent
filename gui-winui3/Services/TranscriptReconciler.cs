@@ -139,6 +139,9 @@ internal static class TranscriptReconciler
         existing.SourceMessageIndex = next.SourceMessageIndex ?? existing.SourceMessageIndex;
         existing.SessionId = next.SessionId ?? existing.SessionId;
         existing.ActivitySplitOffsets = next.ActivitySplitOffsets ?? existing.ActivitySplitOffsets;
+        // A run split by steers keeps one change card, on its last reply (ADR 0056).
+        existing.ContinuesInLaterReply = next.ContinuesInLaterReply;
+        existing.EarlierReplyActivities = next.EarlierReplyActivities ?? existing.EarlierReplyActivities;
         // History carries no usage for older turns; dropping the label would collapse
         // its row and shift everything below it.
         existing.Usage = next.Usage ?? existing.Usage;

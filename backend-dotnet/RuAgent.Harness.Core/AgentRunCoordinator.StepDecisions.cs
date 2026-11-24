@@ -55,6 +55,18 @@ public sealed partial class AgentRunCoordinator
                     .ConfigureAwait(false);
             case StepDecisionKind.Complete:
             {
+                // A steer the user sent while this reply was being written keeps the run going:
+                // the reply stays as narration and the next step delivers the steer (ADR 0056).
+                if (_steerInbox is not null
+                    && await _steerInbox.HasPendingAsync(run.RunId, cancellationToken).ConfigureAwait(false))
+                {
+                    return await _steps.HandleSteerContinueStepAsync(
+                            run, modelStepId, step, droppedCount,
+                            promptReceiptPayload, promptComposedEvent, cancellationToken, reasoningText,
+                            invocation.ProviderContinuation)
+                        .ConfigureAwait(false);
+                }
+
                 // ADR 0047: with an advisor selected, the model is recommended once to consult it.
                 if (RecommendAdvisor(invocation, context) is { } recommendation)
                 {

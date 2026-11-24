@@ -50,6 +50,18 @@ public static class AgentActivityProjector
             ToolDisplay: null,
             Detail: ClampDetail(text));
 
+    /// <summary>
+    /// A steer the user sent into the run, at the point the model received it. The row's
+    /// text is the user's message (bounded by <see cref="Steering.RunSteerContract.MaxCharacters"/>).
+    /// </summary>
+    public static AgentActivity ProjectSteer(string steerId, string text) =>
+        new(
+            ActivityId(steerId) + "_steer",
+            AgentActivityKind.Steer,
+            AgentActivityState.Completed,
+            ToolDisplay: null,
+            Detail: ClampDetail(text));
+
     public static AgentActivity ProjectTool(
         ToolProposal proposal,
         AgentActivityState state,

@@ -2142,7 +2142,8 @@ public sealed partial class AgentRunCoordinatorTests
         RuAgent.Harness.Core.Subagents.IAgentFamilyBudget? familyBudget = null,
         RuAgent.Harness.Core.Subagents.ISubagentInbox? subagentInbox = null,
         bool recommendAdvisor = false,
-        ISystemPromptContextProvider? promptContextProvider = null) =>
+        ISystemPromptContextProvider? promptContextProvider = null,
+        RuAgent.Harness.Core.Steering.IRunSteerInbox? steerInbox = null) =>
         new(
             model,
             gateway,
@@ -2163,7 +2164,8 @@ public sealed partial class AgentRunCoordinatorTests
             internalRun: internalRun,
             familyBudget: familyBudget,
             subagentInbox: subagentInbox,
-            recommendAdvisor: recommendAdvisor);
+            recommendAdvisor: recommendAdvisor,
+            steerInbox: steerInbox);
 
     private static async Task<HarnessTransientFrame> ReadOneFrameAsync(
         TransientFrameBuffer frames)

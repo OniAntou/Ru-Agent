@@ -71,7 +71,7 @@ The first request must be `initialize`:
 ```
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.status","run.command","run.reconcile","run.output","subagent.list","subagent.get","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","run.detached","bridge.shutdown"]}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"bridge":{"version":"1.0.0.0"},"methods":["initialize","host.status","session.create","session.list","session.rewind","run.start","run.attach","run.detach","run.trust","run.approve","run.cancel","run.status","run.command","run.output","run.steer","subagent.list","subagent.get","policy.list","policy.import","policy.remove"],"notifications":["run.event","run.transient","run.detached","bridge.shutdown"]}}
 ```
 
 - `protocolVersion` must be `1`. Any other value is rejected with `-32000` and
@@ -105,8 +105,8 @@ truncating it.
 | `run.cancel` | `runId` | `{ "cancelled": "<runId>" }` | `POST /agent/v1/runs/{runId}/cancel` |
 | `run.status` | `runId` | run record (passthrough) | `GET /agent/v1/runs/{runId}` |
 | `run.command` | `runId`, `command` | command payload (passthrough) | `POST /agent/v1/runs/{runId}/commands` |
-| `run.reconcile` | `runId`, `outcome`, `hash` | reconcile payload (passthrough) | `POST /agent/v1/runs/{runId}/reconcile` |
 | `run.output` | `runId`, `payloadId` | `{ "encoding": "base64", "data", "byte_length" }` | `GET /agent/v1/runs/{runId}/payloads/{payloadId}` |
+| `run.steer` | `runId`, `text` (1-4,000 chars), `steerId`? | `{ "runId", "steerId", "state": "pending", "deliveredPayloadId" }` | `POST /agent/v1/runs/{runId}/steers` (ADR 0056) |
 | `subagent.list` | `runId` (root) | root-owned snapshot and usage | `GET /agent/v1/runs/{runId}/subagents` |
 | `subagent.get` | `runId`, `agentId`, `resultVersion`?, `offset`?, `limit`? | child detail and optional UTF-8 result page | `GET .../subagents/{agentId}` |
 | `policy.list` | `scope`? | array of policy rules | `GET /agent/v1/policies` |
@@ -132,10 +132,9 @@ Details that are easy to get wrong:
 - `run.approve` — `decision` is one of `allow_once`, `allow_session_directory`,
   `allow_always`, `deny`.
 - `run.command` — `command` text is bounded to 8192 characters.
-- `run.reconcile` — `hash` proves the caller decided on the current durable
-  reconciliation request, not the state of the workspace files. Both `outcome` and `hash` are required; `hash` must be exactly 64
-  characters. Accepted outcomes are `applied`, `not_applied` (or `not-applied`) and
-  `unknown_continue` (or `unknown`).
+- `run.steer` — `text` is 1 to 4,000 characters; `steerId` is optional (`steer_` and 32
+  lowercase hex) and makes a retry safe. A run that is not working fails with
+  `run_not_steerable`; send the text as a new run instead.
 - `policy.import` and `policy.remove` require `confirm: true`; without it the call is
   rejected as `invalid_params`.
 
@@ -218,7 +217,7 @@ code and, when the failure came from an HTTP response, `data.httpStatus`. The
 ```
 
 Codes such as `approval_stale`, `workspace_trust_required`, `trust_failed`,
-`reconcile_failed`, `full_access_confirmation_required`,
+`run_not_steerable`, `full_access_confirmation_required`,
 `invalid_payload_encoding` and `unsupported_payload_encoding` all arrive this way. The
 bridge does not retry, rewrite or fall back on host failures; the mapped code is the
 original one.

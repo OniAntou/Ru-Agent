@@ -14,6 +14,18 @@ namespace RuApp.Models
         public int? SourceMessageIndex { get; set; }
 
         /// <summary>
+        /// A reply that a steer split off (ADR 0056): the run goes on in a later reply, which
+        /// carries the one summary of the run's changes, so this part shows none.
+        /// </summary>
+        public bool ContinuesInLaterReply { get; set; }
+
+        /// <summary>
+        /// The run's activities shown in replies above the steers that split it, so the run's
+        /// last reply can summarize every change the run made in one card.
+        /// </summary>
+        public IReadOnlyList<AgentActivityItem>? EarlierReplyActivities { get; set; }
+
+        /// <summary>
         /// Set only on a row added live by a send. The transcript plays one short entrance
         /// when the row first realizes and clears it, so history loads, reconciles and
         /// recycled rows never animate.

@@ -49,14 +49,20 @@ public static class TurnChangesProjection
     public static TurnChangeSummary ForMessage(ChatMessageItem message)
     {
         ArgumentNullException.ThrowIfNull(message);
-        if (message.Role != "assistant" || message.IsStreaming || message.AgentActivities is null)
+        if (message.Role != "assistant" || message.IsStreaming || message.ContinuesInLaterReply
+            || message.AgentActivities is null && message.EarlierReplyActivities is null)
             return TurnChangeSummary.Empty;
+
+        // One card per run: a run split by steers summarizes all its replies' changes here.
+        IEnumerable<AgentActivityItem> runActivities = message.EarlierReplyActivities is { } earlier
+            ? earlier.Concat(message.AgentActivities ?? Enumerable.Empty<AgentActivityItem>())
+            : message.AgentActivities!;
 
         // Resolve replay duplicates before filtering: a later failure must not
         // resurrect an older success with the same identity.
         var ordered = new List<AgentActivityItem>();
         var positions = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var activity in message.AgentActivities)
+        foreach (var activity in runActivities)
         {
             if (string.IsNullOrWhiteSpace(activity.ActivityId)) continue;
             if (positions.TryGetValue(activity.ActivityId, out int position))

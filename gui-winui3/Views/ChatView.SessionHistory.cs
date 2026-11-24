@@ -391,6 +391,7 @@ namespace RuApp.Views
             // The Stop face also represents a send that has not reached the controller.
             Task? submissionSettled = _submissionSettled?.Task;
             var controller = _agentController;
+            string? stoppedRunId = controller?.CurrentRun?.RunId;
             string sessionId = _activeSessionId;
             long sessionGeneration = _sessionOpenGeneration;
             bool OwnsStop() => ReferenceEquals(controller, _agentController)
@@ -424,6 +425,8 @@ namespace RuApp.Views
             }
             AbandonActiveAgentReply();
             UpdateSendButtonMode(isAgentRunning: false);
+            // Stop is also "send it now": messages waiting for the stopped run go as the next turn.
+            await SendWaitingSteersAfterStopAsync(stoppedRunId);
         }
 
         private async void OnAgentStopClick(object sender, RoutedEventArgs e)

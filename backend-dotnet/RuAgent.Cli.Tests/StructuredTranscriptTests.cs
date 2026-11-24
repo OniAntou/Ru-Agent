@@ -148,6 +148,33 @@ public sealed class StructuredTranscriptTests
         }
     }
 
+    [Fact]
+    public void A_delivered_steer_renders_as_the_users_words_live_and_on_replay()
+    {
+        using var color = TuiPalette.PinLevel(TuiColorLevel.TrueColor);
+        var steer = new AgentActivityModel("act_" + new string('5', 32) + "_steer", AgentActivityKind.Steer,
+            AgentActivityState.Completed, null, null, null, null, null, null, null, null, "succeeded", null, 3, null,
+            Detail: "also update\nthe changelog");
+
+        foreach (var replay in new[] { false, true })
+        {
+            var writer = new PresentationProbe();
+            var surface = new TuiSurface(writer);
+            var transcript = new TuiTranscript(surface, new TuiStatusLine(surface)) { FullScreenCards = true };
+            transcript.BeginTurn();
+            if (replay)
+                transcript.ReplayTurn(new AgentRunActivityReplay([steer], []), [], null, null, TuiTurnOutcome.Completed, null);
+            else
+                transcript.ApplyActivity(steer);
+
+            // A steer is written as the user's own message, in the user style a sent prompt uses.
+            var first = Assert.Single(writer.Rows, row => row.Text.Contains("also update", StringComparison.Ordinal));
+            Assert.Equal("  ❯ also update", first.Text);
+            Assert.Equal(TranscriptRole.User, first.Role);
+            Assert.Contains(writer.Rows, row => row.Text.Contains("the changelog", StringComparison.Ordinal));
+        }
+    }
+
     [Theory]
     [InlineData(TuiTurnOutcome.Completed)]
     [InlineData(TuiTurnOutcome.Cancelled)]

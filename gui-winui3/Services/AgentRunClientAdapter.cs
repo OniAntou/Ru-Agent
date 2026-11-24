@@ -105,6 +105,12 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
     {
         _ = await _apiClient.AnswerAsync(runId, inputId, answer, cancellationToken).ConfigureAwait(false);
     }
+
+    public Task<AgentSteerResponse> SteerAsync(string runId, string steerId, string text, CancellationToken cancellationToken = default)
+        => _apiClient.SteerAsync(runId, steerId, text, cancellationToken);
+
+    public Task<AgentSteerListResponse> ListSteersAsync(string runId, CancellationToken cancellationToken = default)
+        => _apiClient.ListSteersAsync(runId, cancellationToken);
     public Task CancelAsync(string runId, CancellationToken cancellationToken = default)
         => _apiClient.CancelAsync(runId, cancellationToken);
 

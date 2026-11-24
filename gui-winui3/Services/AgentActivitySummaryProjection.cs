@@ -58,7 +58,7 @@ internal static class AgentActivitySummaryProjection
         var ranked = new List<(AgentActivityKind Kind, int Count, int First)>();
         foreach (var item in activities)
         {
-            if (item.Kind == AgentActivityKind.Narration) continue;
+            if (item.Kind is AgentActivityKind.Narration or AgentActivityKind.Steer) continue;
             count++;
             if (item.IsFailed) failed++;
             if (item.IsWaiting) waiting++;
@@ -130,6 +130,7 @@ internal static class AgentActivitySummaryProjection
         AgentActivityKind.Todo => "\uE9D5",
         AgentActivityKind.Compaction => "\uE73F",
         AgentActivityKind.Retry => "\uE72C",
+        AgentActivityKind.Steer => "\uE8BD",
         _ => "\uE945",
     };
 
@@ -144,7 +145,8 @@ internal static class AgentActivitySummaryProjection
 
     // Thinking, status and narration rows describe the run, not work done in it.
     private static bool Ranks(AgentActivityKind kind) =>
-        kind is not (AgentActivityKind.Thinking or AgentActivityKind.Status or AgentActivityKind.Narration);
+        kind is not (AgentActivityKind.Thinking or AgentActivityKind.Status or AgentActivityKind.Narration
+            or AgentActivityKind.Steer);
 
     private static string Normalize(string text)
     {

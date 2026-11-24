@@ -110,6 +110,9 @@ namespace RuApp.Models
         public string ActivityId { get; }
 
         public AgentActivityItem Item { get; }
+
+        /// <summary>A steer the user sent into the run; the transcript splits the reply around it.</summary>
+        public bool IsSteer => Item.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Steer;
     }
 
     /// <summary>

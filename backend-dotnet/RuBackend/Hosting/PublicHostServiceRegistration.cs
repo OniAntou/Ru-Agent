@@ -151,6 +151,9 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<RuAgent.Harness.Core.Subagents.ISubagentInbox>(services =>
             services.GetRequiredService<RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore>());
         services.AddSingleton<RuAgent.Harness.Persistence.Subagents.SqliteSubagentBudgetStore>();
+        services.AddSingleton<RuAgent.Harness.Persistence.SqliteRunSteerStore>();
+        services.AddSingleton<RuAgent.Harness.Core.Steering.IRunSteerInbox>(services =>
+            services.GetRequiredService<RuAgent.Harness.Persistence.SqliteRunSteerStore>());
         services.AddSingleton<RuBackend.Harness.Subagents.SubagentFamilyUsageReader>();
         services.AddSingleton<RuAgent.Harness.Core.Subagents.IAgentFamilyBudget,
             RuBackend.Harness.Subagents.SubagentFamilyBudget>();
@@ -347,6 +350,7 @@ internal static class PublicHostServiceRegistration
         services.AddSingleton<AgentActivitiesService>();
         services.AddSingleton<AgentCommandsService>();
         services.AddSingleton<AgentInputsService>();
+        services.AddSingleton<AgentSteersService>();
         // Harness Core adapters: the typed in-process model step service. One
         // Request deadlines end at response headers; the adapters retain an infinite
         // whole-request timeout so healthy long SSE streams are bounded by their idle

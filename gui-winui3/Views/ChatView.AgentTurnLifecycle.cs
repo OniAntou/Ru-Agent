@@ -62,6 +62,9 @@ namespace RuApp.Views
             _sessionPresentation.BeginTurn();
             _activeAgentUsage = null;
             _replyRenderScheduler.Invalidate();
+            _replyTextBase = 0;
+            _liveSteerActivityIds.Clear();
+            _waitingSteers.Clear();
             lock (_accumulatorLock)
             {
                 _replyAccumulator.Begin(_activeSessionId, _activeSessionId);
@@ -146,6 +149,10 @@ namespace RuApp.Views
             _activeAgentAssistantMessage = null;
             _activeAgentRunId = null;
             UpdateAgentInlineState();
+
+            // Messages the run ended without reading were meant for now: they go first, and
+            // the queue waits for the turn they start.
+            if (await SendReturnedSteersAsync(runId, cancellationToken)) return;
 
             // Queued turns waited for exactly this moment: the previous turn is over
             // and its transcript is settled, so the next one may start.

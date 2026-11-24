@@ -152,6 +152,15 @@ namespace RuApp.Views
         private readonly Dictionary<string, int> _activitySplitOffsetById = new(StringComparer.Ordinal);
         private int _segmentFrozenLength;
 
+        /// <summary>
+        /// Length of the run's cumulative reply text already shown in bubbles above the
+        /// latest steer (ADR 0056); the live bubble shows only what comes after it.
+        /// </summary>
+        private int _replyTextBase;
+
+        /// <summary>Steer activities already shown as the user's message in this turn.</summary>
+        private readonly HashSet<string> _liveSteerActivityIds = new(StringComparer.Ordinal);
+
         private ChatMessageItem? _activeAgentAssistantMessage;
         private string? _activeAgentRunId;
         private string? _activeWorkspaceId;

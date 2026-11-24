@@ -346,6 +346,24 @@
                         </Grid>
                     </Border>
 
+                    <!-- What Enter does while a run is working (ADR 0056). Steer is the
+                         default: the message reaches the run at its next step. -->
+                    <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">
+                        <Grid Tag="SettingsRow" ColumnDefinitions="*,Auto" MinHeight="44">
+                            <StackPanel VerticalAlignment="Center" Spacing="2" Margin="0,0,16,0">
+                                <TextBlock x:Name="WhileRunningLabel" Text="Sending while Ru is working" Style="{StaticResource SettingLabelStyle}" />
+                                <TextBlock Text="Steer gives your message to the run at its next step, without stopping it. Queue holds it and sends it as the next turn when the run ends."
+                                           Style="{StaticResource SettingDescStyle}" />
+                            </StackPanel>
+                            <ComboBox x:Name="WhileRunningBox" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                      SelectionChanged="OnWhileRunningChanged"
+                                      AutomationProperties.LabeledBy="{Binding ElementName=WhileRunningLabel}">
+                                <ComboBoxItem Content="Steer the run" Tag="Steer" />
+                                <ComboBoxItem Content="Queue the next turn" Tag="Queue" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+
                     <!-- Notifications: only while Ru is in the background. Windows
                          notifications are opt-in because they register Ru with Windows. -->
                     <Border Style="{StaticResource FluentCardStyle}" Translation="0,0,4">

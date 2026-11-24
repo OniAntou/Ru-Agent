@@ -214,6 +214,33 @@ public sealed class TurnChangesProjectionTests
         Assert.Equal("{x:Bind}", (string?)children[textIndex + 1].Attribute("Message"));
     }
 
+    [Fact]
+    public void A_run_split_by_a_steer_shows_one_card_with_every_change_on_its_last_reply()
+    {
+        var first = Edit("act_1", "file_1.txt", 2, 0);
+        var steer = new AgentActivityItem(new AgentActivityModel("act_" + new string('8', 32) + "_steer",
+            AgentActivityKind.Steer, AgentActivityState.Completed, null, null, null, null, null, null, null, null,
+            "succeeded", null, null, null, Detail: "5 more"));
+        var second = Edit("act_2", "file_6.txt", 2, 0);
+        var message = new ChatMessageItem
+        {
+            Role = "assistant",
+            Segments = new ObservableCollection<AssistantSegment>
+            {
+                new ActivitySegment(first.ActivityId, first), new TextSegment("Created."),
+                new ActivitySegment(steer.ActivityId, steer),
+                new ActivitySegment(second.ActivityId, second), new TextSegment("Five more created."),
+            },
+        };
+
+        var shown = TranscriptSteerSplitter.Split(message);
+
+        Assert.Equal(new[] { "assistant", "user", "assistant" }, shown.Select(item => item.Role));
+        Assert.Empty(TurnChangesProjection.ForMessage(shown[0]).Files);
+        Assert.Equal(new[] { "file_1.txt", "file_6.txt" },
+            TurnChangesProjection.ForMessage(shown[2]).Files.Select(file => file.Path));
+    }
+
     private static ChatMessageItem Message(params AgentActivityItem[] edits) => new()
     {
         Role = "assistant", AgentActivities = new ObservableCollection<AgentActivityItem>(edits),

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: Steer a working run (ADR 0056). A message sent while a run works now
+  reaches that run at its next step instead of waiting for it to end: the Host stores it
+  (`POST /agent/v1/runs/{runId}/steers`, schema v40) and delivers it as a user message only
+  at a step boundary, never between a tool call and its result. A steer that arrives while
+  the model writes its final reply keeps the run going. Prompt hooks see a steer like any
+  prompt. Desktop steers on Enter by default; Settings → "Sending while Ru is working" can
+  queue instead. The TUI steers on Enter and queues on Tab. Attachments and commands always
+  queue. Desktop shows the message at once at the end of the chat, exactly like a sent
+  message, and moves it to the point Ru reads it, where Ru's reply continues in a new bubble;
+  the TUI writes it there too. A message the run ends without reading is sent as the next turn,
+  so Stop (Esc in the TUI) also sends waiting messages at once. RPC adds `run.steer` and the
+  SDK `run.steer()`.
+
 - **fix(build)**: Self-contained Desktop, CLI and Host packages now bundle .NET 10.0.15.
   A package built with an older SDK carried runtime 10.0.11, which has CVE-2026-111497
   (Brotli decoder out-of-bounds write), and the Broker's web fetch decodes Brotli from

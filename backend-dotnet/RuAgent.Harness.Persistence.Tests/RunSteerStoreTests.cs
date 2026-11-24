@@ -1,0 +1,179 @@
+using RuAgent.Harness.Core;
+using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Steering;
+using Xunit;
+
+namespace RuAgent.Harness.Persistence.Tests;
+
+public sealed class RunSteerStoreTests
+{
+    private static readonly string SteerOne = "steer_" + new string('1', 32);
+    private static readonly string SteerTwo = "steer_" + new string('2', 32);
+
+    [Fact]
+    public async Task A_steer_waits_unbound_and_is_delivered_once_as_a_user_entry_at_the_boundary()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (events, steers, runId) = await RunningAsync(fixture);
+
+        Assert.Equal(RunSteerAppendOutcome.Accepted,
+            await steers.AppendAsync(runId, SteerOne, "Dùng parser mới 🐈", HarnessStoreTestFixture.Timestamp, default));
+        Assert.True(await steers.HasPendingAsync(runId, default));
+        Assert.Equal(0L, await BoundUserEntriesAsync(fixture, runId));
+        Assert.Equal(RunSteerContract.StatePending, Assert.Single(await steers.ListAsync(runId, default)).State);
+
+        var before = (await events.GetRunAsync(runId, default))!;
+        var delivered = Assert.Single(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
+        Assert.Equal(SteerOne, delivered.SteerId);
+        Assert.Equal("Dùng parser mới 🐈", delivered.Text);
+        Assert.Empty(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
+        Assert.False(await steers.HasPendingAsync(runId, default));
+
+        var after = (await events.GetRunAsync(runId, default))!;
+        Assert.Equal(before.LastSequence + 1, after.LastSequence);
+        Assert.Equal(before.ModelStepsInWindow, after.ModelStepsInWindow);
+        Assert.Equal(1L, await BoundUserEntriesAsync(fixture, runId));
+        var note = Assert.Single(await ReadEventsAsync(events, runId), item => item.Kind == "run.note_added");
+        Assert.Equal(RunSteerContract.DeliveredSafeCode, note.SafeCode);
+        Assert.Equal(RunSteerContract.DeliveredPayloadId(SteerOne), note.PayloadId);
+        var listed = Assert.Single(await steers.ListAsync(runId, default));
+        Assert.Equal(RunSteerContract.StateDelivered, listed.State);
+        Assert.Equal("Dùng parser mới 🐈", listed.Text);
+    }
+
+    [Theory]
+    [InlineData("model.step_started")]
+    [InlineData("tool.proposed")]
+    public async Task A_steer_never_lands_between_a_step_and_its_tool_results(string inFlight)
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        await steers.AppendAsync(runId, SteerOne, "Stop after the parser", HarnessStoreTestFixture.Timestamp, default);
+        await InsertRawEventAsync(fixture, runId, inFlight);
+
+        Assert.Empty(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
+        Assert.True(await steers.HasPendingAsync(runId, default));
+        Assert.Equal(0L, await BoundUserEntriesAsync(fixture, runId));
+    }
+
+    [Fact]
+    public async Task A_retried_steer_answers_as_the_first_and_other_text_under_its_id_conflicts()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        var now = HarnessStoreTestFixture.Timestamp;
+
+        Assert.Equal(RunSteerAppendOutcome.Accepted, await steers.AppendAsync(runId, SteerOne, "one", now, default));
+        Assert.Equal(RunSteerAppendOutcome.Duplicate, await steers.AppendAsync(runId, SteerOne, "one", now, default));
+        Assert.Equal(RunSteerAppendOutcome.IdempotencyConflict, await steers.AppendAsync(runId, SteerOne, "two", now, default));
+        Assert.Single(await steers.ListAsync(runId, default));
+    }
+
+    [Fact]
+    public async Task Pending_steers_are_bounded_per_run()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        for (var index = 0; index < RunSteerContract.MaxPending; index++)
+        {
+            Assert.Equal(RunSteerAppendOutcome.Accepted, await steers.AppendAsync(runId,
+                "steer_" + index.ToString("x32"), "steer " + index, HarnessStoreTestFixture.Timestamp, default));
+        }
+
+        Assert.Equal(RunSteerAppendOutcome.QueueFull,
+            await steers.AppendAsync(runId, SteerTwo, "one too many", HarnessStoreTestFixture.Timestamp, default));
+    }
+
+    [Theory]
+    [InlineData(HarnessRunState.Created)]
+    [InlineData(HarnessRunState.WaitingWorkspaceTrust)]
+    public async Task A_run_that_will_not_step_again_refuses_a_steer(HarnessRunState state)
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunAsync(fixture, new HarnessRunStatus(state));
+
+        Assert.Equal(RunSteerAppendOutcome.RunNotSteerable,
+            await steers.AppendAsync(runId, SteerOne, "too late", HarnessStoreTestFixture.Timestamp, default));
+        Assert.Equal(RunSteerAppendOutcome.RunNotFound,
+            await steers.AppendAsync(HarnessStoreTestFixture.Run(9), SteerTwo, "nobody", HarnessStoreTestFixture.Timestamp, default));
+    }
+
+    [Fact]
+    public async Task A_steer_still_pending_when_the_run_ends_reads_as_returned()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        await steers.AppendAsync(runId, SteerOne, "never delivered", HarnessStoreTestFixture.Timestamp, default);
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE agent_runs SET state=$state,terminal_at_utc=$now,terminal_error_code='cancelled' WHERE run_id=$run";
+            command.Parameters.AddWithValue("$state", (int)HarnessRunState.Cancelled);
+            command.Parameters.AddWithValue("$now", HarnessStoreTestFixture.Timestamp.ToString("O"));
+            command.Parameters.AddWithValue("$run", runId.Value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var steer = Assert.Single(await steers.ListAsync(runId, default));
+        Assert.Equal(RunSteerContract.StateReturned, steer.State);
+        Assert.Equal("never delivered", steer.Text);
+        Assert.Empty(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
+        Assert.Equal(RunSteerAppendOutcome.RunNotSteerable,
+            await steers.AppendAsync(runId, SteerTwo, "after the end", HarnessStoreTestFixture.Timestamp, default));
+    }
+
+    private static Task<(SqliteHarnessEventStore Events, SqliteRunSteerStore Steers, RunId RunId)> RunningAsync(
+        HarnessStoreTestFixture fixture) =>
+        RunAsync(fixture, new HarnessRunStatus(HarnessRunState.Running));
+
+    private static async Task<(SqliteHarnessEventStore Events, SqliteRunSteerStore Steers, RunId RunId)> RunAsync(
+        HarnessStoreTestFixture fixture, HarnessRunStatus status)
+    {
+        await fixture.RegisterWorkspaceAsync(1);
+        var events = fixture.CreateEventStore();
+        var run = fixture.NewRun(1, 1, 1, status: status);
+        await events.TryCreateRunAsync(run, default);
+        return (events, new SqliteRunSteerStore(fixture.Options, fixture.PayloadStore), run.Run.RunId);
+    }
+
+    private static async Task<long> BoundUserEntriesAsync(HarnessStoreTestFixture fixture, RunId runId)
+    {
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT count(*) FROM agent_payloads p JOIN agent_run_steers s ON 1=1
+            WHERE p.run_id=$run AND p.context_scope=1 AND p.context_role=1
+              AND p.payload_id='payload_' || substr(s.steer_id, 7)
+            """;
+        command.Parameters.AddWithValue("$run", runId.Value);
+        return (long)(await command.ExecuteScalarAsync() ?? 0L);
+    }
+
+    private static async Task InsertRawEventAsync(HarnessStoreTestFixture fixture, RunId runId, string kind)
+    {
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO agent_events(run_id,sequence,event_id,kind,model_step_id,tool_call_id,occurred_at_utc)
+            VALUES($run,(SELECT last_sequence+1 FROM agent_runs WHERE run_id=$run),$event,$kind,$step,$call,$now);
+            UPDATE agent_runs SET last_sequence=last_sequence+1,version=version+1 WHERE run_id=$run;
+            """;
+        command.Parameters.AddWithValue("$run", runId.Value);
+        command.Parameters.AddWithValue("$event", "evt_" + new string('e', 32));
+        command.Parameters.AddWithValue("$step", "step_" + new string('e', 32));
+        command.Parameters.AddWithValue("$kind", kind);
+        command.Parameters.AddWithValue("$call", "call_" + new string('e', 32));
+        command.Parameters.AddWithValue("$now", HarnessStoreTestFixture.Timestamp.ToString("O"));
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<List<HarnessEvent>> ReadEventsAsync(SqliteHarnessEventStore events, RunId runId)
+    {
+        var result = new List<HarnessEvent>();
+        await foreach (var envelope in events.ReadEventsAsync(runId, 0, default)) result.Add(envelope.Event);
+        return result;
+    }
+}

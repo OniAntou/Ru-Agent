@@ -12,6 +12,7 @@ public sealed partial class AgentCommands
             chatEngine = loop;
             loop.SetTaskCommandHandler((argument, token) => RunCommandControlAsync("tasks", () => ShowTasksAsync(argument, token), token));
             loop.SetRetainedContinuationClassifier(IsRetainedContinuation);
+            loop.SetSteerHandler(SteerActiveRunAsync);
             // A paused queue left by a failed submission resumes only when the operator
             // sends again while that failed submission is still held for retry.
             loop.SetPausedQueueRetryProbe(() => submissions.Retryable is not null);
@@ -38,7 +39,16 @@ public sealed partial class AgentCommands
                 }
                 else
                 {
-                    await HandlePromptLineAsync(submission.Prompt, ct, submission).ConfigureAwait(false);
+                    try
+                    {
+                        await HandlePromptLineAsync(submission.Prompt, ct, submission).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // Esc cancels the turn's token, which is exactly when steers come back:
+                        // read them with the session's token so they are still sent.
+                        await SendReturnedSteersAsync(cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 if (dispatcherExitCode is not null)
                 {

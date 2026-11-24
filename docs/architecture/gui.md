@@ -593,6 +593,27 @@ was created), never the composer's current default, and `WorkspaceTrustPromptPol
 adds a plain note when that folder is a drive root or the user profile. Waiting feed
 rows take their headline from `AgentWaitPresentation`; an explained code moves to the
 row's tooltip and an unknown one stays on the row.
+Enter while a run is working steers it by default (ADR 0056); the presentation follows
+DeepSeek Harness. `ChatView.Steering` sends the plain text through
+`AgentRunController.SteerAsync`, clears the box, and shows the message at once at the tail of
+the chat, drawn exactly like the message it becomes, with Ru's work continuing above it. No
+status line is shown. When the run's delivered `steer` activity arrives, the waiting copy is
+replaced at that point: Ru's reply so far ends, the user's message follows, and the run
+continues in a new reply bubble below it (`ContinueTurnAfterSteer`; the live reply text is
+cumulative for the run, so the new bubble shows only the text after `_replyTextBase`). A steer
+sent from another client appears the same way when it is read. On history reload
+`TranscriptSteerSplitter` splits a replayed run at the same points, so live and reloaded
+transcripts match. The run keeps one "Edited files" card: replies above a steer show none
+(`ContinuesInLaterReply`), and the last reply's card covers every change of the run
+(`EarlierReplyActivities`). A message the run ends without reading (it finished, or the user
+pressed Stop) is sent as the next turn ahead of queued turns, so Stop doubles as "send it
+now". Any refusal puts the text back; attachments and commands always queue. Settings →
+"Sending while Ru is working" (`ComposerSendPreferenceStore`, `composer.json`) can make Enter
+queue instead. Any outcome but a sent steer puts the text back; a
+run that can no longer take it turns the text into a queued turn; attachments and commands
+always queue. Settings → "Sending while Ru is working" (`ComposerSendPreferenceStore`,
+`composer.json`) can make Enter queue instead. After a turn, steers the run ended without
+reading go back to the composer.
 `ChatComposerViewModel` owns the composer's unsent content: attachments, the
 per-session draft (`ComposerDraftStore`), the turn queue and its strip state, and
 the effective prompt that inlines text attachments. The text box stays the live

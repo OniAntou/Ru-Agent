@@ -415,6 +415,7 @@ public sealed partial class RpcDispatchSurfaceTests
                 "run.status",
                 "run.command",
                 "run.output",
+                "run.steer",
                 "subagent.list",
                 "subagent.get",
                 "policy.list",

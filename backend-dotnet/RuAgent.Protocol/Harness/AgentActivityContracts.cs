@@ -24,6 +24,8 @@ public enum AgentActivityKind
     Program,
     // A consultation of the run's advisor model (ADR 0047).
     Advisor,
+    // A message the user sent into the working run (ADR 0056).
+    Steer,
 }
 
 public enum AgentActivityState

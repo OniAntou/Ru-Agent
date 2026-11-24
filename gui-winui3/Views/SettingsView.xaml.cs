@@ -102,6 +102,7 @@ namespace RuApp.Views
             ViewModel.AttachCustomEditor(customEditor);
             CustomProviderEditor.Attach(customEditor);
             _ = ViewModel.AttachAsync(new ApiSettingsBackend(apiService), new ProviderCatalogSession(_providerCatalogController));
+            LoadComposerSendPreferences();
             LoadNotificationPreferences();
         }
 

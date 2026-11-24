@@ -146,6 +146,7 @@ namespace RuApp.Views
         {
             if (SendButton is null) return;
             AutomationProperties.SetName(SendButton, RunPanel.SendName);
+            RunPanel.SetWhileRunning(ComposerSendPreferenceStore.Shared.Current.WhileRunning);
             if (ChatInputTextBox is not null) ChatInputTextBox.PlaceholderText = RunPanel.ComposerPlaceholder;
             if (SendButtonIcon is null) return;
 
@@ -488,10 +489,9 @@ namespace RuApp.Views
                         e.Handled = true;
                         if (_isSendButtonInStopMode || IsActiveAgentRunPending())
                         {
-                            // A second thought lands in the queue instead of being
-                            // dropped: the run in hand owns the turn boundary, and
-                            // Enter still means "this is what I want next".
-                            QueueCurrentComposerTurn();
+                            // A second thought reaches the run in hand: it steers it by
+                            // default, or waits as the next turn when Settings says queue.
+                            await SteerOrQueueCurrentComposerTurnAsync();
                             return;
                         }
                         await SendCurrentMessageAsync();

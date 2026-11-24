@@ -173,6 +173,14 @@ namespace RuApp.Views
                 return;
             }
 
+            // A steer is the user's message, never a row of the run's work (ADR 0056). One
+            // this window sent is already on screen; one sent elsewhere appears now.
+            if (activity.Kind == RuAgent.Protocol.Harness.AgentActivityKind.Steer)
+            {
+                OnSteerDelivered(activity.ActivityId, activity.Detail);
+                return;
+            }
+
             var update = _agentActivityFeed.Apply(activity, AgentActivities);
             if (update is null)
             {
@@ -576,6 +584,8 @@ namespace RuApp.Views
                     : null);
             if (!alreadyAdopted)
             {
+                // The adopted bubble's text seeds the accumulator, so it is the whole base.
+                _replyTextBase = 0;
                 _segmentFrozenLength = _activeAgentAssistantMessage.Content?.Length ?? 0;
                 lock (_accumulatorLock)
                 {
@@ -643,6 +653,14 @@ namespace RuApp.Views
         /// </summary>
         private void ApplyReplyText(ChatMessageItem message, string text, int? resetOffset = null)
         {
+            // After a steer the run's reply continues in a new bubble: drop the part the
+            // bubbles above it already show.
+            if (_replyTextBase > 0 && ReferenceEquals(message, _activeAgentAssistantMessage))
+            {
+                text = text.Length > _replyTextBase ? text[_replyTextBase..] : string.Empty;
+                if (resetOffset is { } shifted) resetOffset = Math.Max(0, shifted - _replyTextBase);
+            }
+
             _replyTextApplyTimer?.Stop();
             _pendingReplyMessage = null;
             _pendingReplyText = null;
@@ -724,6 +742,8 @@ namespace RuApp.Views
             _agentActivityFeed.Clear();
             _activitySplitOffsetById.Clear();
             _segmentFrozenLength = 0;
+            _replyTextBase = 0;
+            _liveSteerActivityIds.Clear();
             AgentActivities.Clear();
             _agentBusySeen = false;
         }

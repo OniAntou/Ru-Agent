@@ -39,7 +39,7 @@ public enum EscapeOutcome
 ///
 /// The one place this is deliberately permissive is the composer. Escape stops the run
 /// from there too, draft and all, because the composer stays live during a run by
-/// design: Enter queues the next turn, so a user is expected to keep typing while the
+/// design: Enter steers the run or queues the next turn, so a user is expected to keep typing while the
 /// agent works. Making Escape inert exactly when the user is watching the agent and
 /// reaching for the keyboard would be the one moment it must not be. Nothing is lost
 /// when it fires, because stopping a run leaves the draft where it was.

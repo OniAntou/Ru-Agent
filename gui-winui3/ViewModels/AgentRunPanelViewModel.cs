@@ -77,7 +77,18 @@ public sealed partial class AgentRunPanelViewModel : ObservableObject
     /// <summary>Approve/deny, answer and Stop are disabled while one of them is being submitted.</summary>
     [ObservableProperty] public partial bool IsInteractionEnabled { get; private set; } = true;
 
-    /// <summary>Whether Enter queues (a run is in hand) rather than sends.</summary>
+    /// <summary>What Enter does while a run is in hand; the Settings choice (ADR 0056).</summary>
+    public ComposerWhileRunning WhileRunning { get; private set; } = ComposerWhileRunning.Steer;
+
+    /// <summary>Takes the Settings choice; the placeholder follows it while a run is in hand.</summary>
+    public void SetWhileRunning(ComposerWhileRunning whileRunning)
+    {
+        if (WhileRunning == whileRunning) return;
+        WhileRunning = whileRunning;
+        OnPropertyChanged(nameof(ComposerPlaceholder));
+    }
+
+    /// <summary>Whether a run is in hand, so Enter steers or queues rather than sends.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SendGlyph), nameof(SendName), nameof(ComposerPlaceholder))]
     public partial bool IsRunning { get; private set; }
@@ -87,7 +98,7 @@ public sealed partial class AgentRunPanelViewModel : ObservableObject
     public string SendName => IsRunning ? AgentComposerPresentation.StopName : AgentComposerPresentation.SendName;
 
     /// <summary>Says which of the two things Enter will do, so a second thought is never swallowed.</summary>
-    public string ComposerPlaceholder => IsRunning
+    public string ComposerPlaceholder => IsRunning && WhileRunning == ComposerWhileRunning.Queue
         ? AgentComposerPresentation.QueuePlaceholder
         : AgentComposerPresentation.MessagePlaceholder;
 

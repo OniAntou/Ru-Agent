@@ -41,7 +41,13 @@ terminal smaller than 80 by 24.
 | `Up` / `Down` | Move through a multi-line draft, then through earlier prompts |
 | `Ctrl+V` | Paste text, or attach a copied image |
 
-While a turn is running, `Enter` queues your next prompt (up to eight). Queued prompts run in order.
+While a turn is running, `Enter` steers it: Ru reads your message at its next step, without
+stopping the run. `Tab` queues the message as the next turn instead (up to eight; queued prompts
+run in order). Commands and messages with attachments always queue. Your message appears in the
+transcript where Ru reads it; until then the hint row says it is waiting. `Esc` stops the run
+and sends waiting messages right away as the next turn, which also happens if the run ends
+before reading them. The plain `--classic` mode reads input only between turns, so it does not
+steer.
 
 ## Commands
 

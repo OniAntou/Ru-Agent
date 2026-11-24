@@ -2,7 +2,7 @@
 
 The canonical public surface is
 [`backend-dotnet/public-route-contract.json`](../backend-dotnet/public-route-contract.json):
-57 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
+59 HTTP method/path pairs and no WebSocket route. ASP.NET Core is the only
 public owner, and every entry is `aspnet-direct`. The 33 Agent v1 routes under
 `/agent/v1/*` (including the run-independent skills catalog/preferences and the user plugin list, settings and pinned GitHub install)
 and the `POST /host/shutdown` route are active alongside the
@@ -47,11 +47,11 @@ or alternate host mode. Unknown public paths are never sent to Python.
 
 ## Reserved routes
 
-21 entries intentionally have empty `winui_callers`: the message search route
+23 entries intentionally have empty `winui_callers`: the message search route
 `GET /sessions/search` driven by the CLI; the TUI conversation branch route
-(`POST /sessions/{sessionId}/fork`); 14 additive `/agent/v1/*` routes —
-the 11 run routes (legacy and selected creation, run read, event stream, payload read, approvals,
-inputs, trust, cancel, compact, and commands) and the three policy
+(`POST /sessions/{sessionId}/fork`); 16 additive `/agent/v1/*` routes —
+the 13 run routes (legacy and selected creation, run read, event stream, payload read, approvals,
+inputs, steers read and send, trust, cancel, compact, and commands) and the three policy
 routes (`GET`/`POST /agent/v1/policies` and `DELETE /agent/v1/policies/{ruleId}`)
 — which are driven through the Agent harness flow rather than direct WinUI
 callers; and the five workspace coordination routes, which external clients

@@ -233,10 +233,16 @@ public partial class ChatSessionEngine
             RefreshRunStatus();
         });
 
-    public void Submit()
+    /// <summary>Enter: while a turn runs, a plain prompt steers it (ADR 0056); otherwise it starts or queues.</summary>
+    public void Submit() => Submit(forceQueue: false, steerFallback: null);
+
+    /// <summary>Tab with a prompt while a turn runs: the prompt waits as the next turn instead of steering.</summary>
+    public void QueueSubmit() => Submit(forceQueue: true, steerFallback: null);
+
+    private void Submit(bool forceQueue, string? steerFallback)
     {
         if (_stopped) return;
-        var line = _view.InputText;
+        var line = steerFallback ?? _view.InputText;
         // Exit must remain available while a turn or local picker is running.
         if (_immediateCommand?.Invoke(line) == true) return;
         if (ChatCommandCatalog.IsRemovedCommand(line))
@@ -323,6 +329,17 @@ public partial class ChatSessionEngine
             return;
         }
 
+        if (!forceQueue && steerFallback is null && ShouldSteer(line, hasAttachments, retainedContinuation))
+        {
+            _view.InputText = string.Empty;
+            Remember(line);
+            _historyIndex = _history.Count;
+            _draft = string.Empty;
+            TuiDebug.Log("submit", $"steer len={line.Length}");
+            _ = SteerAsync(line.Trim());
+            return;
+        }
+
         var queued = false;
         var refused = false;
         var resumedPausedQueue = false;
@@ -364,7 +381,19 @@ public partial class ChatSessionEngine
                     }
                     else
                     {
-                        _queued.Enqueue(submission);
+                        if (steerFallback is not null && _queued.Count > 0)
+                        {
+                            // A message meant for the run that just ended goes ahead of the queue.
+                            var later = _queued.ToArray();
+                            _queued.Clear();
+                            _queued.Enqueue(submission);
+                            foreach (var waiting in later) _queued.Enqueue(waiting);
+                        }
+                        else
+                        {
+                            _queued.Enqueue(submission);
+                        }
+
                         _queuedSubmissionBytes += submission.OwnedBytes;
                         queued = true;
                     }
@@ -379,11 +408,18 @@ public partial class ChatSessionEngine
             return;
         }
 
-        _view.InputText = string.Empty;
+        if (steerFallback is null)
+        {
+            _view.InputText = string.Empty;
+        }
+
         _submissionAccepted?.Invoke(submission);
-        Remember(line);
-        _historyIndex = _history.Count;
-        _draft = string.Empty;
+        if (steerFallback is null)
+        {
+            Remember(line);
+            _historyIndex = _history.Count;
+            _draft = string.Empty;
+        }
 
         if (queued)
         {
@@ -628,7 +664,7 @@ public partial class ChatSessionEngine
         }
     }
 
-    private int QueuedCount
+    internal int QueuedCount
     {
         get { lock (_queueGate) return _queued.Count; }
     }

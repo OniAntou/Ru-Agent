@@ -30,6 +30,8 @@ public sealed partial class AgentRunCoordinator
     private readonly bool _recommendAdvisor;
     private readonly Subagents.IAgentFamilyBudget? _familyBudget;
     private readonly Subagents.ISubagentInbox? _subagentInbox;
+    private readonly Steering.IRunSteerInbox? _steerInbox;
+    private readonly IAgentActivitySink? _activitySink;
 
     public AgentRunCoordinator(
         IModelStepRunner model,
@@ -52,7 +54,8 @@ public sealed partial class AgentRunCoordinator
         bool internalRun = false,
         Subagents.IAgentFamilyBudget? familyBudget = null,
         Subagents.ISubagentInbox? subagentInbox = null,
-        bool recommendAdvisor = false)
+        bool recommendAdvisor = false,
+        Steering.IRunSteerInbox? steerInbox = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
@@ -60,6 +63,9 @@ public sealed partial class AgentRunCoordinator
         _internalRun = internalRun;
         _familyBudget = familyBudget;
         _subagentInbox = subagentInbox;
+        // Steers come from the user, so only a root run receives them (ADR 0056).
+        _steerInbox = internalRun ? null : steerInbox;
+        _activitySink = activitySink;
         _contextAssembler = contextAssembler
             ?? throw new ArgumentNullException(nameof(contextAssembler));
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
@@ -153,6 +159,12 @@ public sealed partial class AgentRunCoordinator
     {
         if (_internalRun && _subagentInbox is not null)
             await _subagentInbox.DeliverMessagesAsync(runId, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+        if (_steerInbox is not null)
+        {
+            var steers = await _steerInbox.DeliverAsync(runId, _time.UtcNow, cancellationToken).ConfigureAwait(false);
+            foreach (var steer in steers)
+                AgentActivityProjector.PublishSafe(_activitySink, runId, AgentActivityProjector.ProjectSteer(steer.SteerId, steer.Text));
+        }
         var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
         if (run.State != HarnessRunState.Running)
         {

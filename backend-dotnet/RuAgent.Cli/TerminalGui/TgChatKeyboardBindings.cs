@@ -19,6 +19,7 @@ internal sealed class TgChatKeyboardBindings
     private readonly Action _paste;
     private readonly Action _copy;
     private readonly Action? _detachLast;
+    private readonly Action? _queueSubmit;
     private IApplication? _keyboardApp;
 
     public TgChatKeyboardBindings(
@@ -31,7 +32,8 @@ internal sealed class TgChatKeyboardBindings
         Action completeCommand,
         Action paste,
         Action copy,
-        Action? detachLast = null)
+        Action? detachLast = null,
+        Action? queueSubmit = null)
     {
         _window = window;
         _isBusy = isBusy;
@@ -43,6 +45,7 @@ internal sealed class TgChatKeyboardBindings
         _paste = paste;
         _copy = copy;
         _detachLast = detachLast;
+        _queueSubmit = queueSubmit;
         window.ClipboardPasteRequested += _paste;
         window.Composer.Input.KeyDown += OnComposerKey;
         window.Composer.Input.DraftInsertionRejected += () =>
@@ -137,7 +140,14 @@ internal sealed class TgChatKeyboardBindings
         }
         else if (key == Key.Tab)
         {
-            _completeCommand();
+            // While a turn runs, Enter steers it (ADR 0056); Tab keeps a typed prompt for the
+            // next turn instead. A slash command, or an idle composer, still completes.
+            var draft = _window.Composer.Input.Text?.ToString() ?? string.Empty;
+            if (_queueSubmit is not null && _isBusy() && !string.IsNullOrWhiteSpace(draft)
+                && !draft.TrimStart().StartsWith('/'))
+                _queueSubmit();
+            else
+                _completeCommand();
             key.Handled = true;
         }
         else if (key == Key.V.WithCtrl || key == Key.V.WithCtrl.WithShift)

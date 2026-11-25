@@ -99,10 +99,12 @@ public sealed partial class ModelStepService
         ModelGenerationRequest request,
         Func<string, ValueTask>? onDelta,
         CancellationToken cancellationToken,
-        string? modelStepId = null)
+        string? modelStepId = null,
+        Func<string, ValueTask>? onReasoning = null)
     {
         var prepared = PrepareRequest(request, modelStepId, requireExactProjection: false);
-        return await RunPreparedAsync(prepared, onDelta, cancellationToken, modelStepId).ConfigureAwait(false);
+        return await RunPreparedAsync(prepared, onDelta, cancellationToken, modelStepId, onReasoning)
+            .ConfigureAwait(false);
     }
 
     public PreparedModelStep PrepareRequest(
@@ -226,7 +228,8 @@ public sealed partial class ModelStepService
         PreparedModelStep prepared,
         Func<string, ValueTask>? onDelta,
         CancellationToken cancellationToken,
-        string? modelStepId = null)
+        string? modelStepId = null,
+        Func<string, ValueTask>? onReasoning = null)
     {
         ArgumentNullException.ThrowIfNull(prepared);
         cancellationToken.ThrowIfCancellationRequested();
@@ -340,6 +343,11 @@ public sealed partial class ModelStepService
                         if (reasoning.Length > MaximumReasoningChars)
                         {
                             reasoning.Remove(0, reasoning.Length - MaximumReasoningChars);
+                        }
+
+                        if (onReasoning is not null && delta.Reasoning.Length > 0)
+                        {
+                            await onReasoning(delta.Reasoning).ConfigureAwait(false);
                         }
                     }
 

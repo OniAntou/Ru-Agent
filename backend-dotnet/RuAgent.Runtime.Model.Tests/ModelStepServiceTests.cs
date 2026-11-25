@@ -844,6 +844,41 @@ public sealed partial class ModelStepServiceTests
     }
 
     [Fact]
+    public async Task Step_service_forwards_each_reasoning_delta_to_the_callback()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, null, "first "),
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, null, "second"),
+            new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop"));
+        var reasoning = new List<string>();
+
+        var result = await new ModelStepService(provider).RunAsync(
+            Request(),
+            _ => ValueTask.CompletedTask,
+            CancellationToken.None,
+            onReasoning: text =>
+            {
+                reasoning.Add(text);
+                return ValueTask.CompletedTask;
+            });
+
+        Assert.Equal(["first ", "second"], reasoning);
+        Assert.Equal("first second", result.ReasoningText);
+    }
+
+    [Fact]
+    public async Task Without_a_reasoning_callback_the_step_is_unchanged()
+    {
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, null, "only"),
+            new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop"));
+
+        var result = await new ModelStepService(provider).RunAsync(Request(), CancellationToken.None);
+
+        Assert.Equal("only", result.ReasoningText);
+    }
+
+    [Fact]
     public async Task Step_service_falls_back_to_think_blocks_without_reasoning_channel()
     {
         var provider = new FakeModelProvider(

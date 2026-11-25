@@ -38,6 +38,10 @@ public static class FilePreviewSource
         "go.mod", "go.sum", "Cargo.lock",
     };
 
+    /// <summary>An SVG is read as text (its size cap and checks) and shown as a picture drawn by the sandboxed renderer.</summary>
+    public static bool IsSvg(string? path) =>
+        string.Equals(Path.GetExtension(path), ".svg", StringComparison.OrdinalIgnoreCase);
+
     public static FilePreviewKind Classify(string path)
     {
         var ext = Path.GetExtension(path);

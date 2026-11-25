@@ -826,7 +826,20 @@ text and the horizontal scroller, so they never scroll away or enter a selection
 because one gutter row cannot follow a wrapped line, numbers show only while wrap
 is off. Copy always takes the whole source, folded or not. Lines are highlighted
 once over the whole block (`CodeHighlighter.HighlightLines`), so a comment opened
-above the fold keeps its color below it. Plain table-cell extraction
+above the fold keeps its color below it.
+
+Mermaid fences and TeX are drawn as pictures by `SandboxRenderer` (ADR 0057): one
+hidden, locked-down WebView2 loads the vendored Mermaid and MathJax page from
+`Assets/render` and returns PNGs that native `Image` controls show. Model text goes
+to it only as a JSON string; the reply is untrusted data read by
+`SandboxRenderPolicy` (request id, PNG signature, size bounds). A closed
+```` ```mermaid ```` fence and a closed `$$` block become a picture card with a
+Source toggle and Copy (which copies the source); inline `$…$` becomes a picture on
+the text baseline. The block a reply is still streaming into keeps its source until
+the reply ends (`MarkdownPictures.IsSettled`), then that block alone is rebuilt;
+a theme change redraws the pictures. A render that fails, times out or has no
+WebView2 runtime leaves the source showing: a picture card turns into the ordinary
+code card, and inline math keeps its `$…$` text. Plain table-cell extraction
 walks nested inline containers so emphasis and link labels survive display and
 TSV copy. Rich-block layout lives in `MarkdownBlock.RichBlocks.cs`, separate
 from prose and inline rendering.
@@ -1267,7 +1280,11 @@ tabs or collapsing hides the surface. Narrow windows use the reader overlay.
 rejects hidden credential-name paths and reparse points, checks the opened
 handle's final path, and holds a read-only handle without write/delete sharing.
 Documents, PDFs and images have a 64 MiB input cap; text/Markdown have a 1 MiB
-cap. HTML and SVG are source text, never active browser content. Which files
+cap. HTML is source text, never active browser content. An SVG is read as text
+under the same cap and checks, then shown as a picture drawn by the sandboxed
+renderer (ADR 0057): it reaches the renderer's canvas as an `<img>`, where it can
+run no script and load nothing, and a Source/Picture header toggle shows its text;
+when the renderer cannot draw it, the source shows. Which files
 count as source text is not a second list: `IsTextual` asks
 `CodeHighlighter.KnownExtensions` through `LanguageForFile`, so a language the
 highlighter colors can never be refused by the preview, and adds prose

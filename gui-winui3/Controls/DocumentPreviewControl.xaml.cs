@@ -59,6 +59,7 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         PageInput.Text = ""; PageTotalLabel.Text = "";
         FocusPreviewButton.Visibility = Visibility.Collapsed;
         FitPreviewButton.Visibility = Visibility.Collapsed;
+        SvgSourceButton.Visibility = Visibility.Collapsed;
         CopyPathButton.IsEnabled = RevealFileButton.IsEnabled = false;
         StatusLabel.Text = "Select a file in Files to preview it here.";
         StatusLabel.Visibility = Visibility.Visible;
@@ -70,6 +71,8 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
     public async Task OpenAsync(string workspace, string path)
     {
         if (_disposed) return;
+        // Another file starts as a picture again; a reload of the same file keeps the choice.
+        if (!string.Equals(_path, path, StringComparison.OrdinalIgnoreCase)) _svgShowsSource = false;
         Clear();
         _workspace = workspace; _path = path;
         FileNameLabel.Text = System.IO.Path.GetFileName(path);
@@ -166,6 +169,12 @@ public sealed partial class DocumentPreviewControl : UserControl, IDisposable
         IOException => "preview_read_failed: The file may be missing or in use. Reload to try again.",
         _ => "preview_render_failed: The file could not be rendered. Check the document and its installed preview handler, then reload.",
     };
+
+    private async void OnToggleSvgSource(object sender, RoutedEventArgs e)
+    {
+        _svgShowsSource = !_svgShowsSource;
+        if (_workspace is { } workspace && _path is { } path) await OpenAsync(workspace, path);
+    }
 
     private async void OnRefresh(object sender, RoutedEventArgs e)
     {

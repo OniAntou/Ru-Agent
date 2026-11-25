@@ -1,4 +1,6 @@
+using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
 using RuApp.Services;
 using Windows.Data.Pdf;
@@ -22,7 +24,14 @@ public sealed partial class DocumentPreviewControl
             ct.ThrowIfCancellationRequested();
             if (generation != _generation) return;
             if (text.Contains('\0')) throw new NotSupportedException("preview_binary_text: This file does not contain readable text.");
-            if (kind == FilePreviewKind.Markdown)
+            if (FilePreviewSource.IsSvg(_path))
+            {
+                SvgSourceButton.Visibility = Visibility.Visible;
+                SetSvgSourceButton();
+                if (!_svgShowsSource && await ShowSvgPictureAsync(text, ct, generation)) code = false;
+                else if (generation == _generation) ShowCode(text);
+            }
+            else if (kind == FilePreviewKind.Markdown)
             {
                 MarkdownContent.MarkdownText = text;
                 MarkdownContent.Visibility = Visibility.Visible;
@@ -76,6 +85,38 @@ public sealed partial class DocumentPreviewControl
         ContentScroll.UpdateLayout();
         ContentScroll.ChangeView(0, 0, 1, true);
         RefreshZoom();
+    }
+
+    private bool _svgShowsSource;
+
+    private void SetSvgSourceButton()
+    {
+        SvgSourceButton.Content = _svgShowsSource ? "Picture" : "Source";
+        string name = _svgShowsSource ? "Show the SVG as a picture" : "Show the SVG's source text";
+        ToolTipService.SetToolTip(SvgSourceButton, name);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SvgSourceButton, name);
+    }
+
+    /// <summary>
+    /// Draws the SVG through the sandboxed renderer: as an image it runs no script and
+    /// loads nothing. When the renderer cannot draw it, the source shows instead.
+    /// </summary>
+    private async Task<bool> ShowSvgPictureAsync(string text, CancellationToken ct, long generation)
+    {
+        var style = new SandboxRenderStyle(ActualTheme == ElementTheme.Dark, "#000000", 14);
+        var picture = await SandboxRenderer.Shared.RenderAsync(SandboxRenderKind.Svg, text, style, ct);
+        ct.ThrowIfCancellationRequested();
+        if (picture is null || generation != _generation) return false;
+        using var stream = new InMemoryRandomAccessStream();
+        await stream.WriteAsync(picture.Png.AsBuffer()).AsTask(ct);
+        stream.Seek(0);
+        var image = new BitmapImage();
+        await image.SetSourceAsync(stream).AsTask(ct);
+        if (generation != _generation) return false;
+        PageImage.Source = image; PageImage.Visibility = Visibility.Visible;
+        ZoomToolbar.Visibility = Visibility.Visible;
+        ShowDetail("SVG", PreviewDetail.Dimensions((int)Math.Round(picture.Width), (int)Math.Round(picture.Height)));
+        return true;
     }
 
     /// <summary>Fills the code frame: line numbers, then the highlighted lines.</summary>

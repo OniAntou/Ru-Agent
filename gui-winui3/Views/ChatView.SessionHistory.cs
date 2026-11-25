@@ -1037,6 +1037,7 @@ namespace RuApp.Views
             DisposeChatScrolling();
             SidePanel?.ShutdownTerminal();
             SidePanel?.ShutdownPreview();
+            Services.SandboxRenderer.Shared.Shutdown();
             _sessionPresentation.Dispose();
             if (_contextMeterTimer is not null)
             {

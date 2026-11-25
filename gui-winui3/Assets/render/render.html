@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!-- The renderer turns model text (Mermaid, TeX) and workspace SVG into pictures.
+     Nothing here may reach the network, open a frame, submit a form or load a
+     script that is not one of the vendored files beside this page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'; base-uri 'none'; form-action 'none'" />
+<title>Ru Renderer</title>
+</head>
+<body>
+<div id="stage" style="position:absolute;left:-10000px;top:0;width:4096px"></div>
+<script src="render-config.js"></script>
+<script src="tex-svg.js"></script>
+<script src="mermaid.min.js"></script>
+<script src="render.js"></script>
+</body>
+</html>

@@ -133,3 +133,22 @@ def test_the_vendored_browser_assets_are_the_only_product_tree_exception(tmp_pat
     records = scan_runtime_boundary(tmp_path)
 
     assert interpreter_files_in_product(records) == ["gui-winui3/Assets/terminal/sneaky.js"]
+
+
+def test_the_picture_renderer_assets_are_allowed_by_exact_path(tmp_path: Path) -> None:
+    """ADR 0057 vendors Mermaid and MathJax beside the renderer page; nothing else."""
+    files = [
+        "gui-winui3/Assets/render/mermaid.min.js",
+        "gui-winui3/Assets/render/tex-svg.js",
+        "gui-winui3/Assets/render/render.js",
+        "gui-winui3/Assets/render/render-config.js",
+        "gui-winui3/Assets/render/plugin.js",
+    ]
+    for relative in files:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("// pass", encoding="utf-8")
+
+    records = scan_runtime_boundary(tmp_path)
+
+    assert interpreter_files_in_product(records) == ["gui-winui3/Assets/render/plugin.js"]

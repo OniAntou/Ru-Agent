@@ -22,15 +22,21 @@ _C_SHARP_STARTUP_FILES = (
 # tooling and are expected to hold Python.
 _PRODUCT_ROOTS = ("backend-dotnet/", "gui-winui3/", "gui-winui3.Tests/", "gui-winui3.Harness/")
 _INTERPRETER_SUFFIXES = (".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".lua")
-# The GUI's interactive terminal vendors xterm.js (MIT) for WebView2 to parse.
-# A browser library executed by a Windows component is not a shipped interpreter,
-# which is what this scanner exists to catch, and `InteractiveTerminalContractTests`
-# pins both files. The allowlist is exact paths, lowercase, so any other `.js`
-# under a product root still fails the check.
+# The GUI's interactive terminal vendors xterm.js (MIT) for WebView2 to parse, and
+# the picture renderer (ADR 0057) vendors Mermaid (MIT) and MathJax (Apache-2.0)
+# beside its own page scripts. A browser library executed by a Windows component is
+# not a shipped interpreter, which is what this scanner exists to catch;
+# `InteractiveTerminalContractTests` and `SandboxRendererContractTests` pin these
+# files. The allowlist is exact paths, lowercase, so any other `.js` under a product
+# root still fails the check.
 _VENDORED_BROWSER_ASSETS = frozenset(
     {
         "gui-winui3/assets/terminal/addon-fit.js",
         "gui-winui3/assets/terminal/xterm.js",
+        "gui-winui3/assets/render/mermaid.min.js",
+        "gui-winui3/assets/render/render-config.js",
+        "gui-winui3/assets/render/render.js",
+        "gui-winui3/assets/render/tex-svg.js",
     }
 )
 

@@ -43,7 +43,12 @@ namespace RuApp.Controls
                 nameof(IsStreaming),
                 typeof(bool),
                 typeof(MarkdownBlock),
-                new PropertyMetadata(false));
+                new PropertyMetadata(false, OnIsStreamingChanged));
+
+        private static void OnIsStreamingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (e.NewValue is false && e.OldValue is true) ((MarkdownBlock)d).SettleStreamingTail();
+        }
 
         /// <summary>
         /// True while this block is the live surface of a streaming reply. The
@@ -77,6 +82,7 @@ namespace RuApp.Controls
             RegisterPropertyChangedCallback(Control.FontSizeProperty, (_, _) => RenderMarkdown());
             Content = _richTextBlock;
             _richTextBlock.SizeChanged += (_, _) => ResizeEmbeddedBlocks();
+            ActualThemeChanged += (_, _) => RedrawForTheme();
         }
 
         // InlineUIContainer measures its child to content, even in a stretched
@@ -417,7 +423,8 @@ namespace RuApp.Controls
             double bodySize,
             Brush? foreground,
             Action<FrameworkElement, double> fitBlock,
-            Action<string>? openLocalLink)
+            Action<string>? openLocalLink,
+            MarkdownPictureContext? pictures = null)
         {
             /// <summary>
             /// DeepSeek-like air: line height tracks the reader's size choice
@@ -434,7 +441,7 @@ namespace RuApp.Controls
                     ParagraphBlock paragraph => new List<Paragraph> { Prose(paragraph.Inline, indent, bottom: 12) },
                     QuoteBlock quote => Quote(quote, indent),
                     ListBlock list => BuildList(list, indent),
-                    MathBlock math => new List<Paragraph> { CodeCard(math.Lines.ToString(), "math", indent, complete: false) },
+                    MathBlock math => new List<Paragraph> { MathCard(math, indent) },
                     CodeBlock code => new List<Paragraph> { Code(code, indent) },
                     ThematicBreakBlock => new List<Paragraph> { Rule(indent) },
                     HtmlBlock html => new List<Paragraph> { Html(html, indent) },
@@ -637,9 +644,9 @@ namespace RuApp.Controls
 
                         break;
                     case MathInline math:
-                        // No math layout is available in RichTextBlock; showing
-                        // the source is better than silently swallowing it.
-                        target.Add(CreateRun(MathLiteral(math), size, weight, fontFamily));
+                        // RichTextBlock has no math layout: the source shows until the
+                        // renderer returns a picture, and stays when it cannot draw one.
+                        AddMath(target, math, CreateRun(MathLiteral(math), size, weight, fontFamily), size);
                         break;
                     case FootnoteLink footnote:
                         // The backlink in the footnote body is structural, not a

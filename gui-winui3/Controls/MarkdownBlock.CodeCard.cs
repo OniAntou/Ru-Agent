@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
+using RuApp.Services;
 
 namespace RuApp.Controls
 {
@@ -16,6 +17,11 @@ namespace RuApp.Controls
                 string language = code is FencedCodeBlock fenced ? fenced.Info?.Trim() ?? string.Empty : string.Empty;
                 // An unclosed fence is still streaming (or was never finished); it never folds.
                 bool complete = code is not FencedCodeBlock open || open.ClosingFencedCharCount > 0;
+                if (complete && MarkdownPictures.IsMermaid(language) && CanDraw(SandboxRenderKind.Mermaid, code.Lines.ToString()))
+                {
+                    return PictureCard(code.Lines.ToString(), SandboxRenderKind.Mermaid, "mermaid", indent);
+                }
+
                 return CodeCard(code.Lines.ToString(), language, indent, complete);
             }
 
@@ -27,6 +33,15 @@ namespace RuApp.Controls
             /// toggles in the header. Copy always takes the whole source.
             /// </summary>
             private Paragraph CodeCard(string source, string? language, int indent, bool complete)
+            {
+                var card = CodeCardElement(source, language, complete);
+                fitBlock(card, indent * 20);
+                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 6, 0, 14) };
+                paragraph.Inlines.Add(new InlineUIContainer { Child = card });
+                return paragraph;
+            }
+
+            private Border CodeCardElement(string source, string? language, bool complete)
             {
                 string text = source.TrimEnd('\r', '\n');
                 if (string.IsNullOrWhiteSpace(language))
@@ -157,10 +172,7 @@ namespace RuApp.Controls
                 RevealOnHover(outer, copy);
                 RevealOnHover(outer, wrapToggle, keepWhen: () => wrap);
                 RevealOnHover(outer, numberToggle, keepWhen: () => numbers && !wrap);
-                fitBlock(outer, indent * 20);
-                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 6, 0, 14) };
-                paragraph.Inlines.Add(new InlineUIContainer { Child = outer });
-                return paragraph;
+                return outer;
             }
 
             private static Button HeaderButton(object content, string name)

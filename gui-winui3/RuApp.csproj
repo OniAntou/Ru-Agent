@@ -33,6 +33,9 @@
     <!-- The interactive terminal's vendored browser assets (xterm.js, MIT):
          loaded by WebView2 from the app directory, never from a CDN. -->
     <Content Include="Assets\terminal\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The picture renderer's page and vendored libraries (Mermaid, MIT; MathJax,
+         Apache-2.0): loaded by a locked-down WebView2 from the app directory (ADR 0057). -->
+    <Content Include="Assets\render\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Mermaid diagrams, math and SVG files show as pictures. A closed
+  ```` ```mermaid ```` fence and a `$$` block become a picture card with a Source toggle,
+  inline `$…$` is typeset on the text line, and a `.svg` in Preview shows as an image with a
+  Source/Picture toggle. One hidden, locked-down WebView2 draws them offline from vendored
+  Mermaid 12.3.0 and MathJax 3.2.2 (ADR 0057): no network, navigation, windows or
+  downloads, and the source travels as data. A block still streaming keeps its source until
+  the reply ends, and anything the renderer cannot draw stays as source.
+
 - **feat(gui)**: Chat code blocks fold, wrap and number their lines. A finished block
   longer than 30 lines shows its first 20 under "Show all N lines"; a block still streaming
   never folds. Each card has Wrap and Line-number toggles beside Copy, and Copy still takes

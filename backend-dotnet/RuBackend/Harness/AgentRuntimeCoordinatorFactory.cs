@@ -289,6 +289,22 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             return;
         }
 
+        if (frame.Kind == TransientFrameKind.ReasoningPreview)
+        {
+            // One absolute line of the running thinking row, or a reset that clears it.
+            // The content is the whole line, never a delta, so a dropped frame only
+            // leaves the row one paragraph behind until the next line arrives.
+            var preview = JsonSerializer.Serialize(new
+            {
+                activity_id = frame.ActivityId,
+                model_step_id = frame.ModelStepId?.Value,
+                text = frame.IsReset ? null : frame.Content,
+                reset = frame.IsReset ? true : (bool?)null,
+            });
+            hub.TryPublish(frame.RunId, "agent.reasoning_preview", preview);
+            return;
+        }
+
         var kind = frame.Kind == TransientFrameKind.AssistantDelta
             ? "assistant.delta"
             : "tool.output.delta";

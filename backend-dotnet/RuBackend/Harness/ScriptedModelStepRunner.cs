@@ -27,6 +27,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
     private const string LegacyProjectionCursorPlaceholder = "$projection_next_offset";
     private const string ProjectionSpoolIdPlaceholder = "$projection_spool_id";
     private const int MaxScriptedCallsPerStep = 8;
+    private const int MaximumScriptedReasoningCharacters = 4_000;
 
     private readonly IReadOnlyList<ScriptedStep> _steps;
     private readonly object _gate = new();
@@ -100,6 +101,15 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
             }
 
             string? text = step["text"]?.GetValue<string>();
+            // Optional reasoning the fixture streams before its answer: a scripted step is
+            // the only way to watch the live thinking row without a provider key.
+            string? reasoning = step["reasoning"]?.GetValue<string>();
+            if (reasoning is { Length: > MaximumScriptedReasoningCharacters })
+            {
+                throw new InvalidOperationException(
+                    $"A scripted \"reasoning\" value must stay within {MaximumScriptedReasoningCharacters} characters.");
+            }
+
             if (step["tool"] is not null && step["tools"] is not null)
             {
                 throw new InvalidOperationException("A scripted step must use either \"tool\" or \"tools\", not both.");
@@ -113,7 +123,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                     text,
                     Array.Empty<ModelToolCall>(),
                     AssistantFinishReason.Stop,
-                    0), ScriptedContextOracle.Read(step), cursorSourceCallId));
+                    0), ScriptedContextOracle.Read(step), cursorSourceCallId, reasoning));
                 continue;
             }
 
@@ -121,7 +131,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                 text,
                 tools,
                 AssistantFinishReason.ToolCalls,
-                0), ScriptedContextOracle.Read(step), cursorSourceCallId));
+                0), ScriptedContextOracle.Read(step), cursorSourceCallId, reasoning));
         }
 
         return steps;
@@ -195,13 +205,13 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         return new ModelToolCall(providerCallId, toolId, toolVersion, arguments);
     }
 
-    public Task<ModelStepResult> RunStepAsync(
+    public async Task<ModelStepResult> RunStepAsync(
         ModelStepRequest request,
         Func<AssistantDelta, ValueTask> publishDelta,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        _ = publishDelta;
+        ArgumentNullException.ThrowIfNull(publishDelta);
         cancellationToken.ThrowIfCancellationRequested();
 
         ScriptedStep scriptedStep;
@@ -236,7 +246,23 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
             request.PromptContext,
             scriptedStep.CursorSourceCallId);
         var receipt = ComposeReceipt(request.PromptContext);
-        return Task.FromResult(new ModelStepResult(step, receipt));
+        if (scriptedStep.Reasoning is { } reasoning)
+        {
+            // One delta per line, so the client's paragraph heuristic advances exactly as
+            // it would against a real provider stream.
+            var sequence = 0L;
+            foreach (var line in reasoning.Split('\n'))
+            {
+                await publishDelta(new AssistantDelta(
+                        request.ModelStepId,
+                        ++sequence,
+                        line + "\n",
+                        kind: AssistantDeltaKind.Reasoning))
+                    .ConfigureAwait(false);
+            }
+        }
+
+        return new ModelStepResult(step, receipt);
     }
 
     private static string? ReadCursorSourceCallId(
@@ -262,7 +288,11 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         return sourceCallId;
     }
 
-    private sealed record ScriptedStep(AssistantStep Step, ScriptedContextOracle? ContextOracle, string? CursorSourceCallId);
+    private sealed record ScriptedStep(
+        AssistantStep Step,
+        ScriptedContextOracle? ContextOracle,
+        string? CursorSourceCallId,
+        string? Reasoning = null);
 
     private AssistantStep ResolveProjectionCursor(
         AssistantStep step,

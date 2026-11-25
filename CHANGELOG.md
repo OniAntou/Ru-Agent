@@ -9,13 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **feat(gui)**: The `Thinking` row shows a live line while the model reasons. As soon as the
   first line of a completed reasoning paragraph exists, the running row reads
-  `Thinking · <first line>`: the line advances paragraph by paragraph, is clipped to one
-  redacted line of at most 400 characters, sweeps with the row's two texts like the step
-  label, and ignores the visible verb otherwise. It disappears the moment the step settles —
-  the row returns to `Thought · 2.4s` and the existing fold keeps the bounded reasoning
-  excerpt — and a retried attempt clears the line before its replacement streams. The line
-  arrives as a new `agent.reasoning_preview` transient frame (absolute state, never persisted
-  or replayed); the CLI/TUI transcript is unchanged.
+  `Thinking · <first line>` — and so does the folded turn header that names the step in
+  progress, so a collapsed turn is alive without being opened. The line advances paragraph
+  by paragraph, is clipped to one redacted line of at most 400 characters, sweeps with the
+  row's texts like the step label, and ignores the visible verb otherwise. It disappears the
+  moment the step settles — the row returns to `Thought · 2.4s` and the existing fold keeps
+  the bounded reasoning excerpt — and a retried attempt clears the line before its
+  replacement streams. The line arrives as a new `agent.reasoning_preview` transient frame
+  (absolute state, never persisted or replayed); the CLI/TUI transcript is unchanged.
 
 - **feat(gui)**: The activity header says what the run is doing and what it did. While a turn
   works, the folded header names the step in progress instead of a fixed "Working…" ("Reading

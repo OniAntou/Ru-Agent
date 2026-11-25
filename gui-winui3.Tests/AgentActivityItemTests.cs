@@ -867,6 +867,74 @@ public sealed class AgentActivityItemTests
         Assert.True(settled.ShowPlainDetail);
     }
 
+    [Fact]
+    public void A_running_thinking_row_shows_the_preview_line()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Thinking));
+        var changes = new List<string?>();
+        item.PropertyChanged += (_, args) => changes.Add(args.PropertyName);
+
+        item.SetThinkingPreview("Investigating the store");
+
+        Assert.Equal("Investigating the store", item.ThinkingPreview);
+        Assert.True(item.HasThinkingPreview);
+        Assert.Contains(nameof(AgentActivityItem.ThinkingPreview), changes);
+        Assert.Contains(nameof(AgentActivityItem.HasThinkingPreview), changes);
+    }
+
+    [Fact]
+    public void A_settled_thinking_row_hides_the_preview_and_ignores_a_late_frame()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Thinking));
+        item.SetThinkingPreview("Investigating the store");
+
+        item.UpdateFrom(Activity(AgentActivityState.Completed, kind: AgentActivityKind.Thinking, durationMs: 3_000));
+        Assert.Equal(string.Empty, item.ThinkingPreview);
+        Assert.False(item.HasThinkingPreview);
+
+        item.SetThinkingPreview("late frame");
+        Assert.Equal(string.Empty, item.ThinkingPreview);
+    }
+
+    [Fact]
+    public void An_interrupted_run_hides_the_preview()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Thinking));
+        item.SetThinkingPreview("Investigating the store");
+
+        item.SettleInterruptedRun();
+
+        Assert.Equal(string.Empty, item.ThinkingPreview);
+        Assert.False(item.HasThinkingPreview);
+    }
+
+    [Fact]
+    public void A_row_that_is_not_thinking_ignores_a_preview()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Analyze));
+
+        item.SetThinkingPreview("Investigating the store");
+
+        Assert.Equal(string.Empty, item.ThinkingPreview);
+        Assert.False(item.HasThinkingPreview);
+    }
+
+    [Fact]
+    public void An_unchanged_preview_does_not_notify_again()
+    {
+        var item = new AgentActivityItem(Activity(AgentActivityState.Started, kind: AgentActivityKind.Thinking));
+        item.SetThinkingPreview("line");
+        var changes = 0;
+        item.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(AgentActivityItem.ThinkingPreview)) changes++;
+        };
+
+        item.SetThinkingPreview("line");
+
+        Assert.Equal(0, changes);
+    }
+
     private static AgentActivityModel Activity(
         AgentActivityState state,
         AgentActivityKind kind = AgentActivityKind.Analyze,

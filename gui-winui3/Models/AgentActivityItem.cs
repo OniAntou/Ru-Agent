@@ -386,6 +386,9 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
 
         State = AgentActivityState.Failed;
         SafeCode = "interrupted";
+        ClearThinkingPreview();
+        OnPropertyChanged(nameof(ThinkingPreview));
+        OnPropertyChanged(nameof(HasThinkingPreview));
     }
 
     public string StatusGlyph => State switch
@@ -751,6 +754,13 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
             ? rows.Select(row => new TodoItemModel(row.Content, row.Status)).ToArray()
             : null;
 
+        // A settled row has no live line; keeping the text would let a stale frame
+        // reappear if the same activity frame ever arrived again.
+        if (!IsRunning)
+        {
+            ClearThinkingPreview();
+        }
+
         OnPropertyChanged(nameof(IsVisibleInFeed));
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsCompleted));
@@ -791,6 +801,8 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         OnPropertyChanged(nameof(EditBeforeText));
         OnPropertyChanged(nameof(EditAfterText));
         OnPropertyChanged(nameof(RowVerb));
+        OnPropertyChanged(nameof(ThinkingPreview));
+        OnPropertyChanged(nameof(HasThinkingPreview));
         NotifyTerminalPresentation();
     }
 

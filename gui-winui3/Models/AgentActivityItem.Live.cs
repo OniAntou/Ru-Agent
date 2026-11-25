@@ -13,9 +13,11 @@ public sealed partial class AgentActivityItem
     internal const long EntranceWindowMilliseconds = 2_000;
 
     private const int MaximumTickerCharacters = 200;
+    private const int MaximumThinkingPreviewCharacters = 400;
 
     private long? _liveStartedTick;
     private long? _arrivedTick;
+    private string _thinkingPreview = string.Empty;
 
     /// <summary>
     /// Records a frame the live feed applied. <paramref name="created"/> marks a row that
@@ -39,6 +41,50 @@ public sealed partial class AgentActivityItem
             : null;
 
     public bool HasLiveClock => IsRunning && _liveStartedTick is not null;
+
+    /// <summary>
+    /// The absolute line the feed last published for this running thinking row. It is
+    /// display text only — redacted, one line, bounded — never the model's reasoning.
+    /// Empty once the row settles, so a late frame cannot resurrect a finished row.
+    /// </summary>
+    public string ThinkingPreview => Kind == AgentActivityKind.Thinking
+        && IsRunning
+        && _thinkingPreview.Length > 0
+            ? _thinkingPreview
+            : string.Empty;
+
+    public bool HasThinkingPreview => ThinkingPreview.Length > 0;
+
+    /// <summary>
+    /// Applies one preview frame. The frame is absolute state, so an identical line is a
+    /// no-op and a frame that arrives after the row settled has no visible effect.
+    /// </summary>
+    internal void SetThinkingPreview(string? text)
+    {
+        var normalized = (text ?? string.Empty).Trim();
+        if (normalized.Length > MaximumThinkingPreviewCharacters)
+        {
+            normalized = normalized[..MaximumThinkingPreviewCharacters];
+        }
+
+        if (string.Equals(_thinkingPreview, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var before = ThinkingPreview;
+        _thinkingPreview = normalized;
+        if (string.Equals(before, ThinkingPreview, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(ThinkingPreview));
+        OnPropertyChanged(nameof(HasThinkingPreview));
+    }
+
+    /// <summary>Drops the stored line; the caller republishes the binding when it matters.</summary>
+    internal void ClearThinkingPreview() => _thinkingPreview = string.Empty;
 
     /// <summary>
     /// True once, for a row that arrived live within the entrance window. Recycling or

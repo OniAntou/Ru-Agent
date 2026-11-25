@@ -87,6 +87,33 @@ public sealed class AgentActivityFeedPresenterTests
         Assert.Equal("Latest task", Assert.Single(newest!.Value.TodoPanelItems!).Content);
     }
 
+    [Fact]
+    public void A_thinking_preview_routes_to_its_activity_row_without_creating_one()
+    {
+        var presenter = new AgentActivityFeedPresenter();
+        var rows = new List<AgentActivityItem>();
+        var item = presenter.Apply(Activity("act_preview1"), rows)!.Value.Item;
+
+        Assert.True(presenter.ApplyThinkingPreview("act_preview1", "Investigating"));
+        Assert.Equal("Investigating", item.ThinkingPreview);
+
+        Assert.False(presenter.ApplyThinkingPreview("act_unknown", "line"));
+        Assert.Single(rows);
+    }
+
+    [Fact]
+    public void A_settled_row_absorbs_the_preview_without_showing_it()
+    {
+        var presenter = new AgentActivityFeedPresenter();
+        var rows = new List<AgentActivityItem>();
+        var item = presenter.Apply(Activity("act_preview2"), rows)!.Value.Item;
+        presenter.Apply(Activity("act_preview2") with { State = AgentActivityState.Completed }, rows);
+
+        Assert.True(presenter.ApplyThinkingPreview("act_preview2", "late line"));
+
+        Assert.Equal(string.Empty, item.ThinkingPreview);
+    }
+
     private static AgentActivityModel Activity(string id, AgentActivityState state = AgentActivityState.Started) => new(
         id, AgentActivityKind.Thinking, state, null, null, null, null, null, null, null,
         null, "succeeded", null, null, null);

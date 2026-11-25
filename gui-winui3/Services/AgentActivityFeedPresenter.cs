@@ -45,6 +45,22 @@ internal sealed class AgentActivityFeedPresenter
         _items.TryAdd(item.ActivityId, item);
     }
 
+    /// <summary>
+    /// Routes one absolute thinking-preview line to the row it names. An id this feed has
+    /// never seen is dropped instead of creating a row: the activity frame owns arrival.
+    /// </summary>
+    /// <returns>True when the row exists and absorbed the line.</returns>
+    internal bool ApplyThinkingPreview(string activityId, string text)
+    {
+        if (string.IsNullOrEmpty(activityId) || !_items.TryGetValue(activityId, out var item))
+        {
+            return false;
+        }
+
+        item.SetThinkingPreview(text);
+        return true;
+    }
+
     internal IReadOnlyList<TodoItemModel>? RegisterReplayedMessages(IEnumerable<ChatMessageItem> messages)
     {
         ArgumentNullException.ThrowIfNull(messages);

@@ -112,8 +112,14 @@ public sealed class AgentActivityWordingTests
         Assert.Equal("Thinking", message.ProcessHeader);
         Assert.Equal("Inspecting the session store", message.ProcessMeta);
 
+        thinking.SetThinkingPreview("Next paragraph first line");
+        Assert.Equal("Next paragraph first line", message.ProcessMeta);
+
+        thinking.SetThinkingPreview("A third paragraph begins");
+        Assert.Equal("A third paragraph begins", message.ProcessMeta);
+
         message.IsStreaming = false;
-        Assert.DoesNotContain("Inspecting", message.ProcessMeta, StringComparison.Ordinal);
+        Assert.DoesNotContain("A third paragraph", message.ProcessMeta, StringComparison.Ordinal);
     }
 
     private static AgentActivityItem Row(string id, AgentActivityKind kind, AgentActivityState state, string? tool = null,

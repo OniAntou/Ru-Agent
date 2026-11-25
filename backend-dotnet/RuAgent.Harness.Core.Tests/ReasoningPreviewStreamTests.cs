@@ -45,6 +45,20 @@ public sealed class ReasoningPreviewStreamTests
     }
 
     [Fact]
+    public void A_leading_blank_line_moves_the_line_to_the_next_paragraph()
+    {
+        var frames = new List<HarnessTransientFrame>();
+        var stream = NewStream(frames);
+
+        stream.Append("First line\n");
+        stream.Append("\nSecond paragraph\n");
+
+        Assert.Equal(2, frames.Count);
+        Assert.Equal("First line", frames[0].Content);
+        Assert.Equal("Second paragraph", frames[1].Content);
+    }
+
+    [Fact]
     public void An_empty_delta_publishes_nothing()
     {
         var frames = new List<HarnessTransientFrame>();

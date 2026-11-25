@@ -55,7 +55,8 @@ public sealed partial class AgentRunCoordinator
         Subagents.IAgentFamilyBudget? familyBudget = null,
         Subagents.ISubagentInbox? subagentInbox = null,
         bool recommendAdvisor = false,
-        Steering.IRunSteerInbox? steerInbox = null)
+        Steering.IRunSteerInbox? steerInbox = null,
+        ITransientContentRedactor? reasoningRedactor = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _retainedStash = retainedStash ?? new InMemoryRetainedApprovalStash(time);
@@ -120,7 +121,8 @@ public sealed partial class AgentRunCoordinator
             _ids,
             _time,
             _lifecycle,
-            _compaction.NormalTriggerTokens);
+            _compaction.NormalTriggerTokens,
+            reasoningRedactor);
     }
 
     /// <summary>

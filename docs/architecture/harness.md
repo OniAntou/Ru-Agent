@@ -963,7 +963,10 @@ The reset retains the rejected model-step identity and advances its sequence;
 earlier accepted steps and tool receipts remain intact in GUI and TUI.
 The running thinking row's live line follows the same rule: a retried or rejected
 attempt clears the row's `agent.reasoning_preview` line before the next attempt
-streams, and the line never outlives the row's running state.
+streams, and the line never outlives the row's running state. Reasoning chunks are
+redacted with the secrets redactor alone, never the reply-text sanitizer: the reply
+sanitizer rewrites cumulative chunk overlap, which would swallow the blank lines
+that mark where one reasoning paragraph ends and the next begins.
 
 _Avoid_: fallback answer, substitute model, retry on another backend
 

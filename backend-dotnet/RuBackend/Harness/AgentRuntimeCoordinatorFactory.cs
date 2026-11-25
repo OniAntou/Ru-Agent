@@ -45,6 +45,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
     private readonly HarnessPayloadStore _payloadStore;
     private readonly SessionWorkStateStore? _workStates;
     private readonly ITransientContentRedactor? _transientRedactor;
+    private readonly ITransientContentRedactor? _reasoningRedactor;
     private readonly HarnessLiveEventHub? _liveEvents;
     private readonly AgentRunSummaryLivePublisher? _summaryPublisher;
     private readonly IAgentReplyPolicy? _replyPolicy;
@@ -89,7 +90,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         SessionWorkStateStore? workStates = null,
         ILogger<AgentRuntimeCoordinatorFactory>? logger = null,
         RuAgent.Broker.Tools.Mcp.McpServerHost? mcpServers = null,
-        RuAgent.Harness.Core.Steering.IRunSteerInbox? steerInbox = null)
+        RuAgent.Harness.Core.Steering.IRunSteerInbox? steerInbox = null,
+        RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor? reasoningRedactor = null)
     {
         _mcpServers = mcpServers;
         _steerInbox = steerInbox;
@@ -132,6 +134,10 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
         _brokerGateways = brokerGateways ?? throw new ArgumentNullException(nameof(brokerGateways));
         _runModelMetadataResolver = pinnedModelMetadataResolver;
         _retainedStash = new InMemoryRetainedApprovalStash(_time);
+        // Reasoning chunks are redacted with the secrets redactor only: the reply-text
+        // sanitizer rewrites cumulative chunk overlaps, which would eat the blank lines
+        // that separate reasoning paragraphs.
+        _reasoningRedactor = reasoningRedactor;
     }
 
     public void DropRetainedApproval(RunId runId) => _retainedStash.Drop(runId);
@@ -244,7 +250,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             familyBudget: _familyBudget,
             subagentInbox: _subagentInbox,
             recommendAdvisor: advisorSelected,
-            steerInbox: _steerInbox);
+            steerInbox: _steerInbox,
+            reasoningRedactor: _reasoningRedactor);
     }
 
     /// <summary>

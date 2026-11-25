@@ -19,6 +19,7 @@ internal sealed class AgentModelInvocation
     private readonly ISystemPromptContextProvider _promptContextProvider;
     private readonly TransientFrameBuffer _frames;
     private readonly ITransientContentRedactor _transientRedactor;
+    private readonly ITransientContentRedactor _reasoningRedactor;
     private readonly IAgentActivitySink? _activitySink;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
@@ -34,7 +35,8 @@ internal sealed class AgentModelInvocation
         IIdGenerator ids,
         ITimeProvider time,
         AgentRunLifecycle lifecycle,
-        Func<long, long?>? compactionTriggerTokens = null)
+        Func<long, long?>? compactionTriggerTokens = null,
+        ITransientContentRedactor? reasoningRedactor = null)
     {
         _compactionTriggerTokens = compactionTriggerTokens;
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -43,6 +45,7 @@ internal sealed class AgentModelInvocation
         _frames = frames ?? throw new ArgumentNullException(nameof(frames));
         _transientRedactor = transientRedactor
             ?? throw new ArgumentNullException(nameof(transientRedactor));
+        _reasoningRedactor = reasoningRedactor ?? transientRedactor;
         _activitySink = activitySink;
         _ids = ids ?? throw new ArgumentNullException(nameof(ids));
         _time = time ?? throw new ArgumentNullException(nameof(time));
@@ -122,11 +125,12 @@ internal sealed class AgentModelInvocation
             TransientFrameKind.AssistantDelta,
             modelStepId: modelStepId);
         // The reasoning summary line the running thinking row shows. It is transient like
-        // the assistant text, shares its redactor, and is cleared whenever a retried
-        // attempt supersedes the one that streamed it.
+        // the assistant text and redacted with the secrets redactor only: reply-text
+        // sanitizers rewrite cumulative chunks, and reasoning arrives as separate chunks
+        // whose blank lines are the paragraph boundaries the summary advances on.
         var thinkingPreview = new ReasoningPreviewStream(
             _frames,
-            _transientRedactor,
+            _reasoningRedactor,
             run.RunId,
             modelStepId,
             AgentActivityProjector.ModelStepActivityId(modelStepId));

@@ -90,6 +90,32 @@ public sealed class AgentActivityWordingTests
         Assert.Equal("Searched for files", RuApp.Services.AgentActivitySummaryProjection.ForSteps([found], live: false).Recap);
     }
 
+    [Fact]
+    public void The_live_header_shows_the_running_thinking_line()
+    {
+        // The folded turn names the step ("Thinking…"); once the model streams a line it
+        // follows the same absolute line the row shows, and drops it when the turn settles.
+        var thinking = Row("think", AgentActivityKind.Thinking, AgentActivityState.Started);
+        var message = new ChatMessageItem
+        {
+            Role = "assistant", IsStreaming = true, CompactAgentActivity = true,
+            AgentActivities = new ObservableCollection<AgentActivityItem> { thinking },
+        };
+        Assert.Equal("Thinking…", message.ProcessHeader);
+        Assert.Equal(string.Empty, message.ProcessMeta);
+
+        var raised = new List<string?>();
+        message.PropertyChanged += (_, args) => raised.Add(args.PropertyName);
+        thinking.SetThinkingPreview("Inspecting the session store");
+
+        Assert.Contains(nameof(ChatMessageItem.ProcessMeta), raised);
+        Assert.Equal("Thinking", message.ProcessHeader);
+        Assert.Equal("Inspecting the session store", message.ProcessMeta);
+
+        message.IsStreaming = false;
+        Assert.DoesNotContain("Inspecting", message.ProcessMeta, StringComparison.Ordinal);
+    }
+
     private static AgentActivityItem Row(string id, AgentActivityKind kind, AgentActivityState state, string? tool = null,
         string? detail = null, int? count = null, string? symbol = null, string code = "succeeded") =>
         new(Model(id, kind, state, tool, detail, count, symbol, code));

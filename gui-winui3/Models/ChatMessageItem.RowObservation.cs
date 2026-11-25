@@ -30,7 +30,8 @@ public partial class ChatMessageItem
     {
         if (args.PropertyName is null or "" or nameof(AgentActivityItem.State) or nameof(AgentActivityItem.Detail)
             or nameof(AgentActivityItem.Count) or nameof(AgentActivityItem.FileName) or nameof(AgentActivityItem.Symbol)
-            or nameof(AgentActivityItem.ToolDisplay) or nameof(AgentActivityItem.SafeCode))
+            or nameof(AgentActivityItem.ToolDisplay) or nameof(AgentActivityItem.SafeCode)
+            or nameof(AgentActivityItem.ThinkingPreview) or nameof(AgentActivityItem.HasThinkingPreview))
             NotifyProcessSummaryChanged();
     }
 

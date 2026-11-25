@@ -79,6 +79,9 @@ public partial class ChatMessageItem
         {
             if (!ShowProcessHeader) return string.Empty;
             var summary = ProcessSummary;
+            // A live thinking step keeps its reasoning line in the header's tail: the
+            // collapsed turn then reads "Thinking · <first line>", like the row does.
+            if (IsStreaming && summary.LiveDetail.Length > 0) return summary.LiveDetail;
             if (summary.Count == 0) return IsStreaming || summary.Recap.Length == 0 ? string.Empty : summary.Recap;
             return IsStreaming || summary.Recap.Length == 0 ? summary.StepsText : $"{summary.Recap} · {summary.StepsText}";
         }

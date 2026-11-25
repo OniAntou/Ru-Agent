@@ -27,7 +27,8 @@ internal sealed record AgentActivitySummary(
     string Glyph,
     bool IsLive,
     AgentActivitySummaryTone Tone,
-    string Recap = "")
+    string Recap = "",
+    string LiveDetail = "")
 {
     internal static readonly AgentActivitySummary Empty =
         new(0, 0, 0, string.Empty, string.Empty, string.Empty, false, AgentActivitySummaryTone.Quiet);
@@ -97,6 +98,9 @@ internal static class AgentActivitySummaryProjection
         var recap = Recap(work.OrderByDescending(entry => entry.Count).ThenBy(entry => entry.First)
             .Select(entry => Phrase(entry.Key, entry.Phrase, entry.Count)).ToList());
         var title = live ? LiveTitle(current) : recap.Length > 0 ? recap : "Thought it through";
+        // While the model reasons, the header's tail carries the same live line its row
+        // shows, so the folded turn is alive without opening it.
+        var liveDetail = live ? current?.ThinkingPreview ?? string.Empty : string.Empty;
         var tail = new List<string>();
         if (waitingForUser) tail.Add("waiting for you");
         if (failed > 0) tail.Add(failed == 1 ? "1 failed" : $"{failed} failed");
@@ -111,7 +115,7 @@ internal static class AgentActivitySummaryProjection
                 : work.Count > 0 ? KindOfWork(work.OrderByDescending(entry => entry.Count).ThenBy(entry => entry.First).First().Key)
                 : AgentActivityKind.Thinking),
         };
-        return new(count, failed, waiting, title, string.Join(" · ", tail), glyph, live && waiting == 0, tone, recap);
+        return new(count, failed, waiting, title, string.Join(" · ", tail), glyph, live && waiting == 0, tone, recap, liveDetail);
     }
 
     /// <summary>
@@ -122,7 +126,11 @@ internal static class AgentActivitySummaryProjection
     {
         if (current is null) return WorkingTitle;
         if (current.IsWaiting) return current.RowVerb;
-        if (current.Kind == AgentActivityKind.Thinking) return "Thinking…";
+        if (current.Kind == AgentActivityKind.Thinking)
+        {
+            // The live reasoning line follows the title, so it reads "Thinking · <line>".
+            return current.HasThinkingPreview ? "Thinking" : "Thinking…";
+        }
         var verb = current.RowVerb.TrimEnd('…', '.', ' ');
         // A plan, a compaction or a consultation reads as its verb; its subject is a count or a model.
         var subject = current.Kind is AgentActivityKind.Todo or AgentActivityKind.Compaction or AgentActivityKind.Advisor

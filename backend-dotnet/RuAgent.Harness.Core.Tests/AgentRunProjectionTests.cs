@@ -29,10 +29,19 @@ public sealed class AgentRunProjectionTests
         Assert.Equal(CreatedAt.AddMinutes(1), run.UpdatedAt);
         Assert.Null(run.TerminalAt);
         Assert.Null(run.TerminalErrorCode);
+        // A run is immutable after construction: no property exposes a mutable
+        // setter. `init` is allowed because a read row receives its failure
+        // fingerprint through a with-expression, which copies rather than mutates.
         Assert.All(
             typeof(AgentRun).GetProperties(),
-            property => Assert.False(property.CanWrite, property.Name));
+            property => Assert.True(
+                property.SetMethod is null || IsInitOnly(property.SetMethod),
+                property.Name));
     }
+
+    private static bool IsInitOnly(System.Reflection.MethodInfo setter) =>
+        setter.ReturnParameter.GetRequiredCustomModifiers()
+            .Contains(typeof(System.Runtime.CompilerServices.IsExternalInit));
 
     [Fact]
     public void Stable_terminal_error_is_required_for_failure_and_cannot_change_via_setter()

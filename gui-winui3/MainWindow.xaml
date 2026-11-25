@@ -230,12 +230,21 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{x:Bind Title, Mode=OneWay}" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13" Foreground="{StaticResource RuInkBrush}"
                            Loaded="OnSessionTitleLoaded" Unloaded="OnSessionTitleUnloaded" DataContextChanged="OnSessionTitleDataContextChanged"
                            AutomationProperties.ItemStatus="{x:Bind AgentStatusText, Mode=OneWay}"
                            TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <!-- A run paused on the user (approval, question, folder trust) gets a
+                     static warning dot: it is not working, so it never wears the running
+                     wave. The row's status text names the wait for screen readers; the
+                     dot itself is decorative. -->
+                <Ellipse Grid.Column="1" Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center"
+                         Fill="{StaticResource RuWarningBrush}"
+                         Visibility="{x:Bind NeedsUserActionVisibility, Mode=OneWay}"
+                         AutomationProperties.AccessibilityView="Raw"/>
                 <!-- The clock owns the right edge. The row's … control shares the
                      same cell and stays hidden until the row is hovered, at which
                      point the clock steps aside for it: everything is right-aligned
@@ -243,7 +252,7 @@
                      paints underneath a glyph. The control is hidden by opacity
                      rather than by collapsing it so its width still reserves the
                      cell's edge. -->
-                <Grid Grid.Column="1" VerticalAlignment="Center">
+                <Grid Grid.Column="2" VerticalAlignment="Center">
                     <TextBlock x:Name="SessionTimeText" HorizontalAlignment="Right"
                                Text="{x:Bind DisplayTimeText, Mode=OneWay}"
                                FontFamily="{StaticResource RuUiFontFamily}" FontSize="11" Foreground="{StaticResource RuMutedBrush}"

@@ -318,7 +318,7 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
                 existing.CreatedAt = incoming.CreatedAt;
                 existing.UpdatedAt = incoming.UpdatedAt;
                 existing.LastAgentActivityAt = incoming.LastAgentActivityAt;
-                existing.IsAgentRunning = incoming.IsAgentRunning;
+                existing.SetAgentState(incoming.IsAgentRunning, incoming.AgentWait);
                 existing.ParentSessionId = incoming.ParentSessionId;
                 existing.ForkedFromMessageId = incoming.ForkedFromMessageId;
                 existing.WorkspaceId = incoming.WorkspaceId;

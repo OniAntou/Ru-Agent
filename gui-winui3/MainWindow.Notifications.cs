@@ -12,7 +12,7 @@ namespace RuApp;
 /// Tells the user when a run finishes or waits on them while Ru is in the background:
 /// a taskbar flash, a sound, and optionally a Windows notification. The open session is
 /// covered live (finish, approval, question) through its run controller; other sessions
-/// only report a finish, when the session list sees them stop running.
+/// report what the session list sees: a new wait on the user, or a finish.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -104,13 +104,14 @@ public sealed partial class MainWindow
     {
         session.PropertyChanged -= OnNotifiedSessionChanged;
         session.PropertyChanged += OnNotifiedSessionChanged;
-        _notificationPolicy.ObserveBackgroundSession(session.Id, session.Title, session.IsAgentRunning);
+        _notificationPolicy.ObserveBackgroundSession(session.Id, session.Title, session.IsAgentRunning, session.AgentWait);
     }
 
     private void OnNotifiedSessionChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (_closed || e.PropertyName != nameof(SessionInfo.IsAgentRunning) || sender is not SessionInfo session) return;
-        var notification = _notificationPolicy.ObserveBackgroundSession(session.Id, session.Title, session.IsAgentRunning);
+        if (_closed || e.PropertyName is not (nameof(SessionInfo.IsAgentRunning) or nameof(SessionInfo.AgentWait))
+            || sender is not SessionInfo session) return;
+        var notification = _notificationPolicy.ObserveBackgroundSession(session.Id, session.Title, session.IsAgentRunning, session.AgentWait);
         // The open session is reported live by its controller.
         if (!string.Equals(session.Id, _chatView?.CurrentSessionId, StringComparison.Ordinal)) Deliver(notification);
     }

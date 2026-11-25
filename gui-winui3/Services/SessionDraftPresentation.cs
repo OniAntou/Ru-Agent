@@ -42,7 +42,7 @@ internal sealed class SessionDraftPresentation
     internal IReadOnlyList<SessionInfo> Project(IReadOnlyList<SessionInfo> serverRows)
     {
         foreach (var row in serverRows)
-            if (_drafts.TryGetValue(row.Id, out var draft)) draft.Row.IsAgentRunning = row.IsAgentRunning;
+            if (_drafts.TryGetValue(row.Id, out var draft)) draft.Row.SetAgentState(row.IsAgentRunning, row.AgentWait);
         var durable = serverRows.Where(row => row.MessageCount > 0).ToArray();
         foreach (var row in durable) _drafts.Remove(row.Id);
         // Empty server rows have neither a title nor a workspace yet. Keep the

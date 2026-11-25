@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: A background session that waits on you says so. `/sessions` reports
+  `agent_wait` (`approval`, `question`, `workspace_trust` or `user`) beside
+  `is_agent_running`; the sidebar row shows a warning dot and "Needs approval", "Has a
+  question", "Needs folder trust" or "Waiting for you", and a background run that pauses on
+  you notifies as needing your approval or answer.
+  Such a run previously looked idle and was announced as "Ru finished".
+
 - **fix(harness)**: A thinking row shows the model's whole reasoning. The model runtime and the store
   each kept only its last 8,000 characters and every row showed at most 4,000, so a long deliberation lost
   its beginning on reopen and stopped mid-word while live. A step now stores up to 512 KB

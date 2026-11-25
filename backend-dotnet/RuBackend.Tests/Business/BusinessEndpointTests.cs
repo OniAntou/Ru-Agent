@@ -757,6 +757,8 @@ public sealed partial class BusinessEndpointTests
         Assert.Equal(JsonValueKind.Null, entry.Value.GetProperty("workspace_id").ValueKind);
         Assert.Equal(JsonValueKind.Null, entry.Value.GetProperty("workspace_label").ValueKind);
         Assert.Equal(JsonValueKind.Null, entry.Value.GetProperty("workspace_path").ValueKind);
+        Assert.False(entry.Value.GetProperty("is_agent_running").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, entry.Value.GetProperty("agent_wait").ValueKind);
     }
 
     [Fact]

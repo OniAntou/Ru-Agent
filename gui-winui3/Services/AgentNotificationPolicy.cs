@@ -19,8 +19,8 @@ public sealed record AgentNotification(AgentNotificationKind Kind, string Sessio
 /// cancelled does not either.</item>
 /// <item>An approval or a question notifies once per id. Reconnects and replays deliver the
 /// same id again and stay silent.</item>
-/// <item>A background session (no live feed here) notifies only when the session list sees
-/// it go from running to not running.</item>
+/// <item>A background session (no live feed here) notifies when the session list sees it
+/// start waiting on the user, or go from running or waiting to idle.</item>
 /// </list>
 /// Whether Ru is in the foreground, and which events the user enabled, is decided by the
 /// caller; the policy only says what happened.
@@ -29,7 +29,7 @@ public sealed class AgentNotificationPolicy
 {
     private const int MaxTitleChars = 60;
     private readonly HashSet<string> _seenWaits = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, bool> _backgroundRunning = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, BackgroundState> _backgroundRunning = new(StringComparer.Ordinal);
     private string? _runId;
     private string? _runStatus;
 
@@ -77,17 +77,33 @@ public sealed class AgentNotificationPolicy
     }
 
     /// <summary>
-    /// The session list reported a session's running flag. The first report of a session
-    /// is a baseline; a later running-to-idle change is a finish the list noticed.
+    /// The session list reported a session's run state: working (<paramref name="isRunning"/>)
+    /// or paused on the user (<paramref name="wait"/>: "approval", "question",
+    /// "workspace_trust" or "user"). The first report of a session is a baseline. Later, a new wait
+    /// asks for attention, and a working-or-waiting to idle change is a finish the list
+    /// noticed. A wait is still an unfinished run, so it never reads as a finish.
     /// </summary>
-    public AgentNotification? ObserveBackgroundSession(string sessionId, string? sessionTitle, bool isRunning)
+    public AgentNotification? ObserveBackgroundSession(string sessionId, string? sessionTitle, bool isRunning, string? wait = null)
     {
-        bool known = _backgroundRunning.TryGetValue(sessionId, out var wasRunning);
-        _backgroundRunning[sessionId] = isRunning;
-        return known && wasRunning && !isRunning
+        bool known = _backgroundRunning.TryGetValue(sessionId, out var was);
+        var now = new BackgroundState(isRunning || wait is not null, wait);
+        _backgroundRunning[sessionId] = now;
+        if (!known) return null;
+        if (wait is not null && !string.Equals(wait, was.Wait, StringComparison.Ordinal))
+        {
+            return wait switch
+            {
+                "question" => new(AgentNotificationKind.NeedsAnswer, sessionId, "Ru has a question for you", Shorten(sessionTitle)),
+                "approval" or "workspace_trust" => new(AgentNotificationKind.NeedsApproval, sessionId, "Ru needs your approval", Shorten(sessionTitle)),
+                _ => new(AgentNotificationKind.NeedsAnswer, sessionId, "Ru is waiting for you", Shorten(sessionTitle)),
+            };
+        }
+        return was.Active && !now.Active
             ? new(AgentNotificationKind.Finished, sessionId, "Ru finished", Shorten(sessionTitle))
             : null;
     }
+
+    private readonly record struct BackgroundState(bool Active, string? Wait);
 
     public static bool IsTerminal(string? status) => status is "completed" or "failed" or "cancelled" or "interrupted";
 

@@ -29,8 +29,32 @@ namespace RuApp.Models
         [JsonPropertyName("is_agent_running")]
         public bool IsAgentRunning { get => _isAgentRunning; set => SetField(ref _isAgentRunning, value); }
 
+        private string? _agentWait;
+        /// <summary>
+        /// What the session's run waits on the user for: "approval", "question",
+        /// "workspace_trust" or "user" (any other park on the client); null while it works
+        /// or has no run.
+        /// </summary>
+        [JsonPropertyName("agent_wait")]
+        public string? AgentWait { get => _agentWait; set => SetField(ref _agentWait, value); }
+
+        /// <summary>The run is paused until the user acts on it.</summary>
         [JsonIgnore]
-        public string AgentStatusText => IsAgentRunning ? "Running" : string.Empty;
+        public bool NeedsUserAction => AgentWait is not null;
+
+        [JsonIgnore]
+        public Microsoft.UI.Xaml.Visibility NeedsUserActionVisibility =>
+            NeedsUserAction ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+
+        [JsonIgnore]
+        public string AgentStatusText => AgentWait switch
+        {
+            "approval" => "Needs approval",
+            "question" => "Has a question",
+            "workspace_trust" => "Needs folder trust",
+            not null => "Waiting for you",
+            null => IsAgentRunning ? "Running" : string.Empty,
+        };
 
         [JsonPropertyName("client_source")]
         public string? ClientSource { get; set; }
@@ -73,7 +97,7 @@ namespace RuApp.Models
             get
             {
                 var title = IsForked ? $"{Title} (Branch)" : Title;
-                if (IsAgentRunning) title += " · Running";
+                if (AgentStatusText.Length > 0) title += " · " + AgentStatusText;
                 return string.IsNullOrEmpty(WorkspacePath) ? title : $"{title}\nWorking directory: {WorkspacePath}";
             }
         }
@@ -103,14 +127,39 @@ namespace RuApp.Models
         /// </summary>
         public override string ToString() => string.IsNullOrWhiteSpace(Title) ? "New Session" : Title;
 
+        /// <summary>
+        /// Applies a listing's run state as one change. Both fields are stored before any
+        /// notification, so an observer never sees a half-updated pair (a run that just
+        /// paused for approval momentarily reading as idle).
+        /// </summary>
+        public void SetAgentState(bool isAgentRunning, string? agentWait)
+        {
+            bool runningChanged = _isAgentRunning != isAgentRunning;
+            bool waitChanged = !string.Equals(_agentWait, agentWait, StringComparison.Ordinal);
+            _isAgentRunning = isAgentRunning;
+            _agentWait = agentWait;
+            if (runningChanged) Notify(nameof(IsAgentRunning));
+            if (waitChanged) Notify(nameof(AgentWait));
+        }
+
         private void SetField<T>(ref T storage, T value, [CallerMemberName] string? property = null)
         {
             if (EqualityComparer<T>.Default.Equals(storage, value)) return;
             storage = value;
+            Notify(property);
+        }
+
+        private void Notify(string? property)
+        {
             PropertyChanged?.Invoke(this, new(property));
-            if (property is nameof(Title) or nameof(WorkspacePath) or nameof(IsAgentRunning))
+            if (property is nameof(Title) or nameof(WorkspacePath) or nameof(IsAgentRunning) or nameof(AgentWait))
                 PropertyChanged?.Invoke(this, new(nameof(TooltipText)));
-            if (property == nameof(IsAgentRunning)) PropertyChanged?.Invoke(this, new(nameof(AgentStatusText)));
+            if (property is nameof(IsAgentRunning) or nameof(AgentWait)) PropertyChanged?.Invoke(this, new(nameof(AgentStatusText)));
+            if (property == nameof(AgentWait))
+            {
+                PropertyChanged?.Invoke(this, new(nameof(NeedsUserAction)));
+                PropertyChanged?.Invoke(this, new(nameof(NeedsUserActionVisibility)));
+            }
             if (property is nameof(UpdatedAt) or nameof(LastAgentActivityAt))
             {
                 PropertyChanged?.Invoke(this, new(nameof(DisplayTime)));

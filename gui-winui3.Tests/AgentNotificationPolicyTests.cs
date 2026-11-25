@@ -82,6 +82,37 @@ public sealed class AgentNotificationPolicyTests
     }
 
     [Fact]
+    public void A_background_run_that_pauses_on_the_user_asks_for_attention_instead_of_finishing()
+    {
+        var policy = new AgentNotificationPolicy();
+        Assert.Null(policy.ObserveBackgroundSession("s1", "Build", isRunning: true));
+
+        var approval = policy.ObserveBackgroundSession("s1", "Build", isRunning: false, wait: "approval");
+        Assert.Equal(AgentNotificationKind.NeedsApproval, approval!.Kind);
+        Assert.Null(policy.ObserveBackgroundSession("s1", "Build", isRunning: false, wait: "approval"));
+
+        // Answered: back to work, then a question, then a finish.
+        Assert.Null(policy.ObserveBackgroundSession("s1", "Build", isRunning: true));
+        Assert.Equal(AgentNotificationKind.NeedsAnswer,
+            policy.ObserveBackgroundSession("s1", "Build", isRunning: false, wait: "question")!.Kind);
+        Assert.Equal(AgentNotificationKind.Finished,
+            policy.ObserveBackgroundSession("s1", "Build", isRunning: false)!.Kind);
+
+        Assert.Equal(AgentNotificationKind.NeedsApproval, ObserveTrustWait(policy)!.Kind);
+        Assert.Null(policy.ObserveBackgroundSession("s5", "Budget", isRunning: true));
+        Assert.Equal("Ru is waiting for you",
+            policy.ObserveBackgroundSession("s5", "Budget", isRunning: false, wait: "user")!.Title);
+    }
+
+    [Fact]
+    public void A_wait_already_pending_when_the_list_first_reports_a_session_stays_silent()
+    {
+        var policy = new AgentNotificationPolicy();
+        Assert.Null(policy.ObserveBackgroundSession("s1", "Build", isRunning: false, wait: "approval"));
+        Assert.Null(policy.ObserveBackgroundSession("s1", "Build", isRunning: false, wait: "approval"));
+    }
+
+    [Fact]
     public void Long_titles_are_shortened_and_missing_ones_read_as_session()
     {
         var policy = new AgentNotificationPolicy();
@@ -131,5 +162,11 @@ public sealed class AgentNotificationPolicyTests
     {
         policy.ObserveBackgroundSession(id, title, isRunning: true);
         return policy.ObserveBackgroundSession(id, title, isRunning: false);
+    }
+
+    private static AgentNotification? ObserveTrustWait(AgentNotificationPolicy policy)
+    {
+        policy.ObserveBackgroundSession("s9", "Trust", isRunning: true);
+        return policy.ObserveBackgroundSession("s9", "Trust", isRunning: false, wait: "workspace_trust");
     }
 }

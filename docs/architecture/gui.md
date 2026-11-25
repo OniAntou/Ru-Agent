@@ -428,8 +428,12 @@ pure rule set: a finish is a live non-terminal-to-terminal transition of one run
 (`completed`, or `failed`/`interrupted` as "stopped"; a user `cancelled` is silent);
 approvals and questions notify once per id, and waits replayed within three seconds of
 a run appearing are marked seen instead. The open session is observed through its
-`AgentRunController`; other sessions only report a finish when the polled session list
-sees `IsAgentRunning` go from true to false. Text is the session title only, never
+`AgentRunController`; other sessions report what the polled session list sees. A new
+`AgentWait` (approval or folder trust as "needs your approval", a question as "has a
+question", any other wait as "waiting for you") asks for attention, and a change from working or waiting to idle is a
+finish. A run paused on the user is unfinished, so it never reads as a finish. The
+first report of a session is a baseline, and a second wait of the same kind is
+noticed only if a poll sees the run working in between. Text is the session title only, never
 the prompt or `ask_user` question, since banners can reach the lock screen.
 `NotificationPreferenceStore` keeps the choices in `%LOCALAPPDATA%\Ru\notifications.json`
 (defaults: both events, flash and sound on; Windows notifications off). Turning Windows
@@ -871,9 +875,10 @@ agent event. Running label sweeps still respect the OS animation setting.
 The shell renders sidebar sections and persisted workspace pins before Host
 startup, independently of session polling. An unchanged poll retains rendered
 rows, but rebuilds them if the sidebar has not been populated.
-`/sessions` adds `is_agent_running`, resolved for the bounded requested session
-set through the existing active-session SQLite index. Working-state changes
-notify existing session rows without changing their layout fingerprint. The
+`/sessions` adds `is_agent_running` and `agent_wait`, resolved for the bounded requested
+session set through the existing active-session SQLite index. `SessionInfo.SetAgentState`
+stores both before notifying, so observers never see a half-updated pair. Working-state
+and wait changes notify existing session rows without changing their layout fingerprint. The
 sidebar's color wave shares one timer across realized running titles and
 releases row subscriptions on recycling/window close; reduced motion uses a
 static tint and the Running accessibility label remains available.
@@ -1086,7 +1091,13 @@ not a worktree sandbox or automatic conflict merge. Existing file hash checks,
 external-change detection and per-session execution permissions still apply.
 The session listing adds `is_agent_running` from a bounded active-run query.
 Created, history-waiting and running states animate their sidebar title; terminal
-and user/approval/trust/reconciliation waits do not. The existing three-second
+and user/approval/trust/reconciliation waits do not. The same read names a wait on the
+user as `agent_wait`, null otherwise: `approval`, `workspace_trust`, `question` (a
+`WaitingUser` run whose newest event is `input.requested`, read through the
+`(run_id, sequence DESC)` index) or `user` (the budget and transient-provider waits that
+share that state). The row shows a static warning dot with the status "Needs approval",
+"Needs folder trust", "Has a question" or "Waiting for you" in its accessible item status
+and tooltip. The existing three-second
 poll updates this flag independently of row layout. Visible title waves share
 one timer and private cached brushes; unload/close stops them, and Windows
 reduced motion uses a static tint with the same accessible Running label.

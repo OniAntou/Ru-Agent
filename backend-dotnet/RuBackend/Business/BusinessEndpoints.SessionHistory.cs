@@ -116,7 +116,7 @@ public static partial class BusinessEndpoints
         CancellationToken cancellationToken)
     {
         var ids = values.Select(value => value.Id).ToArray();
-        var running = await SessionRunActivityResolver.ResolveAsync(ids, sqliteOptions, cancellationToken).ConfigureAwait(false);
+        var activity = await SessionRunActivityResolver.ResolveAsync(ids, sqliteOptions, cancellationToken).ConfigureAwait(false);
         var workspaces = await SessionWorkspaceResolver.ResolveAsync(ids, sqliteOptions, workspaceStore,
             trustService, cancellationToken).ConfigureAwait(false);
         return values.Select(value =>
@@ -134,7 +134,9 @@ public static partial class BusinessEndpoints
                 forked_from_message_id = value.ForkedFromMessageId, workspace_id = value.WorkspaceId,
                 workspace_label = value.WorkspaceLabel, workspace_path = value.WorkspacePath,
                 workspace_kind = scratchWorkspaces.OwnsCanonicalWorkspace(value.WorkspacePath, value.Id) ? "scratch" : "project",
-                client_source = value.ClientSource, is_agent_running = running.Contains(value.Id),
+                client_source = value.ClientSource,
+                is_agent_running = activity.TryGetValue(value.Id, out var state) && state == SessionRunActivity.Working,
+                agent_wait = activity.TryGetValue(value.Id, out var waiting) ? SessionRunActivityResolver.WaitWireValue(waiting) : null,
             };
         }).ToArray();
     }

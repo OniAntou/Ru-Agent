@@ -47,6 +47,10 @@ public sealed class SandboxRendererContractTests
         Assert.Contains("new Image()", script, StringComparison.Ordinal);
         Assert.DoesNotContain("innerHTML", script, StringComparison.Ordinal);
         Assert.DoesNotContain("fetch(", script, StringComparison.Ordinal);
+        // A workspace SVG is made inert before it is drawn, and a stuck image load answers.
+        Assert.Contains("var svg = inert(parseSvg(request.source));", script, StringComparison.Ordinal);
+        Assert.Contains("'script, foreignObject, iframe, object, embed, audio, video'", script, StringComparison.Ordinal);
+        Assert.Contains("render_image_timeout", script, StringComparison.Ordinal);
 
         var config = File.ReadAllText(Path.Combine(root, "render-config.js"));
         Assert.Contains("'require', 'autoload'", config, StringComparison.Ordinal);

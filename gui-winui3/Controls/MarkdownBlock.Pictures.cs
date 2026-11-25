@@ -115,15 +115,25 @@ namespace RuApp.Controls
                         return;
                     }
 
-                    var view = new Image
+                    // Drawn at its own size: shrinking a wide diagram to the column made its
+                    // labels unreadable, so a wider picture scrolls sideways instead.
+                    var drawn = new Image
                     {
                         Source = image,
-                        Stretch = Stretch.Uniform,
-                        MaxWidth = picture!.Width,
-                        MaxHeight = picture.Height,
-                        HorizontalAlignment = kind == SandboxRenderKind.Math ? HorizontalAlignment.Center : HorizontalAlignment.Left,
+                        Stretch = Stretch.Fill,
+                        Width = picture!.Width,
+                        Height = picture.Height,
                     };
-                    view.SetValue(AutomationProperties.NameProperty, kind == SandboxRenderKind.Math ? "Formula: " + text : "Diagram");
+                    drawn.SetValue(AutomationProperties.NameProperty, kind == SandboxRenderKind.Math ? "Formula: " + text : "Diagram");
+                    var view = new ScrollViewer
+                    {
+                        Content = drawn,
+                        HorizontalAlignment = kind == SandboxRenderKind.Math ? HorizontalAlignment.Center : HorizontalAlignment.Left,
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        HorizontalScrollMode = ScrollMode.Enabled,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                        VerticalScrollMode = ScrollMode.Disabled,
+                    };
                     var sourceView = new ScrollViewer
                     {
                         Content = new TextBlock

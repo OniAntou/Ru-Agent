@@ -62,12 +62,13 @@ public sealed class SandboxRenderer
                 string json = await reply.Task.WaitAsync(timeout.Token).ConfigureAwait(true);
                 var picture = SandboxRenderPolicy.ReadResult(json, id);
                 if (picture is not null) Remember(key, picture);
+                else GuiDiagnosticWriter.AppendTraceLine($"[SandboxRenderer] {SandboxRenderPolicy.WireKind(kind)} not drawn: {SandboxRenderPolicy.ErrorCode(json)}");
                 return picture;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 // A page that stops answering is replaced; the next render loads a fresh one.
-                GuiDiagnosticWriter.AppendTraceLine("[SandboxRenderer] render timed out");
+                GuiDiagnosticWriter.AppendTraceLine($"[SandboxRenderer] {SandboxRenderPolicy.WireKind(kind)} render timed out");
                 Reset();
                 return null;
             }

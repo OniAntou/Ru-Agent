@@ -134,6 +134,14 @@ public sealed class SandboxRenderPolicyTests
         Assert.Equal(0, SandboxRenderPolicy.ReadResult(Result(3, height: 10, depth: 50), 3)!.Depth);
 
     [Theory]
+    [InlineData("{\"type\":\"result\",\"ok\":false,\"error\":\"render_image_timeout\"}", "render_image_timeout")]
+    [InlineData("{\"type\":\"result\",\"ok\":false,\"error\":\"<b>Parse error on line 2</b>\"}", "render_failed")]
+    [InlineData("{\"type\":\"result\",\"ok\":false}", "render_failed")]
+    [InlineData("nope", "render_failed")]
+    public void Only_a_plain_error_code_reaches_the_trace(string json, string code) =>
+        Assert.Equal(code, SandboxRenderPolicy.ErrorCode(json));
+
+    [Theory]
     [InlineData("{\"type\":\"ready\"}", true)]
     [InlineData("{\"type\":\"result\",\"id\":1}", false)]
     [InlineData("not json", false)]

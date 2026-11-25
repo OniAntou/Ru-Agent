@@ -832,7 +832,9 @@ Mermaid fences and TeX are drawn as pictures by `SandboxRenderer` (ADR 0057): on
 hidden, locked-down WebView2 loads the vendored Mermaid and MathJax page from
 `Assets/render` and returns PNGs that native `Image` controls show. Model text goes
 to it only as a JSON string; the reply is untrusted data read by
-`SandboxRenderPolicy` (request id, PNG signature, size bounds). A closed
+`SandboxRenderPolicy` (request id, PNG signature, size bounds); a page failure is
+traced only as its plain error code. A diagram shows at its own size and scrolls
+sideways when wider than the column. A closed
 ```` ```mermaid ```` fence and a closed `$$` block become a picture card with a
 Source toggle and Copy (which copies the source); inline `$…$` becomes a picture on
 the text baseline; inside a table cell (a TextBlock, which cannot host a picture)
@@ -1285,7 +1287,8 @@ handle's final path, and holds a read-only handle without write/delete sharing.
 Documents, PDFs and images have a 64 MiB input cap; text/Markdown have a 1 MiB
 cap. HTML is source text, never active browser content. An SVG is read as text
 under the same cap and checks, then shown as a picture drawn by the sandboxed
-renderer (ADR 0057): it reaches the renderer's canvas as an `<img>`, where it can
+renderer (ADR 0057): its scripts, embedded HTML, event handlers and outside
+references are removed, it reaches the renderer's canvas as an `<img>`, where it can
 run no script and load nothing, and a Source/Picture header toggle shows its text;
 when the renderer cannot draw it, the source shows. Which files
 count as source text is not a second list: `IsTextual` asks

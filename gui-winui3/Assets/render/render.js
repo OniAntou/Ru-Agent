@@ -9,6 +9,7 @@
     var LIMITS = { mermaid: 50000, math: 4000, svg: 1048576 };
     var MAX_SIDE = 4096;
     var PIXEL_SCALE = 2;
+    var IMAGE_TIMEOUT = 5000;
     var counter = 0;
 
     function fail(code) {
@@ -32,7 +33,10 @@
         if (!(scale > 0)) return Promise.reject(fail('render_too_large'));
         return new Promise(function (resolve, reject) {
             var image = new Image();
+            // An image that never loads answers with a named error instead of silence.
+            var timer = setTimeout(function () { reject(fail('render_image_timeout')); }, IMAGE_TIMEOUT);
             image.onload = function () {
+                clearTimeout(timer);
                 try {
                     var canvas = document.createElement('canvas');
                     canvas.width = Math.max(1, Math.ceil(width * scale));
@@ -45,7 +49,7 @@
                     reject(fail('render_raster_failed'));
                 }
             };
-            image.onerror = function () { reject(fail('render_svg_invalid')); };
+            image.onerror = function () { clearTimeout(timer); reject(fail('render_svg_invalid')); };
             image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
         });
     }
@@ -117,15 +121,42 @@
         });
     }
 
+    // A workspace SVG is drawn as a picture only: scripts, embedded HTML, event
+    // handlers and every reference that leaves the file are removed before it is
+    // rasterized, so nothing in it can run or ask for a resource.
+    function inert(svg) {
+        var drop = svg.querySelectorAll('script, foreignObject, iframe, object, embed, audio, video');
+        for (var i = 0; i < drop.length; i++) drop[i].parentNode.removeChild(drop[i]);
+        var all = [svg].concat(Array.prototype.slice.call(svg.getElementsByTagName('*')));
+        all.forEach(function (element) {
+            Array.prototype.slice.call(element.attributes).forEach(function (attribute) {
+                var name = attribute.name.toLowerCase();
+                var value = (attribute.value || '').trim();
+                if (name.indexOf('on') === 0) element.removeAttribute(attribute.name);
+                else if ((name === 'href' || name === 'xlink:href' || name === 'src')
+                    && value.charAt(0) !== '#' && value.toLowerCase().indexOf('data:image/') !== 0) {
+                    element.removeAttribute(attribute.name);
+                } else if (/url\(\s*['"]?(?!#)/i.test(value)) {
+                    element.removeAttribute(attribute.name);
+                }
+            });
+        });
+        var styles = svg.getElementsByTagName('style');
+        for (var j = 0; j < styles.length; j++) {
+            styles[j].textContent = styles[j].textContent.replace(/@import[^;]*;?/gi, '').replace(/url\(\s*['"]?(?!#)[^)]*\)/gi, 'none');
+        }
+        return svg;
+    }
+
     function renderSvg(request) {
-        var svg = parseSvg(request.source);
+        var svg = inert(parseSvg(request.source));
         var box = viewBoxSize(svg);
         var width = number(svg.getAttribute('width')) || (box && box.width) || 512;
         var height = number(svg.getAttribute('height')) || (box && box.height) || 512;
         // Percent sizes mean nothing outside a page; the view box keeps the proportions.
         if (/%/.test(svg.getAttribute('width') || '') && box) width = box.width;
         if (/%/.test(svg.getAttribute('height') || '') && box) height = box.height;
-        return rasterize(request.source, width, height);
+        return rasterize(sized(svg, width, height), width, height);
     }
 
     function render(request) {

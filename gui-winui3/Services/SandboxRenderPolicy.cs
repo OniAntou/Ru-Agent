@@ -189,6 +189,29 @@ public static class SandboxRenderPolicy
         }
     }
 
+    /// <summary>
+    /// The page's failure code for the trace, when it is a plain bounded identifier;
+    /// anything else reads as "render_failed", so page text never reaches the log.
+    /// </summary>
+    public static string ErrorCode(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 4 });
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+                && error.GetString() is { Length: > 0 and <= 40 } code
+                && code.All(character => character is (>= 'a' and <= 'z') or '_')
+                    ? code
+                    : "render_failed";
+        }
+        catch (JsonException)
+        {
+            return "render_failed";
+        }
+    }
+
     private static double Dimension(JsonElement root, string name) =>
         root.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.Number
         && property.GetDouble() is var value && double.IsFinite(value) && value > 0 && value <= MaxSide

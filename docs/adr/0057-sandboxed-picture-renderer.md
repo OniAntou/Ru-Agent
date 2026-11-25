@@ -47,7 +47,11 @@ Two constraints decided the design:
      diagram's `%%{init}%%` must not loosen are in Mermaid's `secure` list.
    - **MathJax** has `require` and `autoload` removed.
    - **Every SVG**, including an SVG file, reaches the canvas through an `<img>`, where an
-     SVG runs no script and loads nothing.
+     SVG runs no script and loads nothing. A workspace SVG is also made inert first: its
+     `script`, `foreignObject` and embedded-media elements, event-handler attributes,
+     `@import` rules and every reference that leaves the file are removed. An image that
+     never loads answers `render_image_timeout` after 5 s instead of leaving the request
+     waiting.
 5. **Replies are untrusted.** `SandboxRenderPolicy.ReadResult` accepts a reply only when it
    comes from the renderer page and names the pending request id. Its `png` must be a
    `data:image/png;base64,` URL of at most 24 MiB of base64 that decodes to a PNG

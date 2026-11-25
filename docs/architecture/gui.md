@@ -1203,6 +1203,17 @@ unchanged. Card, narrow-window peek and reader share one summary that includes
 preparations and unavailable attempts. The resize grip exposes a RangeValue
 automation peer and arrow/Home/End keys; capture loss, cancellation, hiding and
 unload end the pointer sequence and commit its last clamped width.
+A subagent's detail view reads like the main chat. `SubagentTranscript` projects the
+viewed attempt into two observed `ChatMessageItem`s: the delegated brief (`task`) as the
+user's message, omitted when the attempt has none, and the child run's replay as the reply,
+built with `AgentActivityItem`, `AgentActivityGrouper` and `AgentReplaySegmentBuilder` like a
+reopened turn. `ChatView` hands its `ChatTemplateSelector` to the panel, so Thinking rows,
+tool headlines, the Working/Worked header and the answer use the transcript's own templates.
+The replay is re-read on the panel's 2-second tick while the attempt runs; each activity id
+keeps one item updated in place and segments are merged, so expanded rows survive a read.
+Observed rows offer Copy but not Rewind, claim no turn changes and take the panel's width.
+A completed result's text is the reply's last words and is drawn only when the replay has
+none; a failed or cancelled result's Host-written text is always drawn below the reply.
 _Avoid_: treating the background-task list as the agent's todo plan
 
 ## File preview

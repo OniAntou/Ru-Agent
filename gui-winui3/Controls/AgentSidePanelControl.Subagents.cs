@@ -19,6 +19,9 @@ public sealed partial class AgentSidePanelControl
     }
 
     public void BindSubagents(ISubagentClient? client, string? root) => SubagentBrowser.Bind(client, root);
+    /// <summary>The chat's message templates, so a subagent's conversation reads like the main one.</summary>
+    public void SetSubagentTranscriptTemplates(Microsoft.UI.Xaml.Controls.DataTemplateSelector selector) =>
+        SubagentBrowser.TranscriptTemplateSelector = selector;
     public void NotifySubagentsChanged(string rootRunId) => SubagentBrowser.NotifyChanged(rootRunId);
     public void SetSubagentOverlay(bool overlay) => FullscreenButton.Visibility = overlay ? Visibility.Collapsed : Visibility.Visible;
 

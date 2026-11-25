@@ -32,6 +32,8 @@ public sealed partial class ChatView
     {
         _sidePanelWidth = _sidePanelWidthStore.Load();
         SidePanel.SubagentsChanged += OnSubagentsChanged;
+        // A subagent's conversation is drawn with this transcript's own message templates.
+        SidePanel.SetSubagentTranscriptTemplates((Microsoft.UI.Xaml.Controls.DataTemplateSelector)Resources["ChatTemplateSelector"]);
         SidePanel.ExpandRequested += OnSidePanelExpandRequested;
         SidePanel.TabOpenRequested += OnSidePanelTabOpenRequested;
         SidePanel.CollapseRequested += OnSidePanelCollapseRequested;

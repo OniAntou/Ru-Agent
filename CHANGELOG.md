@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: A subagent's detail view in the Subagents panel reads like the main chat. The
+  brief the main agent delegated appears as the user's message, and the child's work uses the
+  main transcript's rows: the Working header with its step count, Thinking rows with durations,
+  tool rows with their real labels (for example "Read the docs" instead of "Analyzed"), the
+  child's narration between them and its answer as the reply. The view updates while the child
+  runs and is rebuilt from the run replay when a chat is reopened. A completed result is no
+  longer shown a second time under the reply; a failed or cancelled result still is. The view
+  stays read-only: its messages offer Copy but not Rewind.
+
 - **fix(broker)**: The built-in browser now exits on its own when Ru closes it, instead of
   being killed. A killed browser could leave unclosable ghost entries in Alt+Tab that stayed
   until Windows Explorer restarted. Ru asks the browser to close and waits up to five seconds

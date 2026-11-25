@@ -888,6 +888,13 @@ namespace RuApp.Views
                 // The row's template is realised by now, so its text elements exist and
                 // can take the conversation size.
                 ApplyTranscriptTypography(column);
+                // A subagent's conversation in the side panel fills that panel's column
+                // instead of taking the main transcript's reading width.
+                if (column.DataContext is ChatMessageItem { IsObserved: true })
+                {
+                    column.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    return;
+                }
                 LayoutMessageColumn(column);
             }
         }
@@ -984,7 +991,7 @@ namespace RuApp.Views
 
         private async void OnRewindToMessageClick(object sender, RoutedEventArgs e)
         {
-            if (_apiService is not { } api || sender is not FrameworkElement { Tag: ChatMessageItem message }) return;
+            if (_apiService is not { } api || sender is not FrameworkElement { Tag: ChatMessageItem { IsObserved: false } message }) return;
             var sessionId = _activeSessionId;
             var generation = _sessionOpenGeneration;
             bool OwnsSession() => !_scrollingDisposed && generation == _sessionOpenGeneration

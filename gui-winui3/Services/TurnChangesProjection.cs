@@ -49,7 +49,9 @@ public static class TurnChangesProjection
     public static TurnChangeSummary ForMessage(ChatMessageItem message)
     {
         ArgumentNullException.ThrowIfNull(message);
-        if (message.Role != "assistant" || message.IsStreaming || message.ContinuesInLaterReply
+        // An observed subagent reply proposes changes in its own workspace; the Subagents
+        // panel reviews those, so the main turn summary never claims them.
+        if (message.Role != "assistant" || message.IsStreaming || message.ContinuesInLaterReply || message.IsObserved
             || message.AgentActivities is null && message.EarlierReplyActivities is null)
             return TurnChangeSummary.Empty;
 

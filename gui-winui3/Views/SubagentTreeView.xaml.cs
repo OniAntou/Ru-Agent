@@ -33,6 +33,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
     public SubagentTreeView()
     {
         InitializeComponent();
+        ChildTranscript.ItemsSource = _transcript.Messages;
         _timer = DispatcherQueue.CreateTimer();
         _timer.Interval = SubagentPresentation.ActiveRefresh;
         _timer.Tick += OnTick;
@@ -126,6 +127,8 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
             {
                 // Same snapshot: only a running attempt's elapsed time moved.
                 if (Working.Count > 0) { RenderSnapshot(); RenderDetailStatus(); }
+                // The open child's own replay moves between snapshot changes while it works.
+                if (_model.SelectedAgentId is not null) await RefreshChildActivityAsync();
                 return;
             }
             ShowFeedback("");

@@ -69,7 +69,8 @@
                                         <FontIcon Glyph="&#xE8C8;" />
                                     </MenuFlyoutItem.Icon>
                                 </MenuFlyoutItem>
-                                <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
+                                <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}"
+                                                Visibility="{x:Bind CanRewind, Converter={StaticResource BoolToVisibilityConverter}}">
                                     <MenuFlyoutItem.Icon>
                                         <FontIcon Glyph="&#xE7A7;" />
                                     </MenuFlyoutItem.Icon>
@@ -356,7 +357,8 @@
                                 <FontIcon Glyph="&#xE8C8;" />
                             </MenuFlyoutItem.Icon>
                         </MenuFlyoutItem>
-                        <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}">
+                        <MenuFlyoutItem Text="Rewind to Here" Click="OnRewindToMessageClick" Tag="{x:Bind}"
+                                        Visibility="{x:Bind CanRewind, Converter={StaticResource BoolToVisibilityConverter}}">
                             <MenuFlyoutItem.Icon>
                                 <FontIcon Glyph="&#xE7A7;" />
                             </MenuFlyoutItem.Icon>

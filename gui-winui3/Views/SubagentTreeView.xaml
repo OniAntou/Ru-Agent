@@ -106,11 +106,6 @@
                                                   VerticalScrollBarVisibility="Auto">
                                         <StackPanel Spacing="16">
                                             <StackPanel Spacing="6">
-                                                <TextBlock Text="Task brief" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
-                                                <TextBlock x:Name="TaskBrief" FontSize="13" TextWrapping="Wrap"
-                                                           IsTextSelectionEnabled="True" Foreground="{StaticResource RuInkBrush}" />
-                                            </StackPanel>
-                                            <StackPanel Spacing="6">
                                                 <TextBlock Text="Run details" FontSize="11" Foreground="{StaticResource RuMutedBrush}" />
                                                 <TextBlock x:Name="RunDetails" FontSize="12" TextWrapping="Wrap"
                                                            IsTextSelectionEnabled="True" Foreground="{StaticResource RuInkBrush}" />
@@ -146,6 +141,20 @@
                 <ScrollViewer x:Name="DetailScroll" Grid.Row="2" HorizontalScrollBarVisibility="Disabled"
                               HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="8,18,8,32" MaxWidth="720" Spacing="12">
+                        <!--
+                          Read-only: the brief the main agent delegated, as the user's message, and
+                          the child's own run replay as the reply. Templates come from the chat view.
+                        -->
+                        <ItemsControl x:Name="ChildTranscript"
+                                      Visibility="Collapsed" AutomationProperties.Name="Subagent conversation">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Vertical" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                        <TextBlock x:Name="PendingResult" Text="Working on this task."
+                                   FontSize="13" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
                         <TextBlock x:Name="ResultStatus" FontSize="11" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
                         <!-- Read-only: the main agent remains the only actor that can apply a result. -->
                         <Button x:Name="ReviewChangesButton" Click="OnReviewChanges" HorizontalAlignment="Left" Visibility="Collapsed"
@@ -156,23 +165,17 @@
                                 <TextBlock x:Name="ReviewChangesLabel" Text="Review changes" FontSize="12" />
                             </StackPanel>
                         </Button>
-                        <TextBlock x:Name="PendingResult" Text="Working on this task. The result will appear here."
-                                   FontSize="13" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" />
-                        <!-- Read-only: what the child is doing and saying, from its own run replay. -->
-                        <StackPanel x:Name="ChildActivityPanel" Spacing="6" Visibility="Collapsed"
-                                    AutomationProperties.Name="Subagent activity">
-                            <TextBlock Text="Activity" FontSize="11" FontWeight="SemiBold"
-                                       Foreground="{StaticResource RuMutedBrush}" />
-                            <StackPanel x:Name="ChildActivityList" Spacing="6" />
+                        <!-- The published text, shown only when the reply above holds no words. -->
+                        <StackPanel x:Name="ResultTextPanel" Spacing="12">
+                            <TextBlock x:Name="ResultLoading" Text="Loading result…" Visibility="Collapsed" FontSize="12"
+                                       Foreground="{StaticResource RuMutedBrush}" AutomationProperties.LiveSetting="Polite" />
+                            <controls:MarkdownBlock x:Name="ResultBody" MarkdownText="" FontSize="14" Foreground="{StaticResource RuInkBrush}"
+                                                    AutomationProperties.Name="Subagent result" />
+                            <Button x:Name="MoreButton" Content="Read more" Visibility="Collapsed" Click="OnNextPage"
+                                    Style="{StaticResource RuToolbarButtonStyle}" HorizontalAlignment="Left"
+                                    AutomationProperties.Name="Read more subagent result" />
+                            <TextBlock x:Name="PreviewNotice" FontSize="12" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
                         </StackPanel>
-                        <TextBlock x:Name="ResultLoading" Text="Loading result…" Visibility="Collapsed" FontSize="12"
-                                   Foreground="{StaticResource RuMutedBrush}" AutomationProperties.LiveSetting="Polite" />
-                        <controls:MarkdownBlock x:Name="ResultBody" MarkdownText="" FontSize="14" Foreground="{StaticResource RuInkBrush}"
-                                                AutomationProperties.Name="Subagent result" />
-                        <Button x:Name="MoreButton" Content="Read more" Visibility="Collapsed" Click="OnNextPage"
-                                Style="{StaticResource RuToolbarButtonStyle}" HorizontalAlignment="Left"
-                                AutomationProperties.Name="Read more subagent result" />
-                        <TextBlock x:Name="PreviewNotice" FontSize="12" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

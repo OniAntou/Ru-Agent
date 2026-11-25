@@ -99,7 +99,6 @@ public sealed partial class SubagentTreeView
         RenderDetailStatus();
         SelectedModel.Text = attempt is null ? "Model unavailable" : $"{attempt.ProviderId ?? "Provider unavailable"} · {attempt.Model ?? "Model unavailable"}";
         ToolTipService.SetToolTip(SelectedModel, SelectedModel.Text);
-        TaskBrief.Text = agent.Task ?? "No task brief is available.";
         var choices = agent.Results.Select(r => new ResultChoice(r.ResultVersion)).ToArray();
         _changingVersions = true;
         try
@@ -117,9 +116,8 @@ public sealed partial class SubagentTreeView
         // Offered where the result is read, and only when there is a coding result to review.
         ReviewChangesButton.IsEnabled = !_reviewing;
         ReviewChangesButton.Visibility = result is not null && agent.Role == "coding" ? Visibility.Visible : Visibility.Collapsed;
-        PendingResult.Visibility = result is null ? Visibility.Visible : Visibility.Collapsed;
-        PendingResult.Text = row.Group == SubagentGroup.Working ? "Working on this task. The result will appear here."
-            : "No result was published for this attempt.";
+        RenderPendingResult();
+        UpdateResultTextVisibility();
         ResultStatus.Text = result is null ? "" : result.ApplyStatus switch
         {
             "applied" => "Integrated into the workspace",
@@ -136,6 +134,19 @@ public sealed partial class SubagentTreeView
             + (string.IsNullOrWhiteSpace(agent.Profile) ? "" : $"\nProfile: {agent.Profile}")
             + (result?.Code is { } code ? $"\nOutcome: {code}" : "")
             + $"\n{agent.AgentId}";
+    }
+
+    /// <summary>
+    /// Said only where the conversation cannot: before the child's replay is first read, or
+    /// when an ended attempt published nothing. A live reply shows its own working state.
+    /// </summary>
+    private void RenderPendingResult()
+    {
+        if (_model.Selected is not { } agent) return;
+        var working = SubagentPresentation.Row(agent).Group == SubagentGroup.Working;
+        var show = _model.Result is null && (!working || _transcript.Messages.Count == 0);
+        PendingResult.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        PendingResult.Text = working ? "Working on this task." : "No result was published for this attempt.";
     }
 
     private static string Timing(RuAgent.Protocol.Subagents.SubagentAttemptSummary attempt)

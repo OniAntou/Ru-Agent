@@ -743,6 +743,12 @@ public static class AgentActivityProjector
         return null;
     }
 
+    /// <summary>
+    /// The activity-row identity a model step's thinking row carries. Transient frames
+    /// that target that row use it instead of re-deriving the <c>act_</c> convention.
+    /// </summary>
+    public static string ModelStepActivityId(ModelStepId modelStepId) => ActivityId(modelStepId.Value);
+
     internal static string ActivityId(string sourceId)
     {
         var separator = sourceId.IndexOf('_');

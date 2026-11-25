@@ -14,10 +14,14 @@ public sealed class FakeModelStepRunner : IModelStepRunner
     public List<SystemPromptContext> PromptContexts { get; } = new();
 
     public void Enqueue(AssistantStep step, params string[] deltas) =>
-        _steps.Enqueue(new QueuedStep(null, step, deltas));
+        _steps.Enqueue(new QueuedStep(null, step, deltas, Array.Empty<string>()));
+
+    /// <summary>Queues a step that streams reasoning deltas before its answer text.</summary>
+    public void Enqueue(AssistantStep step, string[] deltas, string[] reasoning) =>
+        _steps.Enqueue(new QueuedStep(null, step, deltas, reasoning));
 
     public void Enqueue(ModelStepResult result, params string[] deltas) =>
-        _steps.Enqueue(new QueuedStep(result, null, deltas));
+        _steps.Enqueue(new QueuedStep(result, null, deltas, Array.Empty<string>()));
 
     public async Task<ModelStepResult> RunStepAsync(
         ModelStepRequest request,
@@ -33,6 +37,15 @@ public sealed class FakeModelStepRunner : IModelStepRunner
         }
 
         var queued = _steps.Dequeue();
+        for (var index = 0; index < queued.Reasoning.Count; index++)
+        {
+            await publishDelta(new AssistantDelta(
+                request.ModelStepId,
+                index + 1,
+                queued.Reasoning[index],
+                kind: AssistantDeltaKind.Reasoning));
+        }
+
         for (var index = 0; index < queued.Deltas.Count; index++)
         {
             await publishDelta(new AssistantDelta(
@@ -55,5 +68,6 @@ public sealed class FakeModelStepRunner : IModelStepRunner
     private sealed record QueuedStep(
         ModelStepResult? Result,
         AssistantStep? Step,
-        IReadOnlyList<string> Deltas);
+        IReadOnlyList<string> Deltas,
+        IReadOnlyList<string> Reasoning);
 }

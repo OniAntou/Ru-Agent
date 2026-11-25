@@ -121,12 +121,21 @@ internal sealed class AgentModelInvocation
             run.RunId,
             TransientFrameKind.AssistantDelta,
             modelStepId: modelStepId);
+        // The reasoning summary line the running thinking row shows. It is transient like
+        // the assistant text, shares its redactor, and is cleared whenever a retried
+        // attempt supersedes the one that streamed it.
+        var thinkingPreview = new ReasoningPreviewStream(
+            _frames,
+            _transientRedactor,
+            run.RunId,
+            modelStepId,
+            AgentActivityProjector.ModelStepActivityId(modelStepId));
         ModelStepResult modelResult;
         try
         {
             modelResult = await _model.RunStepAsync(
                     request,
-                    delta => PublishAssistantDelta(modelStepId, assistantStream, delta),
+                    delta => PublishAssistantDelta(modelStepId, assistantStream, thinkingPreview, delta),
                     cancellationToken)
                 .ConfigureAwait(false)
                 ?? throw new InvalidOperationException("model_step_returned_null");
@@ -155,6 +164,7 @@ internal sealed class AgentModelInvocation
             {
                 assistantStream.Reset();
                 assistantStream.Complete();
+                thinkingPreview.Reset();
                 throw new ContextOverflowStepException(error);
             }
             if (ProviderTransientPauseException.EndsRunWithProviderCode(code))
@@ -166,6 +176,7 @@ internal sealed class AgentModelInvocation
                 // reach the transcript as if it were the reply.
                 assistantStream.Reset();
                 assistantStream.Complete();
+                thinkingPreview.Reset();
                 throw new ProviderTransientPauseException(code, error);
             }
 
@@ -179,6 +190,7 @@ internal sealed class AgentModelInvocation
                 // clean turn instead of appending to the superseded text.
                 assistantStream.Reset();
                 assistantStream.Complete();
+                thinkingPreview.Reset();
                 throw new ModelRepairableStepException(code, error);
             }
 
@@ -565,6 +577,7 @@ internal sealed class AgentModelInvocation
     private static ValueTask PublishAssistantDelta(
         ModelStepId expectedStepId,
         TransientContentStream stream,
+        ReasoningPreviewStream thinkingPreview,
         AssistantDelta delta)
     {
         ArgumentNullException.ThrowIfNull(delta);
@@ -572,6 +585,20 @@ internal sealed class AgentModelInvocation
         if (delta.ModelStepId != expectedStepId)
         {
             throw new InvalidOperationException("model_delta_identity_mismatch");
+        }
+
+        if (delta.Kind == AssistantDeltaKind.Reasoning)
+        {
+            if (delta.IsReset)
+            {
+                thinkingPreview.Reset();
+            }
+            else
+            {
+                thinkingPreview.Append(delta.Content);
+            }
+
+            return ValueTask.CompletedTask;
         }
 
         if (delta.IsReset)

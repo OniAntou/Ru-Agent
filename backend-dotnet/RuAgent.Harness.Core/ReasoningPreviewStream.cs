@@ -96,9 +96,15 @@ internal sealed class ReasoningPreviewStream
     {
         lock (_gate)
         {
+            // Only a line the reader could have seen needs clearing; a step that failed
+            // before its first summary line leaves the stream silent.
+            var hadLine = _lastPublished.Length > 0;
             _tail.Clear();
             _lastPublished = string.Empty;
-            Publish(string.Empty, isReset: true);
+            if (hadLine)
+            {
+                Publish(string.Empty, isReset: true);
+            }
         }
     }
 

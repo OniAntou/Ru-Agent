@@ -56,6 +56,19 @@ public sealed class ReasoningPreviewStreamTests
     }
 
     [Fact]
+    public void Reset_with_nothing_published_publishes_no_frame()
+    {
+        // A step that failed before any reasoning line streamed has nothing to clear;
+        // an empty reset frame would only perturb observers that count frames.
+        var frames = new List<HarnessTransientFrame>();
+        var stream = NewStream(frames);
+
+        stream.Reset();
+
+        Assert.Empty(frames);
+    }
+
+    [Fact]
     public void Reset_clears_the_line_and_the_next_paragraph_publishes_again()
     {
         var frames = new List<HarnessTransientFrame>();

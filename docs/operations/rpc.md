@@ -175,10 +175,14 @@ Details that are easy to get wrong:
   created with `includeTransient: true`. The SSE wire tags every one of them
   `event: transient`, so `event_type` is always `"transient"`; the actual kind
   (`assistant.delta`, `tool.output.delta`, `agent.activity`, `agent.summary`,
-  `agent.usage_estimate`) rides
+  `agent.usage_estimate`, `agent.reasoning_preview`) rides
   inside `data` as a `{"kind":"...","data":"..."}` JSON string. Params:
   `subscription_id`, `transient_sequence`, `event_type`, `data`. Transient frames are
   never replayed and never buffered, so a reconnect starts without them.
+  `agent.reasoning_preview` carries one absolute line of a running thinking row
+  (`{activity_id, model_step_id, text}`) or a reset that clears it
+  (`{activity_id, reset:true}`); it is display text, never the model's reasoning, and
+  a reconnect simply leaves the row without its live line.
   `transient.frames_dropped` is **not** one of these — it is a durable event and
   arrives as `run.event`.
 - **`run.detached`** — the subscription pump ended before the run reached a terminal

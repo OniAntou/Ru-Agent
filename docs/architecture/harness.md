@@ -961,6 +961,9 @@ text through the existing
 step. Retraction follows redaction completion so buffered tails cannot reappear.
 The reset retains the rejected model-step identity and advances its sequence;
 earlier accepted steps and tool receipts remain intact in GUI and TUI.
+The running thinking row's live line follows the same rule: a retried or rejected
+attempt clears the row's `agent.reasoning_preview` line before the next attempt
+streams, and the line never outlives the row's running state.
 
 _Avoid_: fallback answer, substitute model, retry on another backend
 

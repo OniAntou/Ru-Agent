@@ -934,6 +934,14 @@ delivers it on the UI dispatcher with `(run, model_step, transient_sequence)`
 deduplication. Raw transient JSON and tool-output deltas are never exposed to
 the UI or durable audit.
 
+A running thinking row's live line rides its own `agent.reasoning_preview`
+transient frame: one redacted, single-line excerpt (first line of the newest
+completed reasoning paragraph, at most 400 characters) plus the row's activity id,
+or a reset that clears it. It is absolute state, not a delta — a dropped frame only
+leaves the line one paragraph behind — and it is display text, never the full
+reasoning; the row's fold still carries the bounded excerpt after the step settles,
+while the live line disappears.
+
 Each desktop row reads as one line: a glyph for the kind of work, a verb in the
 row's tense ("Running", "Ran"), then the subject it acted on (file, command, query,
 host, tool) and a mono tail of numbers (line range, result count, duration, line

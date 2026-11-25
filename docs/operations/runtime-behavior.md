@@ -405,6 +405,14 @@ frame. The client validates the outer kind, bounded UTF-8 text, model-step id,
 optional execution id, and positive transient sequence before dispatching it;
 unknown fields, malformed JSON, raw tool output, and replayed sequence keys are
 dropped without changing the durable cursor.
+The running thinking row's live line is a separate typed
+`agent.reasoning_preview` transient frame: the redacted first line of the newest
+completed reasoning paragraph (at most 400 characters) with the thinking row's
+activity id, or a reset. It is absolute state rather than a delta, so a dropped or
+duplicated frame cannot desynchronize the UI; a retried attempt resets the line
+before it streams again, the line lives only while the row runs, and nothing about
+it is persisted or replayed. The row's fold keeps the bounded excerpt the activity
+frame already carried once the step settles.
 The measured request size for a model step about to run rides a typed
 `agent.usage_estimate` transient frame (estimated input tokens, the step's prompt
 budget, model-step id, optional numeric `context_tokens` breakdown and optional

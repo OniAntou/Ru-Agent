@@ -816,7 +816,17 @@ line height distinguish sections while keeping wrapped titles readable.
 
 Markdown embedded code/table frames track the available reading-column width
 without reparsing on resize. Code preserves line boundaries with horizontal
-scrolling; wide tables scroll within the column. Plain table-cell extraction
+scrolling; wide tables scroll within the column. A code card
+(`MarkdownBlock.CodeCard.cs`, decisions in the WinUI-free `CodeCardLayout`) folds
+a finished block longer than 30 lines to its first 20 under a "Show all N lines"
+footer; a fence that has not closed yet never folds, so a streaming block grows in
+place. Its header carries per-card Wrap and Line-number toggles beside Copy, drawn
+on hover and kept drawn while on. Numbers live in a gutter outside the selectable
+text and the horizontal scroller, so they never scroll away or enter a selection;
+because one gutter row cannot follow a wrapped line, numbers show only while wrap
+is off. Copy always takes the whole source, folded or not. Lines are highlighted
+once over the whole block (`CodeHighlighter.HighlightLines`), so a comment opened
+above the fold keeps its color below it. Plain table-cell extraction
 walks nested inline containers so emphasis and link labels survive display and
 TSV copy. Rich-block layout lives in `MarkdownBlock.RichBlocks.cs`, separate
 from prose and inline rendering.
@@ -1301,7 +1311,13 @@ JSON, XML/XAML/HTML, SQL, shell, YAML, diff, JavaScript/TypeScript, the C family
 Java/Kotlin, Go, Rust, TOML/INI and CSS; other files stay plain. Edit diffs
 (`FileEditPreviewControl`) color each line from its own side of the edit, show a
 +/− marker, and tint every changed line — a new file included; only unchanged
-lines stay plain. Each block prints its own unified-diff header
+lines stay plain. Inside a changed line the words that changed take a deeper tint
+of the same hue (`IntraLineDiff`, drawn with a `TextHighlighter` over the syntax
+runs): a removed run and the added run after it pair line by line, and each pair is
+compared word by word. A pair stays whole-line only when a line exceeds 1,000
+characters, when less than 40% of its visible text is shared, or when a line has no
+partner. The chat's edit rows and the Changes tab share this control; the subagent
+panel's patch view keeps its own line diff. Each block prints its own unified-diff header
 (`DiffEngine.Header`, e.g. `@@ -42,3 +42,4 @@`) instead of a caption beside it,
 so it reads the way `git diff` and the other coding agents print a change. The
 diff is a flat code surface, not a card — no border and no rounding — and it

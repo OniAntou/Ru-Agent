@@ -434,7 +434,7 @@ namespace RuApp.Controls
                     ParagraphBlock paragraph => new List<Paragraph> { Prose(paragraph.Inline, indent, bottom: 12) },
                     QuoteBlock quote => Quote(quote, indent),
                     ListBlock list => BuildList(list, indent),
-                    MathBlock math => new List<Paragraph> { CodeCard(math.Lines.ToString(), "math", indent) },
+                    MathBlock math => new List<Paragraph> { CodeCard(math.Lines.ToString(), "math", indent, complete: false) },
                     CodeBlock code => new List<Paragraph> { Code(code, indent) },
                     ThematicBreakBlock => new List<Paragraph> { Rule(indent) },
                     HtmlBlock html => new List<Paragraph> { Html(html, indent) },

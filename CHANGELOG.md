@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Chat code blocks fold, wrap and number their lines. A finished block
+  longer than 30 lines shows its first 20 under "Show all N lines"; a block still streaming
+  never folds. Each card has Wrap and Line-number toggles beside Copy, and Copy still takes
+  the whole source.
+
+- **feat(gui)**: Edit diffs mark the words that changed inside a line. A removed line and the
+  added line that replaces it pair up, and only the differing words take a deeper tint, in
+  the chat's edit rows and the Changes tab. Very long or largely rewritten lines keep the
+  whole-line tint.
+
 - **feat(gui)**: A background session that waits on you says so. `/sessions` reports
   `agent_wait` (`approval`, `question`, `workspace_trust` or `user`) beside
   `is_agent_running`; the sidebar row shows a warning dot and "Needs approval", "Has a

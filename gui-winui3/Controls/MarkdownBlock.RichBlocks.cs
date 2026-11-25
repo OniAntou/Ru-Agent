@@ -19,90 +19,6 @@ namespace RuApp.Controls
     {
         private sealed partial class BlockRenderer
         {
-            private Paragraph Code(CodeBlock code, int indent)
-            {
-                string language = code is FencedCodeBlock fenced ? fenced.Info?.Trim() ?? string.Empty : string.Empty;
-                return CodeCard(code.Lines.ToString(), language, indent);
-            }
-
-            /// <summary>
-            /// Renders raw source in the code card. Math blocks use this too:
-            /// RichTextBlock has no math layout, and a labeled source card is
-            /// clearer than dropping the block into ordinary prose.
-            /// </summary>
-            private Paragraph CodeCard(string source, string? language, int indent)
-            {
-                string text = source.TrimEnd('\r', '\n');
-                if (string.IsNullOrWhiteSpace(language))
-                {
-                    language = "code";
-                }
-
-                var label = new TextBlock
-                {
-                    Text = language,
-                    FontFamily = MonoFont,
-                    FontSize = 11,
-                    Foreground = MutedOrDefault(),
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                var copy = new Button
-                {
-                    Content = new FontIcon { Glyph = "\uE8C8", FontSize = 12 },
-                    Style = (Style?)Application.Current?.Resources["RuToolbarButtonStyle"],
-                    Padding = new Thickness(6, 4, 6, 4),
-                    Tag = text,
-                };
-                ToolTipService.SetToolTip(copy, "Copy code");
-                copy.SetValue(AutomationProperties.NameProperty, "Copy code");
-                copy.Click += OnCopyCodeClick;
-                var header = new Grid { Margin = new Thickness(12, 8, 12, 0) };
-                header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                Grid.SetColumn(label, 0);
-                Grid.SetColumn(copy, 1);
-                header.Children.Add(label);
-                header.Children.Add(copy);
-
-                var body = new TextBlock
-                {
-                    FontFamily = MonoFont,
-                    FontSize = MonoFontSize,
-                    TextWrapping = TextWrapping.NoWrap,
-                    IsTextSelectionEnabled = true,
-                    LineHeight = Math.Round(MonoFontSize * 1.6),
-                    Padding = new Thickness(16, 10, 16, 16),
-                };
-                foreach (var span in CodeHighlighter.Highlight(text, language))
-                {
-                    body.Inlines.Add(CodeTheme.Run(span));
-                }
-
-                var frame = new StackPanel();
-                frame.Children.Add(header);
-                frame.Children.Add(new ScrollViewer
-                {
-                    Content = body,
-                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                    HorizontalScrollMode = ScrollMode.Enabled,
-                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                    VerticalScrollMode = ScrollMode.Disabled,
-                });
-                var outer = new Border
-                {
-                    Background = (Brush?)Application.Current?.Resources["RuBackdropSurfaceBrush"],
-                    BorderBrush = ThemeBrush("RuLineBrush", 203, 213, 225),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = Services.UiCornerRadius.Inset,
-                    Child = frame,
-                };
-                RevealOnHover(outer, copy);
-                fitBlock(outer, indent * 20);
-                var paragraph = new Paragraph { Margin = new Thickness(indent * 20, 6, 0, 14) };
-                paragraph.Inlines.Add(new InlineUIContainer { Child = outer });
-                return paragraph;
-            }
-
             /// <summary>
             /// Footnote definitions as a separated section. The prose reference
             /// renders in place; the body keeps its label and drops the structural
@@ -169,12 +85,15 @@ namespace RuApp.Controls
             /// <summary>
             /// Draws a block's copy button only while the pointer is over the block or the
             /// keyboard is on the button. It stays in the tab order and the automation tree.
+            /// A toggle that is on stays drawn (<paramref name="keepWhen"/>), so the card
+            /// still shows which view it is in.
             /// </summary>
-            private static void RevealOnHover(FrameworkElement block, Button button)
+            private static void RevealOnHover(FrameworkElement block, Button button, Func<bool>? keepWhen = null)
             {
                 button.Opacity = 0;
                 bool pointerOver = false;
-                void Show(bool visible) => Services.UiMotion.FadeOpacity(button, visible ? 1 : 0);
+                void Show(bool visible) => Services.UiMotion.FadeOpacity(button, visible || keepWhen?.Invoke() == true ? 1 : 0);
+                button.Click += (_, _) => Show(pointerOver || button.FocusState == FocusState.Keyboard);
                 block.PointerEntered += (_, _) => { pointerOver = true; Show(true); };
                 block.PointerExited += (_, _) => { pointerOver = false; Show(button.FocusState == FocusState.Keyboard); };
                 block.PointerCanceled += (_, _) => { pointerOver = false; Show(false); };

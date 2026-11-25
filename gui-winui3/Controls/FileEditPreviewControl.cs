@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using RuApp.Models;
 using RuApp.Services;
@@ -29,6 +30,9 @@ namespace RuApp.Controls
         private static readonly SolidColorBrush FallbackDangerBrush = new SolidColorBrush(Color.FromArgb(255, 248, 113, 113));
         private static readonly SolidColorBrush RemovedBackgroundBrush = new SolidColorBrush(Color.FromArgb(26, 248, 113, 113));
         private static readonly SolidColorBrush AddedBackgroundBrush = new SolidColorBrush(Color.FromArgb(26, 52, 211, 153));
+        // The words that changed inside a tinted line take a deeper tint of the same hue.
+        private static readonly SolidColorBrush RemovedWordBrush = new SolidColorBrush(Color.FromArgb(77, 248, 113, 113));
+        private static readonly SolidColorBrush AddedWordBrush = new SolidColorBrush(Color.FromArgb(77, 52, 211, 153));
         private static readonly SolidColorBrush TransparentBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
         public static readonly DependencyProperty SyntaxFileProperty =
@@ -207,9 +211,11 @@ namespace RuApp.Controls
             }
 
             double numberWidth = Math.Max(14, (digits * 7) + 6);
+            var wordMarks = IntraLineDiff.Mark(rows.Select(row => (row.IsEllipsis ? DiffKind.Unchanged : row.Kind, row.Text)).ToArray());
 
-            foreach (var row in rows)
+            for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
             {
+                var row = rows[rowIndex];
                 if (row.IsEllipsis)
                 {
                     _previewLinesPanel.Children.Add(new TextBlock
@@ -293,6 +299,16 @@ namespace RuApp.Controls
                 else
                 {
                     textBlock.Text = row.Text;
+                }
+
+                if (wordMarks[rowIndex].Count > 0)
+                {
+                    var highlighter = new TextHighlighter
+                    {
+                        Background = row.Kind == DiffKind.Removed ? RemovedWordBrush : AddedWordBrush,
+                    };
+                    foreach (var mark in wordMarks[rowIndex]) highlighter.Ranges.Add(new TextRange(mark.Start, mark.Length));
+                    textBlock.TextHighlighters.Add(highlighter);
                 }
 
                 if (row.Kind == DiffKind.Removed)

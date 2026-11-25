@@ -1222,7 +1222,8 @@ subagents and `run_code` never receive it.
   instead: Ru's own profile, never your browser's, kept between sessions so sites signed in
   there stay signed in. `open` then reports `profile: persistent`. To sign in yourself, ask Ru to
   open the browser with `headless: false`: when no page is open the browser restarts with a
-  visible window, and you sign in there. Only one Ru Host can run the profile at a time
+  visible window, and you sign in there. A visible browser closes when its last page closes,
+  so no window stays behind. Only one Ru Host can run the profile at a time
   (`browser_profile_in_use`); delete that folder to sign out of everything.
 - The Chromium family (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) is preferred when
   several browsers are installed and is driven over CDP. Firefox 129 or newer is driven over

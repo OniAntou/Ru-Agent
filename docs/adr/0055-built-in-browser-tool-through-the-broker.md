@@ -126,6 +126,11 @@ profile, approval and uploads):
   `tabs`, `new_tab`, `switch_tab` and `close_tab` manage them, every page action works on the
   active tab, and `close` closes them all. Chromium attaches popups through target discovery,
   Firefox through `browsingContext.contextCreated` with `originalOpener`.
+- **No stray windows.** A visible browser (`headless: false`) closes the blank tab it opened at
+  launch once the first session page exists, and shuts down when its last page closes, so no
+  window outlives the sessions that used it; the next visible open starts a fresh one. Chromium
+  starts with background and occlusion throttling off, so a window behind others keeps
+  painting instead of showing blank.
 - **Uploads.** `upload` sets 1 to 10 workspace files on an `<input type=file>` ref. The policy
   context resolves `paths` like a file target: a path outside the workspace is
   `invalid_arguments`, a protected file becomes the target so `plan` and `standard` deny it

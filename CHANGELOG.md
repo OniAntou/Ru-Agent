@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(broker)**: A visible built-in browser (`headless: false`) no longer leaves blank windows
+  that stay until Ru exits. The tab the browser opened at launch is closed once a session page
+  exists, the browser shuts down when its last page closes, and Chromium keeps painting windows
+  that are behind others instead of showing them white.
+
 - **feat(broker)**: The built-in browser sees and moves through pages (ADR 0055 amendment
   2026-11-25). New `browser` actions: `screenshot` (viewport or one ref, for image-capable
   models; the Host now passes the image-input decision to `browser`), `find`, `hover`,

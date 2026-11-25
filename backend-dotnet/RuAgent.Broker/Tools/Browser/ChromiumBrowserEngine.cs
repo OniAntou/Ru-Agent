@@ -27,6 +27,8 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
 
     private readonly bool _persistentProfile;
     private bool _runningHeadless = true;
+    private int _pendingOpens;
+    private string[] _startupTargets = [];
 
     /// <param name="persistentProfile">Run over Ru's persistent profile instead of an ephemeral one (ADR 0055 amendment 2026-11-25).</param>
     public ChromiumBrowserEngine(string? executable = null, bool persistentProfile = false)
@@ -41,6 +43,20 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
     public static string? FindInstalledExecutable() => BrowserExecutableDiscovery.FindChromiumExecutable();
 
     public async Task<BrowserPageHandle> OpenPageAsync(bool headless, CancellationToken cancellationToken)
+    {
+        // An open in flight keeps an idle visible browser from being shut down under it.
+        Interlocked.Increment(ref _pendingOpens);
+        try
+        {
+            return await OpenPageCoreAsync(headless, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingOpens);
+        }
+    }
+
+    private async Task<BrowserPageHandle> OpenPageCoreAsync(bool headless, CancellationToken cancellationToken)
     {
         var connection = await EnsureStartedAsync(headless, cancellationToken).ConfigureAwait(false);
         var created = await connection.SendAsync(
@@ -87,6 +103,13 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         {
             RemovePage(page);
             throw;
+        }
+
+        // The tab the browser opened at launch is closed once a page of ours exists, so a visible
+        // browser never keeps a blank window that no session owns.
+        foreach (var startup in Interlocked.Exchange(ref _startupTargets, []))
+        {
+            await CloseTargetAsync(connection, startup, CancellationToken.None).ConfigureAwait(false);
         }
 
         return new BrowserPageHandle(targetId, sessionId);
@@ -357,14 +380,88 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         }
     }
 
-    public Task ClosePageAsync(BrowserPageHandle pageHandle, CancellationToken cancellationToken)
+    public async Task ClosePageAsync(BrowserPageHandle pageHandle, CancellationToken cancellationToken)
     {
         var connection = _connection;
         var page = RequirePage(pageHandle);
         RemovePage(page);
-        return connection is null || connection.IsClosed
-            ? Task.CompletedTask
-            : CloseTargetAsync(connection, pageHandle.TargetId, cancellationToken);
+        if (connection is not null && !connection.IsClosed)
+        {
+            await CloseTargetAsync(connection, pageHandle.TargetId, cancellationToken).ConfigureAwait(false);
+        }
+
+        await StopIfIdleAndVisibleAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A visible browser whose last page closed is shut down, so no window outlives the sessions
+    /// that used it; a headless browser has no window and stays for the next open.
+    /// </summary>
+    private async Task StopIfIdleAndVisibleAsync()
+    {
+        if (_runningHeadless || Volatile.Read(ref _disposed) != 0) return;
+        try
+        {
+            await _startGate.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_runningHeadless || Volatile.Read(ref _pendingOpens) > 0) return;
+            lock (_pagesGate)
+            {
+                if (_pagesBySession.Count > 0) return;
+            }
+
+            await StopBrowserAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _startGate.Release();
+        }
+    }
+
+    /// <summary>Closes the running browser cleanly and forgets it; the next open starts a new one. Holds <c>_startGate</c>.</summary>
+    private async Task StopBrowserAsync()
+    {
+        if (_connection is { } connection)
+        {
+            connection.EventReceived -= OnBrowserEvent;
+            await CloseCleanlyAsync(connection).ConfigureAwait(false);
+            await connection.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_browser is { } browser)
+        {
+            await browser.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _connection = null;
+        _browser = null;
+        _startupTargets = [];
+    }
+
+    private static async Task<string[]> StartupPageTargetsAsync(CdpConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var targets = await connection.SendAsync("Target.getTargets", new JsonObject(), sessionId: null, RequestTimeout, cancellationToken).ConfigureAwait(false);
+            return (targets["targetInfos"] as JsonArray ?? [])
+                .OfType<JsonObject>()
+                .Where(info => TextOf(info, "type") == "page")
+                .Select(info => TextOf(info, "targetId"))
+                .Where(id => id.Length > 0)
+                .ToArray();
+        }
+        catch (BrowserEngineException)
+        {
+            // Without the list the startup tab stays; the browser still works.
+            return [];
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -399,19 +496,7 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         try
         {
             if (_connection is { IsClosed: false } runningNow && KeepsRunningBrowser(headless)) return runningNow;
-            if (_browser is { } stale)
-            {
-                if (_connection is { } staleConnection)
-                {
-                    staleConnection.EventReceived -= OnBrowserEvent;
-                    await CloseCleanlyAsync(staleConnection).ConfigureAwait(false);
-                    await staleConnection.DisposeAsync().ConfigureAwait(false);
-                }
-
-                await stale.DisposeAsync().ConfigureAwait(false);
-                _connection = null;
-                _browser = null;
-            }
+            if (_browser is not null) await StopBrowserAsync().ConfigureAwait(false);
 
             _runningHeadless = headless;
 
@@ -436,6 +521,7 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
                     // Without discovery the page still works; its popups are just not attached.
                 }
 
+                _startupTargets = await StartupPageTargetsAsync(connection, cancellationToken).ConfigureAwait(false);
                 return connection;
             }
             catch (Exception)

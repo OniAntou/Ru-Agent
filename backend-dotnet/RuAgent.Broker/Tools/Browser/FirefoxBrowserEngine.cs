@@ -71,6 +71,8 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
 
     private readonly bool _persistentProfile;
     private bool _runningHeadless = true;
+    private int _pendingOpens;
+    private string[] _startupContexts = [];
 
     /// <param name="persistentProfile">Run over Ru's persistent profile instead of an ephemeral one (ADR 0055 amendment 2026-11-25).</param>
     public FirefoxBrowserEngine(string? executable = null, bool persistentProfile = false)
@@ -85,6 +87,20 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
     public static string? FindInstalledExecutable() => BrowserExecutableDiscovery.FindFirefoxExecutable();
 
     public async Task<BrowserPageHandle> OpenPageAsync(bool headless, CancellationToken cancellationToken)
+    {
+        // An open in flight keeps an idle visible browser from being shut down under it.
+        Interlocked.Increment(ref _pendingOpens);
+        try
+        {
+            return await OpenPageCoreAsync(headless, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _pendingOpens);
+        }
+    }
+
+    private async Task<BrowserPageHandle> OpenPageCoreAsync(bool headless, CancellationToken cancellationToken)
     {
         var connection = await EnsureStartedAsync(headless, cancellationToken).ConfigureAwait(false);
         JsonObject created;
@@ -109,6 +125,14 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         }
 
         await SetViewportAsync(connection, contextId, cancellationToken).ConfigureAwait(false);
+
+        // The tab the browser opened at launch is closed once a page of ours exists, so a visible
+        // browser never keeps a blank window that no session owns.
+        foreach (var startup in Interlocked.Exchange(ref _startupContexts, []))
+        {
+            await CloseContextAsync(connection, startup, CancellationToken.None).ConfigureAwait(false);
+        }
+
         return new BrowserPageHandle(contextId, contextId);
     }
 
@@ -419,14 +443,87 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         return Task.FromResult(RequirePage(pageHandle).RecentNetwork(maxEntries));
     }
 
-    public Task ClosePageAsync(BrowserPageHandle pageHandle, CancellationToken cancellationToken)
+    public async Task ClosePageAsync(BrowserPageHandle pageHandle, CancellationToken cancellationToken)
     {
         var page = RequirePage(pageHandle);
         RemovePage(page);
         var connection = _connection;
-        return connection is null || connection.IsClosed
-            ? Task.CompletedTask
-            : CloseContextAsync(connection, page.ContextId, cancellationToken);
+        if (connection is not null && !connection.IsClosed)
+        {
+            await CloseContextAsync(connection, page.ContextId, cancellationToken).ConfigureAwait(false);
+        }
+
+        await StopIfIdleAndVisibleAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A visible browser whose last page closed is shut down, so no window outlives the sessions
+    /// that used it; a headless browser has no window and stays for the next open.
+    /// </summary>
+    private async Task StopIfIdleAndVisibleAsync()
+    {
+        if (_runningHeadless || Volatile.Read(ref _disposed) != 0) return;
+        try
+        {
+            await _startGate.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_runningHeadless || Volatile.Read(ref _pendingOpens) > 0) return;
+            lock (_pagesGate)
+            {
+                if (_pagesByContext.Count > 0) return;
+            }
+
+            await StopBrowserAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _startGate.Release();
+        }
+    }
+
+    /// <summary>Closes the running browser cleanly and forgets it; the next open starts a new one. Holds <c>_startGate</c>.</summary>
+    private async Task StopBrowserAsync()
+    {
+        if (_connection is { } connection)
+        {
+            connection.EventReceived -= OnBrowserEvent;
+            await CloseCleanlyAsync(connection).ConfigureAwait(false);
+            await connection.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_browser is { } browser)
+        {
+            await browser.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _connection = null;
+        _browser = null;
+        _startupContexts = [];
+    }
+
+    private static async Task<string[]> StartupContextsAsync(BidiConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var tree = await connection.SendAsync("browsingContext.getTree", new JsonObject { ["maxDepth"] = 0 }, RequestTimeout, cancellationToken).ConfigureAwait(false);
+            return (tree["contexts"] as JsonArray ?? [])
+                .OfType<JsonObject>()
+                .Select(context => TextOf(context, "context"))
+                .Where(id => id.Length > 0)
+                .ToArray();
+        }
+        catch (BidiRemoteException)
+        {
+            // Without the list the startup tab stays; the browser still works.
+            return [];
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -472,19 +569,7 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
             }
 
             if (_connection is { IsClosed: false } runningNow && KeepsRunningBrowser(headless)) return runningNow;
-            if (_browser is { } stale)
-            {
-                if (_connection is { } staleConnection)
-                {
-                    staleConnection.EventReceived -= OnBrowserEvent;
-                    await CloseCleanlyAsync(staleConnection).ConfigureAwait(false);
-                    await staleConnection.DisposeAsync().ConfigureAwait(false);
-                }
-
-                await stale.DisposeAsync().ConfigureAwait(false);
-                _connection = null;
-                _browser = null;
-            }
+            if (_browser is not null) await StopBrowserAsync().ConfigureAwait(false);
 
             _runningHeadless = headless;
 
@@ -513,6 +598,7 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
                     connection.EventReceived += OnBrowserEvent;
                     _browser = browser;
                     _connection = connection;
+                    _startupContexts = await StartupContextsAsync(connection, cancellationToken).ConfigureAwait(false);
                     return connection;
                 }
                 catch (Exception)

@@ -58,6 +58,11 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
         startInfo.ArgumentList.Add("--disable-component-update");
         startInfo.ArgumentList.Add("--disable-default-apps");
         startInfo.ArgumentList.Add("--disable-features=Translate,MediaRouter,OptimizationHints");
+        // A visible window behind others keeps painting and running timers, so it never shows
+        // blank and a page the Agent drives behaves as it does in front.
+        startInfo.ArgumentList.Add("--disable-backgrounding-occluded-windows");
+        startInfo.ArgumentList.Add("--disable-renderer-backgrounding");
+        startInfo.ArgumentList.Add("--disable-background-timer-throttling");
         startInfo.ArgumentList.Add("--metrics-recording-only");
         startInfo.ArgumentList.Add("--window-size=" + RuAgent.Protocol.BrowserLimits.MaxPageWidth + "," + RuAgent.Protocol.BrowserLimits.MaxPageHeight);
         if (headless) startInfo.ArgumentList.Add("--headless=new");

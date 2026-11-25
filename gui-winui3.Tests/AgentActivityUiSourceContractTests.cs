@@ -160,7 +160,7 @@ public sealed class AgentActivityUiSourceContractTests
         // search by grid column, which broke silently when the header was
         // restructured and every Thinking row went static with no error.
         var template = ActivityTemplate();
-        foreach (var name in new[] { "AgentActivityText", "ThinkingLabel", "EditPreviewLabel" })
+        foreach (var name in new[] { "AgentActivityText", "ThinkingLabel", "EditPreviewLabel", "ThinkingPreviewLine" })
         {
             Assert.Contains(
                 template.Descendants(),
@@ -489,6 +489,46 @@ public sealed class AgentActivityUiSourceContractTests
 
         var chrome = GuiSource.ViewText("ChatView");
         Assert.DoesNotContain("FeedDensity", chrome, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_thinking_preview_is_the_plain_header_line_the_feed_updates()
+    {
+        // A running thinking row has no fold yet, so its preview rides the plain header:
+        // one named, trimmed, bounded line after the verb, invisible to the live region.
+        var template = ActivityTemplate();
+        var header = GuiSource.Require(template.Document!, "ActivityHeader");
+        var preview = template.Descendants().FirstOrDefault(element =>
+            element.Name.LocalName == "TextBlock"
+            && element.Attribute(GuiSource.Xaml + "Name")?.Value == ChatView.ThinkingPreviewElementName);
+
+        Assert.NotNull(preview);
+        Assert.True(GuiSource.IsDescendantOf(preview!, header));
+        Assert.DoesNotContain(preview!.Ancestors(), ancestor => ancestor.Name.LocalName == "ToggleButton");
+        Assert.True(Binds(preview, "ThinkingPreview"));
+        Assert.Equal("Raw", GuiSource.AttributeValue(preview, "AutomationProperties.AccessibilityView"));
+        Assert.Equal("NoWrap", GuiSource.AttributeValue(preview, "TextWrapping"));
+        Assert.Equal("1", GuiSource.AttributeValue(preview, "MaxLines"));
+        Assert.Equal("360", GuiSource.AttributeValue(preview, "MaxWidth"));
+        Assert.Equal("CharacterEllipsis", GuiSource.AttributeValue(preview, "TextTrimming"));
+
+        // The line and its separator disappear together when the row settles.
+        var separator = template.Descendants().FirstOrDefault(element =>
+            element.Attribute(GuiSource.Xaml + "Name")?.Value == "ThinkingPreviewSeparator");
+        Assert.NotNull(separator);
+        Assert.True(Binds(separator, "HasThinkingPreview"));
+        Assert.True(Binds(preview, "HasThinkingPreview"));
+    }
+
+    [Fact]
+    public void The_view_receives_and_applies_the_thinking_preview()
+    {
+        string code = GuiSource.ViewText("ChatView");
+        Assert.Contains("ReasoningPreviewReceived", code, StringComparison.Ordinal);
+        Assert.Contains("ApplyThinkingPreview", code, StringComparison.Ordinal);
+
+        var feed = GuiSource.ViewText("ChatView");
+        Assert.Contains("StartTextSweep", feed, StringComparison.Ordinal);
     }
 
     private static XElement ActivityTemplate()

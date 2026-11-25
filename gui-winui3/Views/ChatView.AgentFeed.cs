@@ -463,6 +463,34 @@ namespace RuApp.Views
             _replyRenderScheduler.Schedule();
         }
 
+        /// <summary>
+        /// One absolute line of the running thinking row. A frame for a row this feed has
+        /// not seen yet is dropped (the next line arrives after the batched activity frame
+        /// applied); a reset clears the line.
+        /// </summary>
+        private void OnAgentReasoningPreviewReceived(object? sender, AgentReasoningPreviewModel model)
+        {
+            if (!DispatcherQueue.HasThreadAccess)
+            {
+                DispatcherQueue.TryEnqueue(() => OnAgentReasoningPreviewReceived(sender, model));
+                return;
+            }
+
+            AgentRunModel? run = _agentController?.CurrentRun;
+            if (run is null || !HasRunInHand())
+            {
+                return;
+            }
+
+            // The preview frame can arrive in the same dispatcher turn as the activity
+            // frame that creates the row, and activity frames are batched: drain them so
+            // the row exists before its line is applied.
+            FlushAgentActivities();
+            _agentActivityFeed.ApplyThinkingPreview(
+                model.ActivityId,
+                model.IsReset ? string.Empty : model.Text);
+        }
+
         private void OnAgentUsageReceived(object? sender, AgentUsageReceivedEventArgs usage)
         {
             if (!DispatcherQueue.HasThreadAccess)
@@ -859,6 +887,13 @@ namespace RuApp.Views
             : item.ShowRowDetailToggle ? "EditPreviewLabel"
             : "AgentActivityText";
 
+        /// <summary>
+        /// The named line a running thinking row shows its live reasoning preview in. It
+        /// lives in the plain header (a running thinking row has no fold yet) and shares
+        /// the label's sweep, so it is found by name like the label.
+        /// </summary>
+        internal const string ThinkingPreviewElementName = "ThinkingPreviewLine";
+
         private void AttachActivityItem(Grid grid)
         {
             DetachActivityItem(grid);
@@ -880,6 +915,10 @@ namespace RuApp.Views
 
             ApplyActivityTextStyle(displayText, item);
             ApplyActivityLiveSetting(grid, item);
+            if (item.IsRunning && grid.FindName(ThinkingPreviewElementName) is TextBlock thinkingPreview)
+            {
+                StartTextSweep(thinkingPreview, item);
+            }
             var wasRunning = item.IsRunning;
 
             PropertyChangedEventHandler handler = null!;
@@ -936,6 +975,10 @@ namespace RuApp.Views
             {
                 tuple.Item3.PropertyChanged -= tuple.Item1;
                 StopTextSweep(tuple.Item2);
+            }
+            if (grid.FindName(ThinkingPreviewElementName) is TextBlock thinkingPreview)
+            {
+                StopTextSweep(thinkingPreview);
             }
             grid.Tag = null;
         }

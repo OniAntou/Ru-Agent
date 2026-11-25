@@ -54,7 +54,7 @@ namespace RuApp.Views
                     case MarkdownBlock reply:
                         reply.FontSize = typography.MessageFontSize;
                         break;
-                    case TextBlock { Name: "AgentActivityText" or "ThinkingLabel" or "EditPreviewLabel" } activity:
+                    case TextBlock { Name: "AgentActivityText" or "ThinkingLabel" or "EditPreviewLabel" or "ThinkingPreviewLine" or "ThinkingPreviewSeparator" } activity:
                         activity.FontSize = typography.ActivityFontSize;
                         break;
                 }

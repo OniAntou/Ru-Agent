@@ -195,6 +195,30 @@
                                      MaxWidth="320"
                                      ToolTipService.ToolTip="{x:Bind DisplayTooltip, Mode=OneWay}"
                                      VerticalAlignment="Center" />
+                          <!--
+                            The running thinking row's live line, right of a separator as
+                            DSH shows it: one clipped line, faded at its right edge while it
+                            streams. A settled row has no line, so both elements collapse
+                            together. Raw accessibility view keeps the polite live region from
+                            announcing every paragraph; the fold still carries the excerpt.
+                          -->
+                          <TextBlock x:Name="ThinkingPreviewSeparator"
+                                     Text="·"
+                                     FontFamily="{StaticResource RuUiFontFamily}"
+                                     Foreground="{StaticResource RuMutedBrush}"
+                                     VerticalAlignment="Center"
+                                     Visibility="{x:Bind HasThinkingPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                          <TextBlock x:Name="ThinkingPreviewLine"
+                                     Text="{x:Bind ThinkingPreview, Mode=OneWay}"
+                                     FontFamily="{StaticResource RuUiFontFamily}"
+                                     Foreground="{StaticResource RuMutedBrush}"
+                                     TextWrapping="NoWrap"
+                                     TextTrimming="CharacterEllipsis"
+                                     MaxLines="1"
+                                     MaxWidth="360"
+                                     VerticalAlignment="Center"
+                                     AutomationProperties.AccessibilityView="Raw"
+                                     Visibility="{x:Bind HasThinkingPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                       </StackPanel>
                       <!--
                         The 20px is the fold chevron's place, kept even when the row has

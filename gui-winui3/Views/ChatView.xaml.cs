@@ -411,6 +411,7 @@ namespace RuApp.Views
             _agentController?.SummaryReceived += OnAgentSummaryReceived;
             _agentController?.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
             _agentController?.ToolOutputReceived += OnAgentToolOutputReceived;
+            _agentController?.ReasoningPreviewReceived += OnAgentReasoningPreviewReceived;
             _agentController?.UsageReceived += OnAgentUsageReceived;
             _agentController?.ContextStepStarted += OnAgentContextStepStarted;
             _agentController?.ContextCompacted += OnAgentContextCompacted;
@@ -470,6 +471,7 @@ namespace RuApp.Views
                 _agentController.SummaryReceived -= OnAgentSummaryReceived;
                 _agentController.AssistantDeltaReceived -= OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived -= OnAgentToolOutputReceived;
+                _agentController.ReasoningPreviewReceived -= OnAgentReasoningPreviewReceived;
                 _agentController.UsageReceived -= OnAgentUsageReceived;
                 _agentController.ContextStepStarted -= OnAgentContextStepStarted;
                 _agentController.ContextCompacted -= OnAgentContextCompacted;
@@ -492,6 +494,7 @@ namespace RuApp.Views
                 _agentController.SummaryReceived += OnAgentSummaryReceived;
                 _agentController.AssistantDeltaReceived += OnAgentAssistantDeltaReceived;
                 _agentController.ToolOutputReceived += OnAgentToolOutputReceived;
+                _agentController.ReasoningPreviewReceived += OnAgentReasoningPreviewReceived;
                 _agentController.UsageReceived += OnAgentUsageReceived;
                 _agentController.ContextStepStarted += OnAgentContextStepStarted;
                 _agentController.ContextCompacted += OnAgentContextCompacted;

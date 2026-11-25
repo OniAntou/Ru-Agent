@@ -25,7 +25,15 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
     private CdpBrowserProcess? _browser;
     private int _disposed;
 
-    public ChromiumBrowserEngine(string? executable = null) => _executable = executable;
+    private readonly bool _persistentProfile;
+    private bool _runningHeadless = true;
+
+    /// <param name="persistentProfile">Run over Ru's persistent profile instead of an ephemeral one (ADR 0055 amendment 2026-11-25).</param>
+    public ChromiumBrowserEngine(string? executable = null, bool persistentProfile = false)
+    {
+        _executable = executable;
+        _persistentProfile = persistentProfile;
+    }
 
     public bool IsAvailable => BrowserExecutableDiscovery.FindChromiumExecutable(_executable) is not null;
 
@@ -258,6 +266,97 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         return Task.FromResult(page.RecentNetwork(maxEntries));
     }
 
+    public async Task<byte[]> ScreenshotAsync(BrowserPageHandle pageHandle, string? elementRef, CancellationToken cancellationToken)
+    {
+        var page = RequirePage(pageHandle);
+        var parameters = new JsonObject { ["format"] = "png", ["fromSurface"] = true };
+        if (elementRef is not null)
+        {
+            var box = await SendEvaluateAsync(page, BrowserPageScripts.ElementBox(BrowserPageScripts.RefIndex(elementRef)), cancellationToken).ConfigureAwait(false);
+            if (BrowserPageScripts.ParseBox(box["value"] as JsonObject) is not { } clip)
+            {
+                throw new BrowserEngineException("browser_element_not_found", elementRef + " is not visible on the page; take a new snapshot.");
+            }
+
+            parameters["clip"] = new JsonObject
+            {
+                ["x"] = clip.X,
+                ["y"] = clip.Y,
+                ["width"] = clip.Width,
+                ["height"] = clip.Height,
+                ["scale"] = 1,
+            };
+        }
+
+        var result = await SendAsync(page, "Page.captureScreenshot", parameters, cancellationToken).ConfigureAwait(false);
+        return DecodeImage(TextOf(result, "data"));
+    }
+
+    public async Task HoverAsync(BrowserPageHandle pageHandle, string elementRef, CancellationToken cancellationToken)
+    {
+        var page = RequirePage(pageHandle);
+        var value = await SendEvaluateAsync(page, BrowserPageScripts.ElementRect(BrowserPageScripts.RefIndex(elementRef)), cancellationToken).ConfigureAwait(false);
+        if (BrowserPageScripts.ParsePoint(value["value"] as JsonObject) is not { } point)
+        {
+            throw new BrowserEngineException("browser_element_not_found", elementRef + " is not on the page; take a new snapshot.");
+        }
+
+        await SendAsync(
+            page,
+            "Input.dispatchMouseEvent",
+            new JsonObject { ["type"] = "mouseMoved", ["x"] = point.X, ["y"] = point.Y },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public void SetNextDialogAnswer(BrowserPageHandle pageHandle, bool accept, string? promptText) =>
+        RequirePage(pageHandle).Dialogs.SetNextAnswer(accept, promptText);
+
+    public IReadOnlyList<BrowserDialog> TakeDialogs(BrowserPageHandle pageHandle) =>
+        TryPage(pageHandle) is { } page ? page.Dialogs.Take() : [];
+
+    public IReadOnlyList<BrowserPageHandle> TakeOpenedPages(BrowserPageHandle pageHandle) =>
+        TryPage(pageHandle) is { } page ? page.TakeOpened() : [];
+
+    public async Task SetFilesAsync(
+        BrowserPageHandle pageHandle,
+        string elementRef,
+        IReadOnlyList<string> paths,
+        CancellationToken cancellationToken)
+    {
+        var page = RequirePage(pageHandle);
+        var index = BrowserPageScripts.RefIndex(elementRef);
+        var check = await SendEvaluateAsync(page, BrowserPageScripts.FileInput(index), cancellationToken).ConfigureAwait(false);
+        BrowserPageScripts.RequireFileInput(check["value"] as JsonObject, elementRef, paths.Count);
+        var element = await SendAsync(
+            page,
+            "Runtime.evaluate",
+            new JsonObject { ["expression"] = BrowserPageScripts.RefElement(index), ["returnByValue"] = false },
+            cancellationToken).ConfigureAwait(false);
+        var objectId = TextOf(element["result"] as JsonObject, "objectId");
+        if (objectId.Length == 0)
+        {
+            throw new BrowserEngineException("browser_element_not_found", elementRef + " is not on the page; take a new snapshot.");
+        }
+
+        var files = new JsonArray();
+        foreach (var path in paths) files.Add(path);
+        try
+        {
+            await SendAsync(page, "DOM.setFileInputFiles", new JsonObject { ["files"] = files, ["objectId"] = objectId }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                await SendAsync(page, "Runtime.releaseObject", new JsonObject { ["objectId"] = objectId }, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (BrowserEngineException)
+            {
+                // Releasing the remote handle is best effort; the page owns the element.
+            }
+        }
+    }
+
     public Task ClosePageAsync(BrowserPageHandle pageHandle, CancellationToken cancellationToken)
     {
         var connection = _connection;
@@ -279,6 +378,7 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         if (_connection is { } connection)
         {
             connection.EventReceived -= OnBrowserEvent;
+            await CloseCleanlyAsync(connection).ConfigureAwait(false);
             await connection.DisposeAsync().ConfigureAwait(false);
             _connection = null;
         }
@@ -294,16 +394,17 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
 
     private async Task<CdpConnection> EnsureStartedAsync(bool headless, CancellationToken cancellationToken)
     {
-        if (_connection is { IsClosed: false } running) return running;
+        if (_connection is { IsClosed: false } running && KeepsRunningBrowser(headless)) return running;
         await _startGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_connection is { IsClosed: false } runningNow) return runningNow;
+            if (_connection is { IsClosed: false } runningNow && KeepsRunningBrowser(headless)) return runningNow;
             if (_browser is { } stale)
             {
                 if (_connection is { } staleConnection)
                 {
                     staleConnection.EventReceived -= OnBrowserEvent;
+                    await CloseCleanlyAsync(staleConnection).ConfigureAwait(false);
                     await staleConnection.DisposeAsync().ConfigureAwait(false);
                 }
 
@@ -312,17 +413,29 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
                 _browser = null;
             }
 
+            _runningHeadless = headless;
+
             var executable = BrowserExecutableDiscovery.FindChromiumExecutable(_executable)
                 ?? throw new BrowserEngineException(
                     "browser_unavailable",
                     "No Chromium browser (Edge, Chrome, Brave, Vivaldi, Opera, Chromium or Arc) was found; install one or set RU_BROWSER_EXE.");
-            var browser = await CdpBrowserProcess.StartAsync(executable, headless, cancellationToken).ConfigureAwait(false);
+            var browser = await CdpBrowserProcess.StartAsync(executable, headless, _persistentProfile, cancellationToken).ConfigureAwait(false);
             try
             {
                 var connection = await CdpConnection.ConnectAsync(browser.WebSocketUri, cancellationToken).ConfigureAwait(false);
                 connection.EventReceived += OnBrowserEvent;
                 _browser = browser;
                 _connection = connection;
+                try
+                {
+                    // Popups a page opens are reported as new targets with the page as opener.
+                    await connection.SendAsync("Target.setDiscoverTargets", new JsonObject { ["discover"] = true }, sessionId: null, RequestTimeout, cancellationToken).ConfigureAwait(false);
+                }
+                catch (BrowserEngineException)
+                {
+                    // Without discovery the page still works; its popups are just not attached.
+                }
+
                 return connection;
             }
             catch (Exception)
@@ -334,6 +447,34 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         finally
         {
             _startGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The running browser serves a new page unless the page asks for a visible window while the
+    /// browser runs headless and no page is open: then it restarts visibly, so a user can sign in
+    /// to Ru's persistent profile (ADR 0055 amendment 2026-11-25).
+    /// </summary>
+    private bool KeepsRunningBrowser(bool headless)
+    {
+        if (headless || !_runningHeadless) return true;
+        lock (_pagesGate)
+        {
+            return _pagesBySession.Count > 0;
+        }
+    }
+
+    /// <summary>A clean exit lets the browser write the persistent profile's cookies before the process is killed.</summary>
+    private async Task CloseCleanlyAsync(CdpConnection connection)
+    {
+        if (!_persistentProfile || connection.IsClosed) return;
+        try
+        {
+            await connection.SendAsync("Browser.close", null, sessionId: null, TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (BrowserEngineException)
+        {
+            // The browser closes the connection as it exits; the process wait still runs.
         }
     }
 
@@ -397,14 +538,114 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
 
     private void OnBrowserEvent(string method, string? sessionId, JsonObject? parameters)
     {
-        if (sessionId is null || parameters is null) return;
+        if (parameters is null) return;
+        if (sessionId is null)
+        {
+            if (method == "Target.targetCreated") OnTargetCreated(parameters);
+            return;
+        }
+
         PageState? page;
         lock (_pagesGate)
         {
             _pagesBySession.TryGetValue(sessionId, out page);
         }
 
-        page?.OnEvent(method, parameters);
+        if (page is null) return;
+        if (method == "Page.javascriptDialogOpening")
+        {
+            // The receive loop must not wait on its own reply, so the answer is sent from a task.
+            var answer = page.Dialogs.Answer(TextOf(parameters, "type"), TextOf(parameters, "message"));
+            _ = AnswerDialogAsync(sessionId, answer);
+            return;
+        }
+
+        page.OnEvent(method, parameters);
+    }
+
+    private async Task AnswerDialogAsync(string sessionId, DialogAnswer answer)
+    {
+        try
+        {
+            var parameters = new JsonObject { ["accept"] = answer.Accept };
+            if (answer.PromptText is not null) parameters["promptText"] = answer.PromptText;
+            await SendCoreAsync(sessionId, "Page.handleJavaScriptDialog", parameters, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (BrowserEngineException)
+        {
+            // The page or browser closed while the dialog was open; nothing is left to answer.
+        }
+    }
+
+    private void OnTargetCreated(JsonObject parameters)
+    {
+        if (parameters["targetInfo"] is not JsonObject info || TextOf(info, "type") != "page") return;
+        var openerId = TextOf(info, "openerId");
+        var targetId = TextOf(info, "targetId");
+        if (openerId.Length == 0 || targetId.Length == 0) return;
+        PageState? opener;
+        lock (_pagesGate)
+        {
+            opener = _pagesBySession.Values.FirstOrDefault(candidate => candidate.TargetId == openerId);
+        }
+
+        if (opener is not null) _ = AttachPopupAsync(opener, targetId);
+    }
+
+    private async Task AttachPopupAsync(PageState opener, string targetId)
+    {
+        var connection = _connection;
+        if (connection is null || connection.IsClosed) return;
+        try
+        {
+            var attached = await connection.SendAsync(
+                "Target.attachToTarget",
+                new JsonObject { ["targetId"] = targetId, ["flatten"] = true },
+                sessionId: null,
+                RequestTimeout,
+                CancellationToken.None).ConfigureAwait(false);
+            var sessionId = TextOf(attached, "sessionId");
+            if (sessionId.Length == 0) return;
+            var popup = new PageState(targetId, sessionId);
+            lock (_pagesGate)
+            {
+                _pagesBySession[sessionId] = popup;
+            }
+
+            foreach (var domain in new[] { "Page", "Runtime", "Log", "Network" })
+            {
+                await connection.SendAsync(domain + ".enable", new JsonObject(), sessionId, RequestTimeout, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            opener.AddOpened(new BrowserPageHandle(targetId, sessionId));
+        }
+        catch (BrowserEngineException)
+        {
+            // The popup closed before it could be attached; it never becomes a session tab.
+        }
+    }
+
+    private PageState? TryPage(BrowserPageHandle handle)
+    {
+        lock (_pagesGate)
+        {
+            return _pagesBySession.TryGetValue(handle.SessionId, out var page) && page.TargetId == handle.TargetId ? page : null;
+        }
+    }
+
+    private static byte[] DecodeImage(string base64)
+    {
+        try
+        {
+            var bytes = Convert.FromBase64String(base64);
+            if (bytes.Length > 0) return bytes;
+        }
+        catch (FormatException)
+        {
+            // Fall through to the named failure below.
+        }
+
+        throw new BrowserEngineException("browser_screenshot_failed", "The browser did not return an image.");
     }
 
     private PageState RequirePage(BrowserPageHandle handle)
@@ -485,6 +726,26 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         public string TargetId { get; } = targetId;
 
         public string SessionId { get; } = sessionId;
+
+        public BrowserDialogBook Dialogs { get; } = new();
+
+        private readonly List<BrowserPageHandle> _opened = [];
+
+        public void AddOpened(BrowserPageHandle popup)
+        {
+            lock (_gate) _opened.Add(popup);
+        }
+
+        public IReadOnlyList<BrowserPageHandle> TakeOpened()
+        {
+            lock (_gate)
+            {
+                if (_opened.Count == 0) return [];
+                var taken = _opened.ToArray();
+                _opened.Clear();
+                return taken;
+            }
+        }
 
         public void OnEvent(string method, JsonObject parameters)
         {

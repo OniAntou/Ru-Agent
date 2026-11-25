@@ -136,6 +136,34 @@ the owner's acceptance):
   the model to operate the desktop only through `computer`; this is guidance, not confinement,
   and terminal launch policy is unchanged.
 
+Amendment 2026-11-25 (owner asked to upgrade computer use and chose the launch and clipboard
+options):
+
+- `zoom` returns one region of a monitor's latest screenshot (`x`, `y`, `w`, `h` in its pixels)
+  at up to full physical resolution, masked exactly like a screenshot (decision 6). It keeps
+  the screenshot's frame, so pointer coordinates do not shift (decision 7).
+- `batch` runs 1 to 10 `focus`, `click`, `move`, `drag`, `scroll`, `type`, `key`, `wait` or
+  `clipboard_write` steps inside one action: one controlling run, the stop hotkey cancels it,
+  and every step resolves and checks its target as a single call does (decision 4). Every app a
+  step names travels as argv, so a protected app denies the whole batch. `request_access`,
+  `clipboard_read` and the image actions are not batchable.
+- `click`, `drag` and `scroll` accept `modifiers` (ctrl, shift, alt). They are pressed for that
+  one action and released in a `finally`, so no key stays held across calls, a stop, a denial
+  or a target change. The Windows key is not a modifier.
+- `request_access` with `launch: true` also starts each requested app that is not running, by
+  executable name with no arguments. The Broker finds the executable through App Paths, the
+  Windows directories, absolute PATH entries and app execution aliases, never the current
+  directory, and checks the resolved file name too. Shells, interpreters and script or
+  installer hosts are never started, in any preset (`computer_launch_refused`), because typed
+  input would then run commands outside terminal policy. A launching request is its own
+  approval identity (`computer:request_access:launch`), so an approval or remembered grant
+  without launch never starts a program. The action waits up to ten seconds for each window.
+- `clipboard_write` sets clipboard text. `clipboard_read` returns up to 10,000 characters and
+  takes the `ExternalTerminal` decision on every call (`standard` asks with
+  `computer_clipboard_read_requires_approval`, `full_access` allows); it is never remembered,
+  because the clipboard may hold anything the user copied, such as a password. An allow rule
+  covers it only when it names `computer:clipboard_read`; a broad allow rule never does.
+
 ## Alternatives and consequences
 
 - Asking on every click is safe but unusable for multi-step tasks; the owner

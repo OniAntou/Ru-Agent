@@ -168,6 +168,208 @@ public sealed class BrowserUseServiceTests
         Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "batch", ("steps", new JsonArray(tooMany.Cast<JsonNode?>().ToArray())))).ErrorCode);
     }
 
+    [Fact]
+    public async Task Screenshot_needs_image_input_and_returns_a_png_with_its_size()
+    {
+        var engine = new FakeEngine();
+        await using var service = new BrowserUseService(engine);
+        Assert.Null((await ExecuteAsync(service, "open")).ErrorCode);
+
+        var textOnly = await ExecuteAsync(service, "screenshot");
+        Assert.Equal("image_unsupported_by_model", textOnly.ErrorCode);
+
+        var shot = await service.ExecuteAsync(
+            "run",
+            "session",
+            new JsonObject { ["action"] = "screenshot", ["ref"] = "e1" },
+            CancellationToken.None,
+            new BrowserCallOptions(ImageInputAccepted: true));
+        Assert.Null(shot.ErrorCode);
+        Assert.NotNull(shot.Image);
+        Assert.Equal("image/png", shot.Image!.MediaType);
+        Assert.Equal(200, shot.Output["width"]!.GetValue<int>());
+        Assert.Equal(100, shot.Output["height"]!.GetValue<int>());
+        Assert.Equal("e1", shot.Output["ref"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Scroll_hover_select_and_find_reach_the_page_with_bounded_arguments()
+    {
+        var engine = new FakeEngine
+        {
+            Evaluate = script => script.Contains("HTMLSelectElement", StringComparison.Ordinal)
+                ? """{"ok":true,"value":"vn","label":"Viet Nam"}"""
+                : script.Contains("matches: results", StringComparison.Ordinal)
+                    ? """{"matches":[{"ref":"e9","role":"button","name":"Save"}],"total":3}"""
+                    : """{"x":0,"y":500,"at_end":false}""",
+        };
+        await using var service = new BrowserUseService(engine);
+        Assert.Null((await ExecuteAsync(service, "open")).ErrorCode);
+
+        var scroll = await ExecuteAsync(service, "scroll", ("direction", "down"), ("amount", 5));
+        Assert.Null(scroll.ErrorCode);
+        Assert.Equal(500, scroll.Output["y"]!.GetValue<int>());
+        Assert.Contains("window.scrollBy(0,500)", engine.Scripts[^1], StringComparison.Ordinal);
+        Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "scroll", ("direction", "diagonal"))).ErrorCode);
+        Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "scroll", ("amount", 99))).ErrorCode);
+
+        Assert.Null((await ExecuteAsync(service, "hover", ("ref", "e2"))).ErrorCode);
+        Assert.Equal("e2", engine.Hovered);
+        Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "hover")).ErrorCode);
+
+        var select = await ExecuteAsync(service, "select", ("ref", "e3"), ("value", "Viet Nam"));
+        Assert.Null(select.ErrorCode);
+        Assert.Equal("vn", select.Output["value"]!.GetValue<string>());
+        Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "select", ("ref", "e3"))).ErrorCode);
+
+        var find = await ExecuteAsync(service, "find", ("query", "save"));
+        Assert.Null(find.ErrorCode);
+        Assert.Equal("e9", Assert.Single(find.Output["matches"]!.AsArray())!["ref"]!.GetValue<string>());
+        Assert.Equal(3, find.Output["truncated_from"]!.GetValue<int>());
+        Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "find", ("query", ""))).ErrorCode);
+    }
+
+    [Fact]
+    public async Task History_moves_wait_until_the_page_settles()
+    {
+        var engine = new FakeEngine
+        {
+            Evaluate = script => script.Contains("history.back()", StringComparison.Ordinal)
+                ? """{"token":"t1","href":"http://127.0.0.1/b"}"""
+                : """{"done":true,"url":"http://127.0.0.1/a","title":"A"}""",
+        };
+        await using var service = new BrowserUseService(engine);
+        Assert.Null((await ExecuteAsync(service, "open")).ErrorCode);
+
+        var back = await ExecuteAsync(service, "back");
+        Assert.Null(back.ErrorCode);
+        Assert.Equal("http://127.0.0.1/a", back.Output["url"]!.GetValue<string>());
+        Assert.Equal("A", back.Output["title"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Dialog_sets_the_next_answer_and_answered_dialogs_are_reported()
+    {
+        var engine = new FakeEngine();
+        await using var service = new BrowserUseService(engine);
+        Assert.Null((await ExecuteAsync(service, "open")).ErrorCode);
+
+        var dialog = await ExecuteAsync(service, "dialog", ("accept", true), ("text", "Ada"));
+        Assert.Null(dialog.ErrorCode);
+        Assert.Equal((true, "Ada"), engine.NextDialog);
+        Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "dialog")).ErrorCode);
+
+        engine.PendingDialogs.Add(new BrowserDialog("confirm", "Delete?", Accepted: false));
+        var click = await ExecuteAsync(service, "click", ("ref", "e1"));
+        var reported = Assert.Single(click.Output["dialogs"]!.AsArray())!;
+        Assert.Equal("confirm", reported["kind"]!.GetValue<string>());
+        Assert.False(reported["accepted"]!.GetValue<bool>());
+        Assert.Null((await ExecuteAsync(service, "snapshot")).Output["dialogs"]);
+    }
+
+    [Fact]
+    public async Task Popups_become_session_tabs_and_tab_actions_choose_the_active_page()
+    {
+        var engine = new FakeEngine();
+        await using var service = new BrowserUseService(engine);
+        Assert.Null((await ExecuteAsync(service, "open")).ErrorCode);
+
+        engine.PendingPopups.Add(new BrowserPageHandle("popup", "popup-session"));
+        var click = await ExecuteAsync(service, "click", ("ref", "e1"));
+        Assert.Equal(2, Assert.Single(click.Output["new_tabs"]!.AsArray())!["tab"]!.GetValue<int>());
+
+        var newTab = await ExecuteAsync(service, "new_tab", ("url", "https://example.com/"));
+        Assert.Null(newTab.ErrorCode);
+        Assert.Equal(3, newTab.Output["tab"]!.GetValue<int>());
+
+        var tabs = await ExecuteAsync(service, "tabs");
+        Assert.Equal(3, tabs.Output["tabs"]!.AsArray().Count);
+        Assert.True(tabs.Output["tabs"]![2]!["active"]!.GetValue<bool>());
+
+        Assert.Null((await ExecuteAsync(service, "switch_tab", ("tab", 2))).ErrorCode);
+        Assert.Equal("browser_tab_invalid", (await ExecuteAsync(service, "switch_tab", ("tab", 7))).ErrorCode);
+
+        var closed = await ExecuteAsync(service, "close_tab", ("tab", 3));
+        Assert.Null(closed.ErrorCode);
+        Assert.Equal(2, closed.Output["tab"]!.GetValue<int>());
+        Assert.Null((await ExecuteAsync(service, "close_tab")).ErrorCode);
+        Assert.Equal("browser_tab_invalid", (await ExecuteAsync(service, "close_tab")).ErrorCode);
+
+        for (var index = 1; index < RuAgent.Protocol.BrowserLimits.MaxTabs; index++)
+        {
+            Assert.Null((await ExecuteAsync(service, "new_tab")).ErrorCode);
+        }
+
+        Assert.Equal("browser_tab_limit", (await ExecuteAsync(service, "new_tab")).ErrorCode);
+        engine.PendingPopups.Add(new BrowserPageHandle("extra", "extra-session"));
+        var dropped = await ExecuteAsync(service, "snapshot");
+        Assert.True(Assert.Single(dropped.Output["new_tabs"]!.AsArray())!["closed"]!.GetValue<bool>());
+
+        var before = engine.PagesClosed;
+        Assert.Null((await ExecuteAsync(service, "close")).ErrorCode);
+        Assert.Equal(before + RuAgent.Protocol.BrowserLimits.MaxTabs, engine.PagesClosed);
+    }
+
+    [Fact]
+    public async Task Upload_uses_only_the_paths_the_host_resolved()
+    {
+        var engine = new FakeEngine();
+        await using var service = new BrowserUseService(engine);
+        Assert.Null((await ExecuteAsync(service, "open")).ErrorCode);
+
+        var missing = await ExecuteAsync(service, "upload", ("ref", "e1"), ("paths", new JsonArray("a.txt")));
+        Assert.Equal("browser_upload_paths_required", missing.ErrorCode);
+        Assert.Null(engine.UploadedPaths);
+
+        var uploaded = await service.ExecuteAsync(
+            "run",
+            "session",
+            new JsonObject { ["action"] = "upload", ["ref"] = "e1", ["paths"] = new JsonArray("a.txt") },
+            CancellationToken.None,
+            new BrowserCallOptions(UploadPaths: [@"C:\work\a.txt"]));
+        Assert.Null(uploaded.ErrorCode);
+        Assert.Equal([@"C:\work\a.txt"], engine.UploadedPaths);
+    }
+
+    [Fact]
+    public async Task A_run_that_pinned_the_persistent_profile_opens_through_its_engine()
+    {
+        var ephemeral = new FakeEngine();
+        var persistent = new FakeEngine();
+        await using var service = new BrowserUseService(ephemeral, persistent);
+
+        var open = await service.ExecuteAsync(
+            "run",
+            "session",
+            new JsonObject { ["action"] = "open" },
+            CancellationToken.None,
+            new BrowserCallOptions(PersistentProfile: true));
+        Assert.Null(open.ErrorCode);
+        Assert.Equal("persistent", open.Output["profile"]!.GetValue<string>());
+        Assert.True(persistent.Opened);
+        Assert.False(ephemeral.Opened);
+
+        Assert.Null((await service.ExecuteAsync("run", "other", new JsonObject { ["action"] = "open" }, CancellationToken.None)).ErrorCode);
+        Assert.True(ephemeral.Opened);
+    }
+
+    [Fact]
+    public async Task Batch_rejects_screenshot_tab_and_upload_steps()
+    {
+        var engine = new FakeEngine();
+        await using var service = new BrowserUseService(engine);
+        Assert.Null((await ExecuteAsync(service, "open")).ErrorCode);
+
+        foreach (var action in new[] { "screenshot", "tabs", "new_tab", "switch_tab", "close_tab", "upload" })
+        {
+            Assert.Equal("browser_arguments_invalid", (await ExecuteAsync(service, "batch", ("steps", new JsonArray(Step(action))))).ErrorCode);
+        }
+
+        var batch = await ExecuteAsync(service, "batch", ("steps", new JsonArray(Step("hover", ("ref", "e4")), Step("dialog", ("accept", false)))));
+        Assert.Null(batch.ErrorCode);
+        Assert.Equal("e4", engine.Hovered);
+    }
+
     private static JsonObject Step(string action, params (string Name, JsonNode? Value)[] arguments)
     {
         var step = new JsonObject { ["action"] = action };
@@ -225,13 +427,33 @@ public sealed class BrowserUseServiceTests
 
         public string? Pressed { get; private set; }
 
+        public string? Hovered { get; private set; }
+
+        public int PagesOpened { get; private set; }
+
+        public int PagesClosed { get; private set; }
+
+        public (bool Accept, string? Text)? NextDialog { get; private set; }
+
+        public List<BrowserDialog> PendingDialogs { get; } = [];
+
+        public List<BrowserPageHandle> PendingPopups { get; } = [];
+
+        public IReadOnlyList<string>? UploadedPaths { get; private set; }
+
+        public List<string> Scripts { get; } = [];
+
+        /// <summary>Answers page scripts; null falls back to the JSON string "ok".</summary>
+        public Func<string, string?>? Evaluate { get; init; }
+
         public Task<BrowserPageHandle> OpenPageAsync(bool headless, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             if (Failure is not null) throw Failure;
             Opened = true;
             LastHeadless = headless;
-            return Task.FromResult(new BrowserPageHandle("target", "session"));
+            PagesOpened++;
+            return Task.FromResult(new BrowserPageHandle("target" + PagesOpened, "session" + PagesOpened));
         }
 
         public Task NavigateAsync(BrowserPageHandle page, string url, CancellationToken cancellationToken)
@@ -309,10 +531,10 @@ public sealed class BrowserUseServiceTests
         public Task<string> EvaluateAsync(BrowserPageHandle page, string expression, CancellationToken cancellationToken)
         {
             _ = page;
-            _ = expression;
             _ = cancellationToken;
             if (Failure is not null) throw Failure;
-            return Task.FromResult("\"ok\"");
+            Scripts.Add(expression);
+            return Task.FromResult(Evaluate?.Invoke(expression) ?? "\"ok\"");
         }
 
         public Task<string> TitleAsync(BrowserPageHandle page, CancellationToken cancellationToken)
@@ -350,6 +572,59 @@ public sealed class BrowserUseServiceTests
             _ = page;
             _ = cancellationToken;
             Closed = true;
+            PagesClosed++;
+            return Task.CompletedTask;
+        }
+
+        public Task<byte[]> ScreenshotAsync(BrowserPageHandle page, string? elementRef, CancellationToken cancellationToken)
+        {
+            _ = page;
+            _ = elementRef;
+            _ = cancellationToken;
+            if (Failure is not null) throw Failure;
+            var png = new byte[32];
+            new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }.CopyTo(png, 0);
+            png[19] = 200;
+            png[23] = 100;
+            return Task.FromResult(png);
+        }
+
+        public Task HoverAsync(BrowserPageHandle page, string elementRef, CancellationToken cancellationToken)
+        {
+            _ = page;
+            _ = cancellationToken;
+            Hovered = elementRef;
+            return Task.CompletedTask;
+        }
+
+        public void SetNextDialogAnswer(BrowserPageHandle page, bool accept, string? promptText)
+        {
+            _ = page;
+            NextDialog = (accept, promptText);
+        }
+
+        public IReadOnlyList<BrowserDialog> TakeDialogs(BrowserPageHandle page)
+        {
+            _ = page;
+            var taken = PendingDialogs.ToArray();
+            PendingDialogs.Clear();
+            return taken;
+        }
+
+        public IReadOnlyList<BrowserPageHandle> TakeOpenedPages(BrowserPageHandle page)
+        {
+            _ = page;
+            var taken = PendingPopups.ToArray();
+            PendingPopups.Clear();
+            return taken;
+        }
+
+        public Task SetFilesAsync(BrowserPageHandle page, string elementRef, IReadOnlyList<string> paths, CancellationToken cancellationToken)
+        {
+            _ = page;
+            _ = elementRef;
+            _ = cancellationToken;
+            UploadedPaths = paths;
             return Task.CompletedTask;
         }
 

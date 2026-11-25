@@ -16,11 +16,24 @@ public static class ComputerActions
     public const string Inspect = "inspect";
     public const string Wait = "wait";
 
+    // ADR 0031 amendment 2026-11-25.
+    public const string Zoom = "zoom";
+    public const string Batch = "batch";
+    public const string ClipboardRead = "clipboard_read";
+    public const string ClipboardWrite = "clipboard_write";
+
     public static IReadOnlyList<string> All { get; } =
-        [List, RequestAccess, Focus, Screenshot, Inspect, Click, Move, Drag, Scroll, Type, Key, Wait];
+        [List, RequestAccess, Focus, Screenshot, Zoom, Inspect, Click, Move, Drag, Scroll, Type, Key, Wait, Batch, ClipboardRead, ClipboardWrite];
+
+    /// <summary>
+    /// Actions a <c>batch</c> step may name. request_access and clipboard_read carry their own
+    /// approval, screenshot and zoom carry an image, so they stay separate tool calls.
+    /// </summary>
+    public static IReadOnlyList<string> Batchable { get; } =
+        [Focus, Click, Move, Drag, Scroll, Type, Key, Wait, ClipboardWrite];
 
     /// <summary>Actions that only observe; they never send input.</summary>
-    public static bool IsObservation(string? action) => action is List or Screenshot or Inspect or Wait;
+    public static bool IsObservation(string? action) => action is List or Screenshot or Zoom or Inspect or Wait or ClipboardRead;
 
     /// <summary>Actions whose optional or required <c>app</c> names the window they act on.</summary>
     public static bool NamesApp(string? action) => action is Focus or Inspect or Type or Key;
@@ -43,6 +56,11 @@ public static class ComputerLimits
     public const int MaxWaitMilliseconds = 10_000;
     public const int MaxInspectElements = 150;
     public const int MaxElementNameChars = 100;
+    public const int MinZoomEdge = 8;
+    public const int MaxBatchSteps = 10;
+    public const int MaxClipboardChars = 10_000;
+    public const int MaxModifierChars = 32;
+    public const int LaunchWaitMilliseconds = 10_000;
 }
 
 /// <summary>
@@ -82,5 +100,29 @@ public static class ComputerProtectedApps
     {
         var normalized = Normalize(app);
         return normalized is not null && Names.Contains(normalized[..^4]);
+    }
+}
+
+/// <summary>
+/// Applications <c>request_access</c> with <c>launch</c> never starts (ADR 0031 amendment
+/// 2026-11-25): shells, interpreters and script or installer hosts. Typing into one would run
+/// commands outside terminal policy, so the launch path refuses them in every preset.
+/// </summary>
+public static class ComputerLaunchPolicy
+{
+    private static readonly HashSet<string> Refused = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "wsl", "wslhost", "bash", "sh", "zsh", "fish", "mintty", "git-bash", "wt", "ssh",
+        "python", "python3", "pythonw", "py", "pyw", "node", "deno", "bun", "ruby", "perl", "php", "java", "javaw",
+        "wscript", "cscript", "mshta", "rundll32", "regsvr32", "msiexec", "powershell_ise",
+        "certutil", "bitsadmin", "msbuild", "installutil", "regasm", "regsvcs", "schtasks", "sc", "reg", "regedit",
+        "net", "net1", "wmic", "forfiles", "runas", "control", "mmc",
+    };
+
+    /// <summary>True for an app the launch path refuses; protected apps are refused separately.</summary>
+    public static bool IsLaunchRefused(string? app)
+    {
+        var normalized = ComputerProtectedApps.Normalize(app);
+        return normalized is not null && Refused.Contains(normalized[..^4]);
     }
 }

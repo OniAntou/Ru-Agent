@@ -114,6 +114,12 @@ public sealed partial class AgentSlashCommands
             return true;
         }
 
+        if (slashCmd is "/browser")
+        {
+            await HandleBrowserProfileAsync(arg, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         if (slashCmd is "/help")
         {
             WriteHelpPanel();

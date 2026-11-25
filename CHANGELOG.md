@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(broker)**: The built-in browser sees and moves through pages (ADR 0055 amendment
+  2026-11-25). New `browser` actions: `screenshot` (viewport or one ref, for image-capable
+  models; the Host now passes the image-input decision to `browser`), `find`, `hover`,
+  `select`, `scroll`, `back`, `forward` and `reload`. JavaScript dialogs no longer block a page:
+  alert and beforeunload are accepted and confirm and prompt dismissed unless `dialog` sets the
+  next answer, and every answered dialog is reported. A session holds up to eight tabs; popups a
+  page opens become tabs (`new_tabs`), and `tabs`, `new_tab`, `switch_tab` and `close_tab`
+  choose the active one. `batch` accepts the new page actions. Works on Chromium and Firefox.
+
+- **feat(broker)**: The browser can upload workspace files to an `<input type=file>`
+  (`upload`). Paths outside the workspace are refused, protected files are denied in `plan` and
+  `standard`, and `standard` asks on every upload, bound to the exact files; uploads are never
+  remembered.
+
+- **feat(agent)**: **Customize → Plugins → Keep browser sign-ins** (or `/browser keep` in the
+  terminal UI) gives new runs Ru's own persistent browser profile under
+  `%LOCALAPPDATA%\Ru\browser-profile`, so sites signed in there stay signed in between
+  sessions; asking Ru to open the browser with `headless: false` shows a window to sign in. It is
+  off by default, is never the user's own browser profile, and is pinned per run
+  (`_ru_browser_profile_v1`). "Always allow" on opening the browser now saves a project rule
+  bound to `open`, so later sessions open it without asking.
+
+- **feat(broker)**: Computer use gains `zoom` (a screenshot region at up to full resolution),
+  `batch` (1 to 10 input steps in one action, each still checked against the app grants),
+  `modifiers` on click, drag and scroll (held only for that action), and `clipboard_write` /
+  `clipboard_read`; reading the clipboard asks in `standard` on every call (ADR 0031 amendment
+  2026-11-25). `request_access` with `launch: true` also starts the requested apps that are not
+  running, with no arguments; shells, interpreters and script hosts are never started
+  (`computer_launch_refused`), and a launching request is approved separately from a plain grant.
+
 - **feat(gui)**: A reopened chat shows the images its messages carried, for a turn and for a
   steer, instead of only "N images attached". `GET /agent/v1/runs/{runId}` now lists the run's
   images with the steer that brought each (`image_payloads`), the payload route returns an image

@@ -513,6 +513,7 @@ public static partial class BusinessEndpoints
         result.Remove("reasoning_preferences");
         result["reasoning_effort"] = reasoningEffort;
         result[RuBackend.Providers.ComputerUsePolicy.SettingField] = RuBackend.Providers.ComputerUsePolicy.IsEnabled(value);
+        result[RuBackend.Providers.BrowserPolicy.ProfileSettingField] = RuBackend.Providers.BrowserPolicy.IsPersistentProfileEnabled(value);
         result[RuBackend.Providers.ProviderWebSearchPolicy.SettingField] = RuBackend.Providers.ProviderWebSearchPolicy.IsEnabled(value);
         // The advisor belongs to each session (GET /agent/v1/sessions/{id}/advisor).
         result.Remove(RuBackend.Providers.AdvisorPolicy.BackendField);

@@ -36,6 +36,8 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         "log.entryAdded",
         "network.beforeRequestSent",
         "network.responseCompleted",
+        "browsingContext.userPromptOpened",
+        "browsingContext.contextCreated",
     ];
 
     private static readonly IReadOnlyDictionary<string, string> KeyValues =
@@ -67,7 +69,15 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
     private bool? _insertTextSupported;
     private int _disposed;
 
-    public FirefoxBrowserEngine(string? executable = null) => _executable = executable;
+    private readonly bool _persistentProfile;
+    private bool _runningHeadless = true;
+
+    /// <param name="persistentProfile">Run over Ru's persistent profile instead of an ephemeral one (ADR 0055 amendment 2026-11-25).</param>
+    public FirefoxBrowserEngine(string? executable = null, bool persistentProfile = false)
+    {
+        _executable = executable;
+        _persistentProfile = persistentProfile;
+    }
 
     public bool IsAvailable => BrowserExecutableDiscovery.FindFirefoxExecutable(_executable) is not null;
 
@@ -98,7 +108,147 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
             _pagesByContext[contextId] = page;
         }
 
+        await SetViewportAsync(connection, contextId, cancellationToken).ConfigureAwait(false);
         return new BrowserPageHandle(contextId, contextId);
+    }
+
+    public async Task<byte[]> ScreenshotAsync(BrowserPageHandle pageHandle, string? elementRef, CancellationToken cancellationToken)
+    {
+        var page = RequirePage(pageHandle);
+        var parameters = new JsonObject
+        {
+            ["context"] = page.ContextId,
+            ["origin"] = "viewport",
+            ["format"] = new JsonObject { ["type"] = "image/png" },
+        };
+        if (elementRef is not null)
+        {
+            var box = BrowserPageScripts.ParseBox(await EvaluateJsonAsync(
+                page,
+                BrowserPageScripts.ElementBox(BrowserPageScripts.RefIndex(elementRef)),
+                "browser_eval_failed",
+                cancellationToken).ConfigureAwait(false) as JsonObject);
+            if (box is not { } clip)
+            {
+                throw new BrowserEngineException("browser_element_not_found", elementRef + " is not visible on the page; take a new snapshot.");
+            }
+
+            parameters["clip"] = new JsonObject
+            {
+                ["type"] = "box",
+                ["x"] = clip.X,
+                ["y"] = clip.Y,
+                ["width"] = clip.Width,
+                ["height"] = clip.Height,
+            };
+        }
+
+        var result = await SendPageAsync(page, "browsingContext.captureScreenshot", parameters, "browser_screenshot_failed", RequestTimeout, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var bytes = Convert.FromBase64String(TextOf(result, "data"));
+            if (bytes.Length > 0) return bytes;
+        }
+        catch (FormatException)
+        {
+            // Fall through to the named failure below.
+        }
+
+        throw new BrowserEngineException("browser_screenshot_failed", "The browser did not return an image.");
+    }
+
+    public async Task HoverAsync(BrowserPageHandle pageHandle, string elementRef, CancellationToken cancellationToken)
+    {
+        var page = RequirePage(pageHandle);
+        var point = BrowserPageScripts.ParsePoint(await EvaluateJsonAsync(
+            page,
+            BrowserPageScripts.ElementRect(BrowserPageScripts.RefIndex(elementRef)),
+            "browser_eval_failed",
+            cancellationToken).ConfigureAwait(false) as JsonObject);
+        if (point is not { } target)
+        {
+            throw new BrowserEngineException("browser_element_not_found", elementRef + " is not on the page; take a new snapshot.");
+        }
+
+        await PerformActionsAsync(
+            page,
+            "pointer",
+            new JsonArray(new JsonObject { ["type"] = "pointerMove", ["x"] = target.X, ["y"] = target.Y, ["origin"] = "viewport" }),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public void SetNextDialogAnswer(BrowserPageHandle pageHandle, bool accept, string? promptText) =>
+        RequirePage(pageHandle).Dialogs.SetNextAnswer(accept, promptText);
+
+    public IReadOnlyList<BrowserDialog> TakeDialogs(BrowserPageHandle pageHandle) =>
+        TryPage(pageHandle) is { } page ? page.Dialogs.Take() : [];
+
+    public IReadOnlyList<BrowserPageHandle> TakeOpenedPages(BrowserPageHandle pageHandle) =>
+        TryPage(pageHandle) is { } page ? page.TakeOpened() : [];
+
+    public async Task SetFilesAsync(
+        BrowserPageHandle pageHandle,
+        string elementRef,
+        IReadOnlyList<string> paths,
+        CancellationToken cancellationToken)
+    {
+        var page = RequirePage(pageHandle);
+        var index = BrowserPageScripts.RefIndex(elementRef);
+        var check = await EvaluateJsonAsync(page, BrowserPageScripts.FileInput(index), "browser_eval_failed", cancellationToken).ConfigureAwait(false);
+        BrowserPageScripts.RequireFileInput(check as JsonObject, elementRef, paths.Count);
+        var element = await EvaluateAsyncCore(page, BrowserPageScripts.RefElement(index), cancellationToken).ConfigureAwait(false);
+        var sharedId = TextOf(element, "sharedId");
+        if (TextOf(element, "type") != "node" || sharedId.Length == 0)
+        {
+            throw new BrowserEngineException("browser_element_not_found", elementRef + " is not on the page; take a new snapshot.");
+        }
+
+        var files = new JsonArray();
+        foreach (var path in paths) files.Add(path);
+        await SendPageAsync(
+            page,
+            "input.setFiles",
+            new JsonObject
+            {
+                ["context"] = page.ContextId,
+                ["element"] = new JsonObject { ["sharedId"] = sharedId },
+                ["files"] = files,
+            },
+            "browser_upload_failed",
+            RequestTimeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task SetViewportAsync(BidiConnection connection, string contextId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await connection.SendAsync(
+                "browsingContext.setViewport",
+                new JsonObject
+                {
+                    ["context"] = contextId,
+                    ["viewport"] = new JsonObject
+                    {
+                        ["width"] = RuAgent.Protocol.BrowserLimits.MaxPageWidth,
+                        ["height"] = RuAgent.Protocol.BrowserLimits.MaxPageHeight,
+                    },
+                },
+                RequestTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (BidiRemoteException)
+        {
+            // An older build keeps its window size; screenshots are then that size.
+        }
+    }
+
+    private PageState? TryPage(BrowserPageHandle handle)
+    {
+        lock (_pagesGate)
+        {
+            return _pagesByContext.TryGetValue(handle.SessionId, out var page) && page.ContextId == handle.TargetId ? page : null;
+        }
     }
 
     public async Task NavigateAsync(BrowserPageHandle pageHandle, string url, CancellationToken cancellationToken)
@@ -290,6 +440,7 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         if (_connection is { } connection)
         {
             connection.EventReceived -= OnBrowserEvent;
+            await CloseCleanlyAsync(connection).ConfigureAwait(false);
             await connection.DisposeAsync().ConfigureAwait(false);
             _connection = null;
         }
@@ -310,7 +461,7 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
             throw new BrowserEngineException("browser_closed", "The browser engine is closed; create a new one.");
         }
 
-        if (_connection is { IsClosed: false } running) return running;
+        if (_connection is { IsClosed: false } running && KeepsRunningBrowser(headless)) return running;
 
         await _startGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -320,12 +471,13 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
                 throw new BrowserEngineException("browser_closed", "The browser engine is closed; create a new one.");
             }
 
-            if (_connection is { IsClosed: false } runningNow) return runningNow;
+            if (_connection is { IsClosed: false } runningNow && KeepsRunningBrowser(headless)) return runningNow;
             if (_browser is { } stale)
             {
                 if (_connection is { } staleConnection)
                 {
                     staleConnection.EventReceived -= OnBrowserEvent;
+                    await CloseCleanlyAsync(staleConnection).ConfigureAwait(false);
                     await staleConnection.DisposeAsync().ConfigureAwait(false);
                 }
 
@@ -334,11 +486,13 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
                 _browser = null;
             }
 
+            _runningHeadless = headless;
+
             var executable = BrowserExecutableDiscovery.FindFirefoxExecutable(_executable)
                 ?? throw new BrowserEngineException(
                     "browser_unavailable",
                     "No Firefox installation was found; install Firefox or set RU_BROWSER_EXE.");
-            var browser = await BidiBrowserProcess.StartAsync(executable, headless, cancellationToken).ConfigureAwait(false);
+            var browser = await BidiBrowserProcess.StartAsync(executable, headless, _persistentProfile, cancellationToken).ConfigureAwait(false);
             try
             {
                 var connection = await BidiConnection.ConnectAsync(browser.WebSocketUri, cancellationToken).ConfigureAwait(false);
@@ -346,11 +500,7 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
                 {
                     try
                     {
-                        await connection.SendAsync(
-                            "session.new",
-                            new JsonObject { ["capabilities"] = new JsonObject() },
-                            RequestTimeout,
-                            cancellationToken).ConfigureAwait(false);
+                        await NewSessionAsync(connection, cancellationToken).ConfigureAwait(false);
                     }
                     catch (BidiRemoteException error)
                     {
@@ -380,6 +530,68 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         finally
         {
             _startGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Starts the BiDi session so the engine answers dialogs itself ("ignore" leaves each prompt
+    /// open for <c>browsingContext.handleUserPrompt</c>); a build that rejects the capability map
+    /// falls back to the plain session, where Firefox applies its own default answer.
+    /// </summary>
+    private static async Task NewSessionAsync(BidiConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await connection.SendAsync(
+                "session.new",
+                new JsonObject
+                {
+                    ["capabilities"] = new JsonObject
+                    {
+                        ["alwaysMatch"] = new JsonObject
+                        {
+                            ["unhandledPromptBehavior"] = new JsonObject { ["default"] = "ignore" },
+                        },
+                    },
+                },
+                RequestTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (BidiRemoteException error) when (error.ErrorCode is "invalid argument" or "session not created")
+        {
+            await connection.SendAsync(
+                "session.new",
+                new JsonObject { ["capabilities"] = new JsonObject() },
+                RequestTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The running browser serves a new page unless the page asks for a visible window while the
+    /// browser runs headless and no page is open: then it restarts visibly, so a user can sign in
+    /// to Ru's persistent profile (ADR 0055 amendment 2026-11-25).
+    /// </summary>
+    private bool KeepsRunningBrowser(bool headless)
+    {
+        if (headless || !_runningHeadless) return true;
+        lock (_pagesGate)
+        {
+            return _pagesByContext.Count > 0;
+        }
+    }
+
+    /// <summary>A clean exit lets the browser write the persistent profile's cookies before the process is killed.</summary>
+    private async Task CloseCleanlyAsync(BidiConnection connection)
+    {
+        if (!_persistentProfile || connection.IsClosed) return;
+        try
+        {
+            await connection.SendAsync("browser.close", new JsonObject(), TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is BrowserEngineException or BidiRemoteException)
+        {
+            // The browser is closing or already gone; the process wait still runs.
         }
     }
 
@@ -558,6 +770,18 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
     private void OnBrowserEvent(string method, JsonObject? parameters)
     {
         if (parameters is null) return;
+        if (method == "browsingContext.contextCreated")
+        {
+            OnContextCreated(parameters);
+            return;
+        }
+
+        if (method == "browsingContext.userPromptOpened")
+        {
+            OnUserPrompt(parameters);
+            return;
+        }
+
         var contextId = method switch
         {
             "log.entryAdded" => TextOf(parameters["source"] as JsonObject, "context"),
@@ -572,6 +796,55 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         }
 
         page?.OnEvent(method, parameters);
+    }
+
+    private void OnUserPrompt(JsonObject parameters)
+    {
+        var contextId = TextOf(parameters, "context");
+        PageState? page;
+        lock (_pagesGate)
+        {
+            _pagesByContext.TryGetValue(contextId, out page);
+        }
+
+        if (page is null) return;
+        var answer = page.Dialogs.Answer(TextOf(parameters, "type"), TextOf(parameters, "message"));
+        // The receive loop must not wait on its own reply, so the answer is sent from a task.
+        _ = AnswerPromptAsync(contextId, answer);
+    }
+
+    private async Task AnswerPromptAsync(string contextId, DialogAnswer answer)
+    {
+        var connection = _connection;
+        if (connection is null || connection.IsClosed) return;
+        try
+        {
+            var parameters = new JsonObject { ["context"] = contextId, ["accept"] = answer.Accept };
+            if (answer.PromptText is not null) parameters["userText"] = answer.PromptText;
+            await connection.SendAsync("browsingContext.handleUserPrompt", parameters, RequestTimeout, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is BrowserEngineException or BidiRemoteException)
+        {
+            // The prompt was already closed by the browser or the page went away.
+        }
+    }
+
+    private void OnContextCreated(JsonObject parameters)
+    {
+        // Only a top-level context opened by one of the session pages becomes a tab.
+        if (parameters["parent"] is JsonValue) return;
+        var contextId = TextOf(parameters, "context");
+        var openerId = TextOf(parameters, "originalOpener");
+        if (contextId.Length == 0 || openerId.Length == 0) return;
+        PageState? opener;
+        var popup = new PageState(contextId);
+        lock (_pagesGate)
+        {
+            if (!_pagesByContext.TryGetValue(openerId, out opener) || _pagesByContext.ContainsKey(contextId)) return;
+            _pagesByContext[contextId] = popup;
+        }
+
+        opener.AddOpened(new BrowserPageHandle(contextId, contextId));
     }
 
     private PageState RequirePage(BrowserPageHandle handle)
@@ -931,23 +1204,23 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
     }
 
     /// <summary>
-    /// A Firefox process started for the tool with an ephemeral profile and a random WebDriver BiDi
-    /// port (ADR 0055). Disposal kills the process tree and deletes the profile, so no user cookie
-    /// or sign-in survives the run and no browser is left behind.
+    /// A Firefox process started for the tool with a random WebDriver BiDi port (ADR 0055). Disposal
+    /// kills the process tree and releases the profile: an ephemeral profile is deleted, so no cookie
+    /// survives the run; Ru's persistent profile (amendment 2026-11-25) is kept.
     /// </summary>
     private sealed class BidiBrowserProcess : IAsyncDisposable
     {
         private const string ServerFileName = "WebDriverBiDiServer.json";
         private const int MaxErrorChars = 256;
         private readonly Process _process;
-        private readonly string _profileDirectory;
+        private readonly BrowserProfileLease _profile;
         private readonly WindowsJobProcessTree? _job;
         private int _disposed;
 
-        private BidiBrowserProcess(Process process, string profileDirectory, Uri webSocketUri, WindowsJobProcessTree? job)
+        private BidiBrowserProcess(Process process, BrowserProfileLease profile, Uri webSocketUri, WindowsJobProcessTree? job)
         {
             _process = process;
-            _profileDirectory = profileDirectory;
+            _profile = profile;
             _job = job;
             WebSocketUri = webSocketUri;
         }
@@ -957,10 +1230,13 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         public static async Task<BidiBrowserProcess> StartAsync(
             string executable,
             bool headless,
+            bool persistentProfile,
             CancellationToken cancellationToken)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(executable);
-            var profile = BrowserProfileDirectory.Create();
+            var profile = persistentProfile
+                ? BrowserProfileLease.Persistent("firefox", [ServerFileName])
+                : BrowserProfileLease.Ephemeral();
 
             var startInfo = new ProcessStartInfo(executable)
             {
@@ -975,7 +1251,7 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
             startInfo.ArgumentList.Add("--remote-debugging-port");
             startInfo.ArgumentList.Add("0");
             startInfo.ArgumentList.Add("-profile");
-            startInfo.ArgumentList.Add(profile);
+            startInfo.ArgumentList.Add(profile.Directory);
             startInfo.ArgumentList.Add("about:blank");
 
             Process? process;
@@ -985,13 +1261,13 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
             }
             catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
             {
-                await BrowserProfileDirectory.DeleteAsync(profile).ConfigureAwait(false);
+                await profile.DisposeAsync().ConfigureAwait(false);
                 throw new BrowserEngineException("browser_launch_failed", "The browser could not start: " + Bound(error.Message));
             }
 
             if (process is null)
             {
-                await BrowserProfileDirectory.DeleteAsync(profile).ConfigureAwait(false);
+                await profile.DisposeAsync().ConfigureAwait(false);
                 throw new BrowserEngineException("browser_launch_failed", "The browser process did not start.");
             }
 
@@ -1001,14 +1277,14 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
             var job = BrowserProcessJob.TryAttach(process);
             try
             {
-                var webSocketUri = await WaitForServerAsync(process, profile, cancellationToken).ConfigureAwait(false);
+                var webSocketUri = await WaitForServerAsync(process, profile.Directory, cancellationToken).ConfigureAwait(false);
                 return new BidiBrowserProcess(process, profile, webSocketUri, job);
             }
             catch (Exception)
             {
                 BrowserProcessJob.Release(job);
                 Kill(process);
-                await BrowserProfileDirectory.DeleteAsync(profile).ConfigureAwait(false);
+                await profile.DisposeAsync().ConfigureAwait(false);
                 throw;
             }
         }
@@ -1016,6 +1292,21 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         public async ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            if (_profile.IsPersistent)
+            {
+                // The engine asked the browser to close; letting it exit writes the persistent
+                // profile's cookies, which a kill could lose.
+                try
+                {
+                    using var exit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await _process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
+                }
+                catch (Exception error) when (error is OperationCanceledException or InvalidOperationException)
+                {
+                    // It did not exit in time; the kill below ends it.
+                }
+            }
+
             BrowserProcessJob.Release(_job);
             Kill(_process);
             try
@@ -1029,7 +1320,7 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
             }
 
             _process.Dispose();
-            await BrowserProfileDirectory.DeleteAsync(_profileDirectory).ConfigureAwait(false);
+            await _profile.DisposeAsync().ConfigureAwait(false);
         }
 
         private static async Task<Uri> WaitForServerAsync(Process process, string profile, CancellationToken cancellationToken)
@@ -1128,6 +1419,26 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         private readonly Dictionary<string, int> _networkIndex = new(StringComparer.Ordinal);
 
         public string ContextId { get; } = contextId;
+
+        public BrowserDialogBook Dialogs { get; } = new();
+
+        private readonly List<BrowserPageHandle> _opened = [];
+
+        public void AddOpened(BrowserPageHandle popup)
+        {
+            lock (_gate) _opened.Add(popup);
+        }
+
+        public IReadOnlyList<BrowserPageHandle> TakeOpened()
+        {
+            lock (_gate)
+            {
+                if (_opened.Count == 0) return [];
+                var taken = _opened.ToArray();
+                _opened.Clear();
+                return taken;
+            }
+        }
 
         public void OnEvent(string method, JsonObject parameters)
         {

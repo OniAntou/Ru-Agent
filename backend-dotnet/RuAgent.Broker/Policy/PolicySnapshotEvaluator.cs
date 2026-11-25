@@ -148,6 +148,15 @@ public sealed class PolicySnapshotEvaluator
             return Deny("computer_app_protected");
         }
 
+        // Starting a shell, interpreter or script host would give typed input a command line
+        // outside terminal policy, so request_access never launches one (ADR 0031 amendment 2026-11-25).
+        if (IsComputer(context)
+            && string.Equals(context.ResolvedExecutable, "computer:request_access:launch", StringComparison.Ordinal)
+            && context.Argv.Any(ComputerLaunchPolicy.IsLaunchRefused))
+        {
+            return Deny("computer_launch_refused");
+        }
+
         var structuredTarget = context.Target;
         // Catalog-protected targets (harness key/database files, runtime
         // descriptors, user-added RU_PROTECTED_PATHS entries) are a preset-level
@@ -313,22 +322,34 @@ public sealed class PolicySnapshotEvaluator
         // authority as an external terminal launch (plan deny, standard ask, full_access
         // allow). Other actions are checked against the session's app grants when they
         // execute, because their target window is only known at that moment.
+        // Reading the clipboard sends whatever the user last copied, possibly a password, to the
+        // provider, so it takes the same decision as a grant on every call (amendment 2026-11-25).
         if (IsComputer(context))
         {
-            return string.Equals(context.ToolOp, ComputerActions.RequestAccess, StringComparison.Ordinal)
-                ? ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "computer_access_requires_approval")
-                : ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "computer_action_grant_checked");
+            return context.ToolOp switch
+            {
+                ComputerActions.RequestAccess when string.Equals(context.ResolvedExecutable, "computer:request_access:launch", StringComparison.Ordinal)
+                    => ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "computer_launch_requires_approval"),
+                ComputerActions.RequestAccess => ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "computer_access_requires_approval"),
+                ComputerActions.ClipboardRead => ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "computer_clipboard_read_requires_approval"),
+                _ => ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "computer_action_grant_checked"),
+            };
         }
 
         // ADR 0055: opening a browser starts a separate program with the user's rights, the same
         // authority as an external terminal launch (plan deny, standard ask, full_access allow).
         // The approved session then owns its page; later actions are allowed in standard and fail
-        // closed at execution when no page was opened through that approval.
+        // closed at execution when no page was opened through that approval. An upload hands
+        // workspace files to whatever page is open, so it takes the same decision as open on every
+        // call, bound to the exact files (ADR 0055 amendment 2026-11-25).
         if (IsBrowser(context))
         {
-            return string.Equals(context.ToolOp, BrowserActions.Open, StringComparison.Ordinal)
-                ? ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "browser_open_requires_approval")
-                : ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "browser_action_session_granted");
+            return context.ToolOp switch
+            {
+                BrowserActions.Open => ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "browser_open_requires_approval"),
+                BrowserActions.Upload => ProfileDecision(snapshot, AgentPolicySubject.ExternalTerminal, "browser_upload_requires_approval"),
+                _ => ProfileDecision(snapshot, AgentPolicySubject.WorkspaceTerminal, "browser_action_session_granted"),
+            };
         }
 
         if (IsTerminal(context))

@@ -7,7 +7,7 @@ namespace RuAgent.Broker.Tools.Browser;
 /// WebDriver BiDi. An explicit executable or <c>RU_BROWSER_EXE</c> pins the family. A run never
 /// switches families after the first page, so the page contract and failure codes stay stable.
 /// </summary>
-public sealed class AutoBrowserEngine(string? preferredExecutable = null) : IBrowserEngine
+public sealed class AutoBrowserEngine(string? preferredExecutable = null, bool persistentProfile = false) : IBrowserEngine
 {
     private readonly object _gate = new();
     private IBrowserEngine? _inner;
@@ -65,6 +65,24 @@ public sealed class AutoBrowserEngine(string? preferredExecutable = null) : IBro
     public Task ClosePageAsync(BrowserPageHandle page, CancellationToken cancellationToken) =>
         Inner().ClosePageAsync(page, cancellationToken);
 
+    public Task<byte[]> ScreenshotAsync(BrowserPageHandle page, string? elementRef, CancellationToken cancellationToken) =>
+        Inner().ScreenshotAsync(page, elementRef, cancellationToken);
+
+    public Task HoverAsync(BrowserPageHandle page, string elementRef, CancellationToken cancellationToken) =>
+        Inner().HoverAsync(page, elementRef, cancellationToken);
+
+    public void SetNextDialogAnswer(BrowserPageHandle page, bool accept, string? promptText) =>
+        Inner().SetNextDialogAnswer(page, accept, promptText);
+
+    public IReadOnlyList<BrowserDialog> TakeDialogs(BrowserPageHandle page) =>
+        _inner is { } inner ? inner.TakeDialogs(page) : [];
+
+    public IReadOnlyList<BrowserPageHandle> TakeOpenedPages(BrowserPageHandle page) =>
+        _inner is { } inner ? inner.TakeOpenedPages(page) : [];
+
+    public Task SetFilesAsync(BrowserPageHandle page, string elementRef, IReadOnlyList<string> paths, CancellationToken cancellationToken) =>
+        Inner().SetFilesAsync(page, elementRef, paths, cancellationToken);
+
     public async ValueTask DisposeAsync()
     {
         IBrowserEngine? inner;
@@ -88,8 +106,8 @@ public sealed class AutoBrowserEngine(string? preferredExecutable = null) : IBro
                     "browser_unavailable",
                     "No supported browser was found: install a Chromium browser (Edge, Chrome, Brave, Vivaldi, Opera, Chromium or Arc) or Firefox, or set RU_BROWSER_EXE.");
             _inner = target.Family == BrowserFamily.Firefox
-                ? new FirefoxBrowserEngine(target.ExecutablePath)
-                : new ChromiumBrowserEngine(target.ExecutablePath);
+                ? new FirefoxBrowserEngine(target.ExecutablePath, persistentProfile)
+                : new ChromiumBrowserEngine(target.ExecutablePath, persistentProfile);
             return _inner;
         }
     }

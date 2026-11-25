@@ -127,6 +127,28 @@ public sealed partial class RememberedApprovalIdentityTests
             $"alpha/read_note ran without asking after allow_always on alpha list_tools (status {call.Status}): the remembered rule has an empty argv and matches every MCP call.");
     }
 
+    // ---- Case 5: browser open is remembered by operation only -------------
+
+    [Fact]
+    public async Task Case5_Browser_allow_always_on_open_covers_open_in_a_new_session_but_never_upload()
+    {
+        await using var env = await Scenario.StartAsync(browser: true);
+        var first = await env.NewSessionAsync();
+        var saved = await AllowAsync(env, first, "open always", ToolCall("browser", JsonSerializer.Serialize(new { action = "open" })), "allow_always");
+        Assert.True(saved.EventCount("tool.execution_completed") == 1, "allow_always on browser open did not execute.");
+
+        var second = await env.NewSessionAsync();
+        var open = await RunUntilAskOrEndAsync(env, second, "open in a new session", ToolCall("browser", JsonSerializer.Serialize(new { action = "open" })));
+        Assert.True(open.ApprovalId is null,
+            $"browser open asked again in a new session after allow_always (status {open.Status}); the project rule should cover it.");
+
+        File.WriteAllText(Path.Combine(env.Workspace, "a.txt"), "upload");
+        var upload = await RunUntilAskOrEndAsync(env, second, "upload after open",
+            ToolCall("browser", JsonSerializer.Serialize(new { action = "upload", @ref = "e1", paths = new[] { "a.txt" } })));
+        Assert.True(upload.ApprovalId is not null,
+            $"browser upload ran without asking after allow_always on open (status {upload.Status}); uploads must ask every time.");
+    }
+
     // ---- Case 4: computer request_access grants are per app list -----------
 
     [Fact]

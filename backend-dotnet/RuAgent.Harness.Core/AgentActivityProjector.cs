@@ -212,7 +212,9 @@ public static class AgentActivityProjector
         var detail = action switch
         {
             "request_access" when proposal.Arguments.TryGetProperty("apps", out var apps) && apps.ValueKind == JsonValueKind.Array =>
-                "request_access " + string.Join(", ", apps.EnumerateArray()
+                (proposal.Arguments.TryGetProperty("launch", out var launch) && launch.ValueKind == JsonValueKind.True
+                    ? "request_access and start "
+                    : "request_access ") + string.Join(", ", apps.EnumerateArray()
                     .Where(app => app.ValueKind == JsonValueKind.String).Select(app => app.GetString()).Take(8)),
             "key" => "key " + Text("keys"),
             "focus" => "focus " + Text("app"),

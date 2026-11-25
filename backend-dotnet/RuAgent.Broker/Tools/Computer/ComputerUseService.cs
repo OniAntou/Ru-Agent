@@ -179,16 +179,99 @@ public sealed class ComputerUseService
         return action switch
         {
             ComputerActions.List => List(sessionId, fullAccess),
-            ComputerActions.RequestAccess => RequestAccess(sessionId, arguments),
-            ComputerActions.Focus => Focus(sessionId, fullAccess, arguments),
+            ComputerActions.RequestAccess => RequestAccess(sessionId, arguments, cancellationToken),
             ComputerActions.Screenshot => Screenshot(sessionId, fullAccess, imageInputAccepted, arguments),
+            ComputerActions.Zoom => Zoom(sessionId, fullAccess, imageInputAccepted, arguments),
             ComputerActions.Inspect => Inspect(sessionId, fullAccess, arguments, cancellationToken),
-            ComputerActions.Wait => Wait(sessionId, fullAccess, arguments, cancellationToken),
-            ComputerActions.Click or ComputerActions.Move or ComputerActions.Scroll or ComputerActions.Drag =>
-                Pointer(action, sessionId, fullAccess, arguments, cancellationToken),
-            ComputerActions.Type or ComputerActions.Key => Keyboard(action, sessionId, fullAccess, arguments, cancellationToken),
-            _ => throw new ComputerUseException("computer_action_invalid", "Unknown computer action."),
+            ComputerActions.Batch => Batch(sessionId, fullAccess, arguments, cancellationToken),
+            ComputerActions.ClipboardRead => ClipboardRead(),
+            _ => ExecuteStep(action, sessionId, fullAccess, arguments, cancellationToken),
         };
+    }
+
+    /// <summary>The actions a <c>batch</c> may run; each checks its target as a single call would.</summary>
+    private ToolExecutionOutcome ExecuteStep(
+        string? action, string sessionId, bool fullAccess, JsonObject arguments, CancellationToken cancellationToken) => action switch
+    {
+        ComputerActions.Focus => Focus(sessionId, fullAccess, arguments),
+        ComputerActions.Wait => Wait(sessionId, fullAccess, arguments, cancellationToken),
+        ComputerActions.Click or ComputerActions.Move or ComputerActions.Scroll or ComputerActions.Drag =>
+            Pointer(action, sessionId, fullAccess, arguments, cancellationToken),
+        ComputerActions.Type or ComputerActions.Key => Keyboard(action, sessionId, fullAccess, arguments, cancellationToken),
+        ComputerActions.ClipboardWrite => ClipboardWrite(arguments),
+        _ => throw new ComputerUseException("computer_action_invalid", "Unknown computer action."),
+    };
+
+    /// <summary>
+    /// Runs up to <see cref="ComputerLimits.MaxBatchSteps"/> input actions in one tool call (ADR 0031
+    /// amendment 2026-11-25). The steps run inside this one action, under the same controlling run
+    /// and stop hotkey, and each resolves and checks its target window exactly as a single call
+    /// does; the batch stops at the first failure.
+    /// </summary>
+    private ToolExecutionOutcome Batch(string sessionId, bool fullAccess, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        if (arguments["steps"] is not JsonArray steps || steps.Count == 0 || steps.Count > ComputerLimits.MaxBatchSteps)
+            throw new ComputerUseException("computer_arguments_invalid", $"batch needs steps: 1 to {ComputerLimits.MaxBatchSteps} actions.");
+        var parsed = new List<(string Action, JsonObject Arguments)>(steps.Count);
+        foreach (var item in steps)
+        {
+            if (item is not JsonObject step || Text(step, "action") is not { } stepAction || !ComputerActions.Batchable.Contains(stepAction))
+                throw new ComputerUseException("computer_arguments_invalid",
+                    "batch steps may use " + string.Join(", ", ComputerActions.Batchable) + "; request_access, screenshot, zoom, inspect, list, clipboard_read and batch cannot be nested.");
+            parsed.Add((stepAction, step));
+        }
+
+        var results = new JsonArray();
+        for (var index = 0; index < parsed.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (stepAction, stepArguments) = parsed[index];
+            ToolExecutionOutcome step;
+            try
+            {
+                step = ExecuteStep(stepAction, sessionId, fullAccess, stepArguments, cancellationToken);
+            }
+            catch (ComputerUseException error)
+            {
+                throw new ComputerUseException(error.Code, $"Step {index + 1} ({stepAction}): {error.Detail}");
+            }
+
+            var output = step.Output.DeepClone() as JsonObject ?? new JsonObject();
+            output["step"] = index + 1;
+            results.Add(output);
+        }
+
+        return ToolExecutionOutcome.Succeeded(
+            new JsonObject { ["action"] = ComputerActions.Batch, ["step_count"] = results.Count, ["steps"] = results },
+            ToolVerificationStates.NotRequired,
+            $"Ran {results.Count} computer steps.");
+    }
+
+    private ToolExecutionOutcome ClipboardRead()
+    {
+        var text = _desktop.ReadClipboardText();
+        var output = new JsonObject { ["action"] = ComputerActions.ClipboardRead };
+        if (text is null)
+        {
+            output["empty"] = true;
+            return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired, "The clipboard holds no text.");
+        }
+
+        output["text"] = Bound(text, ComputerLimits.MaxClipboardChars);
+        if (text.Length > ComputerLimits.MaxClipboardChars) output["truncated_from"] = text.Length;
+        return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired, "Read the clipboard text.");
+    }
+
+    private ToolExecutionOutcome ClipboardWrite(JsonObject arguments)
+    {
+        var text = Text(arguments, "text");
+        if (string.IsNullOrEmpty(text) || text.Length > ComputerLimits.MaxClipboardChars)
+            throw new ComputerUseException("computer_arguments_invalid", $"clipboard_write needs text of 1 to {ComputerLimits.MaxClipboardChars} characters.");
+        _desktop.WriteClipboardText(text);
+        return ToolExecutionOutcome.Succeeded(
+            new JsonObject { ["action"] = ComputerActions.ClipboardWrite, ["characters"] = text.Length },
+            ToolVerificationStates.NotRequired,
+            "Clipboard text set.");
     }
 
     private ToolExecutionOutcome List(string sessionId, bool fullAccess)
@@ -234,7 +317,7 @@ public sealed class ComputerUseService
             "Monitors and apps listed.");
     }
 
-    private ToolExecutionOutcome RequestAccess(string sessionId, JsonObject arguments)
+    private ToolExecutionOutcome RequestAccess(string sessionId, JsonObject arguments, CancellationToken cancellationToken)
     {
         var requested = (arguments["apps"] as JsonArray ?? [])
             .Select(item => ComputerProtectedApps.Normalize(item?.GetValue<string>()))
@@ -243,6 +326,10 @@ public sealed class ComputerUseService
             throw new ComputerUseException("computer_apps_invalid", "apps must name executables such as notepad.exe.");
         if (requested.FirstOrDefault(ComputerProtectedApps.IsProtected) is { } protectedApp)
             throw new ComputerUseException("computer_app_protected", $"{protectedApp} can never be controlled.");
+        var launch = arguments["launch"] is JsonValue launchValue && launchValue.TryGetValue<bool>(out var flag) && flag;
+        if (launch && requested.FirstOrDefault(ComputerLaunchPolicy.IsLaunchRefused) is { } refused)
+            throw new ComputerUseException("computer_launch_refused",
+                $"{refused} is a shell, interpreter or script host, so computer use never starts it.");
         lock (_gate)
         {
             if (!_grants.TryGetValue(sessionId, out var apps))
@@ -251,14 +338,41 @@ public sealed class ComputerUseService
         }
 
         var running = _desktop.Windows().Select(window => window.AppName).ToHashSet(StringComparer.Ordinal);
-        return ToolExecutionOutcome.Succeeded(
-            new JsonObject
+        var missing = requested.Where(app => !running.Contains(app!)).Select(app => app!).ToList();
+        var output = new JsonObject { ["granted"] = new JsonArray(requested.Select(app => (JsonNode)app!).ToArray()) };
+        if (launch && missing.Count > 0)
+        {
+            var launched = new JsonArray();
+            var failed = new JsonArray();
+            foreach (var app in missing.ToArray())
             {
-                ["granted"] = new JsonArray(requested.Select(app => (JsonNode)app!).ToArray()),
-                ["not_running"] = new JsonArray(requested.Where(app => !running.Contains(app!)).Select(app => (JsonNode)app!).ToArray()),
-            },
-            ToolVerificationStates.NotRequired,
-            "Computer access granted for this session.");
+                if (_desktop.Launch(app) is { } reason)
+                {
+                    failed.Add(new JsonObject { ["app"] = app, ["reason"] = reason });
+                    continue;
+                }
+
+                launched.Add(app);
+            }
+
+            // A started app needs a moment for its first window; wait for each, bounded.
+            var deadline = Environment.TickCount64 + ComputerLimits.LaunchWaitMilliseconds;
+            while (launched.Count > 0 && Environment.TickCount64 < deadline)
+            {
+                running = _desktop.Windows().Select(window => window.AppName).ToHashSet(StringComparer.Ordinal);
+                if (launched.All(app => running.Contains(app!.GetValue<string>()))) break;
+                cancellationToken.WaitHandle.WaitOne(200);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            missing = requested.Where(app => !running.Contains(app!)).Select(app => app!).ToList();
+            output["launched"] = launched;
+            if (failed.Count > 0) output["launch_failed"] = failed;
+        }
+
+        output["not_running"] = new JsonArray(missing.Select(app => (JsonNode)app).ToArray());
+        return ToolExecutionOutcome.Succeeded(output, ToolVerificationStates.NotRequired,
+            launch ? "Computer access granted and apps started for this session." : "Computer access granted for this session.");
     }
 
     private ToolExecutionOutcome Focus(string sessionId, bool fullAccess, JsonObject arguments)
@@ -302,23 +416,7 @@ public sealed class ComputerUseService
             throw new ComputerUseException("image_unsupported_by_model",
                 "The pinned model does not accept images. Use action=inspect with a granted app to read its visible UI elements and clickable coordinates; list, focus, type, key and wait also work without images.");
         var monitor = FindMonitor(arguments);
-        // A window that moves, opens or closes during the capture must not show through:
-        // keep only pixels the window lists before and after the capture both allow.
-        var before = fullAccess ? null : _desktop.Windows();
-        var pixels = _desktop.Capture(monitor.Bounds);
-        var masked = false;
-        if (!fullAccess)
-        {
-            var after = _desktop.Windows();
-            var grants = Grants(sessionId);
-            var ruHosts = _desktop.RuHostProcessIds();
-            bool Allowed(DesktopWindow window) => grants.Contains(window.AppName)
-                && !ComputerProtectedApps.IsProtected(window.AppName) && !ruHosts.Contains(window.ProcessId);
-            ComputerGeometry.MaskOutside(pixels, monitor.Bounds, ComputerGeometry.VisibleAllowedRegions(before!, Allowed, monitor.Bounds));
-            ComputerGeometry.MaskOutside(pixels, monitor.Bounds, ComputerGeometry.VisibleAllowedRegions(after, Allowed, monitor.Bounds));
-            masked = true;
-        }
-
+        var (pixels, masked) = CaptureMasked(sessionId, fullAccess, monitor);
         var (width, height) = ComputerGeometry.ScreenshotSize(monitor.Bounds, ComputerLimits.MaxScreenshotEdge);
         var png = ScreenshotEncoder.EncodePng(pixels, monitor.Bounds.Width, monitor.Bounds.Height, width, height);
         while (png.Length > ToolOutputImage.MaximumBytes && width > 320)
@@ -340,8 +438,153 @@ public sealed class ComputerUseService
             ToolVerificationStates.NotRequired, Image: new ToolOutputImage("image/png", png));
     }
 
+    /// <summary>
+    /// Captures a monitor and, in standard, blacks out every pixel outside the visible part of a
+    /// granted window. A window that moves, opens or closes during the capture must not show
+    /// through, so only pixels the window lists before and after the capture both allow remain.
+    /// </summary>
+    private (byte[] Pixels, bool Masked) CaptureMasked(string sessionId, bool fullAccess, DesktopMonitor monitor)
+    {
+        var before = fullAccess ? null : _desktop.Windows();
+        var pixels = _desktop.Capture(monitor.Bounds);
+        if (fullAccess) return (pixels, false);
+        var after = _desktop.Windows();
+        var grants = Grants(sessionId);
+        var ruHosts = _desktop.RuHostProcessIds();
+        bool Allowed(DesktopWindow window) => grants.Contains(window.AppName)
+            && !ComputerProtectedApps.IsProtected(window.AppName) && !ruHosts.Contains(window.ProcessId);
+        ComputerGeometry.MaskOutside(pixels, monitor.Bounds, ComputerGeometry.VisibleAllowedRegions(before!, Allowed, monitor.Bounds));
+        ComputerGeometry.MaskOutside(pixels, monitor.Bounds, ComputerGeometry.VisibleAllowedRegions(after, Allowed, monitor.Bounds));
+        return (pixels, true);
+    }
+
+    /// <summary>
+    /// Returns one region of a monitor's latest screenshot at up to full physical resolution
+    /// (ADR 0031 amendment 2026-11-25), masked like a screenshot. The region is given in that
+    /// screenshot's pixels and the screenshot frame is kept, so pointer coordinates stay in it.
+    /// </summary>
+    private ToolExecutionOutcome Zoom(string sessionId, bool fullAccess, bool imageInputAccepted, JsonObject arguments)
+    {
+        if (!imageInputAccepted)
+            throw new ComputerUseException("image_unsupported_by_model",
+                "The pinned model does not accept images. Use action=inspect with a granted app to read its visible UI elements.");
+        var monitor = FindMonitor(arguments);
+        Shot shot;
+        lock (_gate)
+        {
+            if (!_shots.TryGetValue(monitor.Index, out shot!))
+                throw new ComputerUseException("computer_screenshot_required",
+                    $"Take a screenshot of monitor {monitor.Index} first; the zoom region is in pixels of that screenshot.");
+        }
+
+        if (shot.Monitor != monitor.Bounds)
+            throw new ComputerUseException("computer_display_changed", "The monitor layout changed; take a new screenshot.");
+        int x = Int(arguments, "x"), y = Int(arguments, "y"), w = Int(arguments, "w"), h = Int(arguments, "h");
+        if (w < ComputerLimits.MinZoomEdge || h < ComputerLimits.MinZoomEdge || x < 0 || y < 0 || x + w > shot.Width || y + h > shot.Height)
+            throw new ComputerUseException("computer_point_outside_screenshot",
+                $"The zoom region must lie inside the {shot.Width}x{shot.Height} screenshot and be at least {ComputerLimits.MinZoomEdge} px on each side.");
+
+        // The region's physical pixels: scale the screenshot rectangle back to the monitor.
+        var region = new PixelRect(
+            monitor.Bounds.Left + (int)Math.Floor((double)x * monitor.Bounds.Width / shot.Width),
+            monitor.Bounds.Top + (int)Math.Floor((double)y * monitor.Bounds.Height / shot.Height),
+            monitor.Bounds.Left + (int)Math.Ceiling((double)(x + w) * monitor.Bounds.Width / shot.Width),
+            monitor.Bounds.Top + (int)Math.Ceiling((double)(y + h) * monitor.Bounds.Height / shot.Height)).Intersect(monitor.Bounds);
+        var (pixels, masked) = CaptureMasked(sessionId, fullAccess, monitor);
+        var cropped = new byte[region.Width * region.Height * 4];
+        for (var row = 0; row < region.Height; row++)
+        {
+            Buffer.BlockCopy(
+                pixels,
+                (((region.Top - monitor.Bounds.Top + row) * monitor.Bounds.Width) + (region.Left - monitor.Bounds.Left)) * 4,
+                cropped,
+                row * region.Width * 4,
+                region.Width * 4);
+        }
+
+        var (width, height) = ComputerGeometry.ScreenshotSize(region, ComputerLimits.MaxScreenshotEdge);
+        var png = ScreenshotEncoder.EncodePng(cropped, region.Width, region.Height, width, height);
+        while (png.Length > ToolOutputImage.MaximumBytes && width > 320)
+        {
+            (width, height) = (width * 3 / 4, Math.Max(1, height * 3 / 4));
+            png = ScreenshotEncoder.EncodePng(cropped, region.Width, region.Height, width, height);
+        }
+
+        var output = new JsonObject
+        {
+            ["action"] = ComputerActions.Zoom,
+            ["monitor"] = monitor.Index,
+            ["x"] = x,
+            ["y"] = y,
+            ["w"] = w,
+            ["h"] = h,
+            ["width"] = width,
+            ["height"] = height,
+            ["masked"] = masked,
+            ["media_type"] = "image/png",
+        };
+        return new ToolExecutionOutcome(ToolResultStatuses.Succeeded, output, null,
+            "Zoomed screenshot region captured; pointer coordinates stay in the screenshot's frame.",
+            ToolVerificationStates.NotRequired, Image: new ToolOutputImage("image/png", png));
+    }
+
     private ToolExecutionOutcome Pointer(
         string action, string sessionId, bool fullAccess, JsonObject arguments, CancellationToken cancellationToken)
+    {
+        var modifiers = Modifiers(arguments, action);
+        return PointerCore(action, sessionId, fullAccess, arguments, modifiers, cancellationToken);
+    }
+
+    /// <summary>
+    /// Presses modifiers only once the pointer's target passed every check: key events reach the
+    /// foreground window, so the granted target is brought to the front first and must hold it
+    /// (decision 4). The keys are released in a finally block, so none stays held after the
+    /// action, a stop, a denial or a target change.
+    /// </summary>
+    private void HoldModifiers(IReadOnlyList<ushort> modifiers, DesktopWindow target)
+    {
+        if (_desktop.ForegroundWindow()?.Handle != target.Handle)
+        {
+            if (!_desktop.BringToForeground(target.Handle))
+                throw new ComputerUseException("computer_focus_refused",
+                    $"Windows did not bring {target.AppName} to the front, so its modifier keys were not pressed.");
+            Thread.Sleep(SettleDelay);
+        }
+
+        var foreground = _desktop.ForegroundWindow();
+        if (foreground?.Handle != target.Handle)
+            throw new ComputerUseException("computer_focus_refused",
+                $"{target.AppName} did not keep the keyboard focus, so its modifier keys were not pressed.");
+        _desktop.SetModifiers(modifiers, down: true);
+    }
+
+    /// <summary>Parses <c>modifiers</c> such as <c>shift</c> or <c>ctrl+shift</c>; only ctrl, shift and alt may be held.</summary>
+    private static IReadOnlyList<ushort> Modifiers(JsonObject arguments, string action)
+    {
+        if (Text(arguments, "modifiers") is not { } text) return [];
+        if (action == ComputerActions.Move)
+            throw new ComputerUseException("computer_arguments_invalid", "modifiers apply to click, drag and scroll.");
+        var keys = new List<ushort>();
+        foreach (var part in text.Split('+', StringSplitOptions.TrimEntries))
+        {
+            ushort key = part.ToLowerInvariant() switch
+            {
+                "ctrl" or "control" => KeyChord.Control,
+                "shift" => KeyChord.Shift,
+                "alt" => KeyChord.Alt,
+                _ => throw new ComputerUseException("computer_arguments_invalid", "modifiers may combine ctrl, shift and alt, such as ctrl+shift."),
+            };
+            if (keys.Contains(key))
+                throw new ComputerUseException("computer_arguments_invalid", "each modifier may appear once.");
+            keys.Add(key);
+        }
+
+        return keys;
+    }
+
+    private ToolExecutionOutcome PointerCore(
+        string action, string sessionId, bool fullAccess, JsonObject arguments, IReadOnlyList<ushort> modifiers,
+        CancellationToken cancellationToken)
     {
         var monitor = FindMonitor(arguments);
         Shot shot;
@@ -359,33 +602,52 @@ public sealed class ComputerUseService
         nint AuthorizeTargetAt(int targetX, int targetY) =>
             RequireTarget(_desktop.RootWindowAt(targetX, targetY), grants, fullAccess).Handle;
         var target = RequireTarget(_desktop.RootWindowAt(x, y), grants, fullAccess);
-        cancellationToken.ThrowIfCancellationRequested();
-        switch (action)
+        // Every argument and the drag destination are checked before any modifier goes down.
+        (int DeltaX, int DeltaY) scroll = default;
+        (int X, int Y) destination = default;
+        if (action == ComputerActions.Scroll)
         {
-            case ComputerActions.Click:
-                _desktop.Click(x, y, Button(arguments), OptionalInt(arguments, "count") ?? 1, target.Handle);
-                break;
-            case ComputerActions.Move:
-                _desktop.MovePointer(x, y);
-                break;
-            case ComputerActions.Scroll:
-                var amount = (OptionalInt(arguments, "amount") ?? 3) * 120;
-                var (deltaX, deltaY) = Text(arguments, "direction") switch
-                {
-                    "up" => (0, amount),
-                    "down" => (0, -amount),
-                    "left" => (-amount, 0),
-                    "right" => (amount, 0),
-                    _ => throw new ComputerUseException("computer_arguments_invalid", "scroll needs direction up, down, left or right."),
-                };
-                _desktop.Scroll(x, y, deltaX, deltaY, AuthorizeTargetAt);
-                break;
-            default:
-                var (toX, toY) = ComputerGeometry.ToPhysical(shot.Monitor, shot.Width, shot.Height,
-                    Int(arguments, "to_x"), Int(arguments, "to_y"));
-                RequireTarget(_desktop.RootWindowAt(toX, toY), grants, fullAccess);
-                _desktop.Drag(x, y, toX, toY, AuthorizeTargetAt, cancellationToken);
-                break;
+            var amount = (OptionalInt(arguments, "amount") ?? 3) * 120;
+            scroll = Text(arguments, "direction") switch
+            {
+                "up" => (0, amount),
+                "down" => (0, -amount),
+                "left" => (-amount, 0),
+                "right" => (amount, 0),
+                _ => throw new ComputerUseException("computer_arguments_invalid", "scroll needs direction up, down, left or right."),
+            };
+        }
+        else if (action == ComputerActions.Drag)
+        {
+            destination = ComputerGeometry.ToPhysical(shot.Monitor, shot.Width, shot.Height,
+                Int(arguments, "to_x"), Int(arguments, "to_y"));
+            RequireTarget(_desktop.RootWindowAt(destination.X, destination.Y), grants, fullAccess);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var holding = modifiers.Count > 0;
+        if (holding) HoldModifiers(modifiers, target);
+        try
+        {
+            switch (action)
+            {
+                case ComputerActions.Click:
+                    _desktop.Click(x, y, Button(arguments), OptionalInt(arguments, "count") ?? 1, target.Handle);
+                    break;
+                case ComputerActions.Move:
+                    _desktop.MovePointer(x, y);
+                    break;
+                case ComputerActions.Scroll:
+                    _desktop.Scroll(x, y, scroll.DeltaX, scroll.DeltaY, AuthorizeTargetAt);
+                    break;
+                default:
+                    _desktop.Drag(x, y, destination.X, destination.Y, AuthorizeTargetAt, cancellationToken);
+                    break;
+            }
+        }
+        finally
+        {
+            if (holding) _desktop.SetModifiers(modifiers, down: false);
         }
 
         return Done(action, target);

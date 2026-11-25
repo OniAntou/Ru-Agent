@@ -277,7 +277,8 @@ public sealed partial class ToolExecutionService
             request.DeadlineMs,
             sessionScopes,
             runId,
-            ImageInputAccepted: ReadImageInputAccepted(request.Payload))
+            ImageInputAccepted: ReadImageInputAccepted(request.Payload),
+            BrowserPersistentProfile: ReadBrowserPersistentProfile(request.Payload))
         {
             AuthorizedTerminalIntent = authorizedTerminalIntent,
             TerminalOutput = output,

@@ -17,6 +17,7 @@ using RuBackend.Harness.Broker;
 using RuBackend.Harness.Policy;
 using Xunit;
 using BrokerComputerService = Broker::RuAgent.Broker.Tools.Computer.ComputerUseService;
+using BrokerBrowserService = Broker::RuAgent.Broker.Tools.Browser.BrowserUseService;
 using BrokerDesktopController = Broker::RuAgent.Broker.Tools.Computer.IDesktopController;
 using BrokerDesktopMonitor = Broker::RuAgent.Broker.Tools.Computer.DesktopMonitor;
 using BrokerDesktopWindow = Broker::RuAgent.Broker.Tools.Computer.DesktopWindow;
@@ -81,8 +82,9 @@ public sealed partial class RememberedApprovalIdentityTests
 
         /// <param name="mcp">Declare servers "alpha" and "beta" in the test user's ~/.ru/mcp.json, served by a loopback fake.</param>
         /// <param name="computer">Replace the desktop controller with a headless one so request_access and friends run without a real desktop.</param>
+        /// <param name="browser">Replace the browser engine with a page-less fake so open runs without a real browser.</param>
         /// <param name="failGrants">Make every Broker approval bridge fail with a transport error after the Host has resolved the approval.</param>
-        public static async Task<Scenario> StartAsync(bool mcp = false, bool computer = false, bool failGrants = false)
+        public static async Task<Scenario> StartAsync(bool mcp = false, bool computer = false, bool failGrants = false, bool browser = false)
         {
             var root = Path.Combine(Path.GetTempPath(), "ru-remembered-" + Guid.NewGuid().ToString("N"));
             var workspace = Path.Combine(root, "ws");
@@ -116,6 +118,11 @@ public sealed partial class RememberedApprovalIdentityTests
                     {
                         services.Replace(ServiceDescriptor.Singleton<BrokerComputerService>(
                             new BrokerComputerService(new HeadlessDesktop(), new InertStopHotkey())));
+                    }
+
+                    if (browser)
+                    {
+                        services.Replace(ServiceDescriptor.Singleton<BrokerBrowserService>(new BrokerBrowserService(new PngEngine())));
                     }
 
                     if (failGrants)

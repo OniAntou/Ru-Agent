@@ -283,8 +283,10 @@ internal static class PublicHostServiceRegistration
         // Built-in browser tool (ADR 0055): one isolated browser process per Host; the first
         // approved action=open starts it and Host disposal closes it with its ephemeral profile.
         // AutoBrowserEngine picks the Chromium family (CDP) or Firefox (WebDriver BiDi) once.
+        // A second engine runs over Ru's persistent profile for runs that pinned it (amendment 2026-11-25).
         services.AddSingleton(_ => new RuAgent.Broker.Tools.Browser.BrowserUseService(
-            new RuAgent.Broker.Tools.Browser.AutoBrowserEngine()));
+            new RuAgent.Broker.Tools.Browser.AutoBrowserEngine(),
+            new RuAgent.Broker.Tools.Browser.AutoBrowserEngine(persistentProfile: true)));
         services.AddSingleton(services => new InProcessExecutionAuthority(
             services.GetRequiredService<DataPaths>(),
             services.GetRequiredService<ILogger<InProcessExecutionAuthority>>(),
@@ -299,6 +301,9 @@ internal static class PublicHostServiceRegistration
                     services.GetRequiredService<RuBackend.Harness.Subagents.SubagentControlDispatcher>()))
             {
                 ImageInputAccepted = async (runId, ct) => RuBackend.Providers.ImageInputPolicy.IsPinned(
+                    (await services.GetRequiredService<SqliteAgentRunProviderSelectionStore>()
+                        .GetAsync(new RunId(runId), ct).ConfigureAwait(false))?.Selection),
+                BrowserPersistentProfile = async (runId, ct) => RuBackend.Providers.BrowserPolicy.IsPersistentProfilePinned(
                     (await services.GetRequiredService<SqliteAgentRunProviderSelectionStore>()
                         .GetAsync(new RunId(runId), ct).ConfigureAwait(false))?.Selection),
                   ObserveToolResult = (lease, tool, output, ct) => services.GetRequiredService<AgentRuntimeLoopService>()

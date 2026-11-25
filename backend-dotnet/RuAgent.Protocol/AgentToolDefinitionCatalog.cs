@@ -208,11 +208,41 @@ public static partial class AgentToolDefinitionCatalog
         ("count", IntegerSchema(1, 3)),
         ("direction", EnumSchema("up", "down", "left", "right")),
         ("amount", IntegerSchema(1, ComputerLimits.MaxScrollAmount)),
-        ("text", StringSchema(maxLength: ComputerLimits.MaxTypeChars, minLength: 1)),
+        // type takes at most MaxTypeChars; clipboard_write takes up to MaxClipboardChars.
+        ("text", StringSchema(maxLength: ComputerLimits.MaxClipboardChars, minLength: 1)),
         ("keys", StringSchema(maxLength: ComputerLimits.MaxKeyChordChars, minLength: 1)),
         ("apps", ArraySchema(maxItems: ComputerLimits.MaxRequestedApps, itemMaxLength: ComputerLimits.MaxAppNameChars)),
         ("app", StringSchema(maxLength: ComputerLimits.MaxAppNameChars, minLength: 1)),
-        ("ms", IntegerSchema(ComputerLimits.MinWaitMilliseconds, ComputerLimits.MaxWaitMilliseconds)));
+        ("ms", IntegerSchema(ComputerLimits.MinWaitMilliseconds, ComputerLimits.MaxWaitMilliseconds)),
+        ("w", IntegerSchema(ComputerLimits.MinZoomEdge, ComputerLimits.MaxScreenshotEdge)),
+        ("h", IntegerSchema(ComputerLimits.MinZoomEdge, ComputerLimits.MaxScreenshotEdge)),
+        ("modifiers", StringSchema(maxLength: ComputerLimits.MaxModifierChars, minLength: 1)),
+        ("launch", BooleanSchema()),
+        ("steps", new JsonObject
+        {
+            ["type"] = "array",
+            ["minItems"] = 1,
+            ["maxItems"] = ComputerLimits.MaxBatchSteps,
+            ["items"] = ComputerStepSchema(),
+        }));
+
+    private static JsonObject ComputerStepSchema() => ObjectSchema(
+        ["action"],
+        ("action", EnumSchema(ComputerActions.Batchable.ToArray())),
+        ("monitor", IntegerSchema(0, ComputerLimits.MaxMonitorIndex)),
+        ("x", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("y", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("to_x", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("to_y", IntegerSchema(0, ComputerLimits.MaxScreenshotEdge)),
+        ("button", EnumSchema("left", "right", "middle")),
+        ("count", IntegerSchema(1, 3)),
+        ("direction", EnumSchema("up", "down", "left", "right")),
+        ("amount", IntegerSchema(1, ComputerLimits.MaxScrollAmount)),
+        ("text", StringSchema(maxLength: ComputerLimits.MaxClipboardChars, minLength: 1)),
+        ("keys", StringSchema(maxLength: ComputerLimits.MaxKeyChordChars, minLength: 1)),
+        ("app", StringSchema(maxLength: ComputerLimits.MaxAppNameChars, minLength: 1)),
+        ("ms", IntegerSchema(ComputerLimits.MinWaitMilliseconds, ComputerLimits.MaxWaitMilliseconds)),
+        ("modifiers", StringSchema(maxLength: ComputerLimits.MaxModifierChars, minLength: 1)));
     // Bounds mirror BrowserLimits in RuAgent.Protocol; the Broker adapter is the authority.
     internal static JsonObject BrowserSchema() => ObjectSchema(
         ["action"],
@@ -224,6 +254,13 @@ public static partial class AgentToolDefinitionCatalog
         ("expression", StringSchema(maxLength: BrowserLimits.MaxExpressionChars)),
         ("ms", IntegerSchema(BrowserLimits.MinWaitMilliseconds, BrowserLimits.MaxWaitMilliseconds)),
         ("headless", BooleanSchema()),
+        ("direction", EnumSchema("up", "down", "left", "right")),
+        ("amount", IntegerSchema(1, BrowserLimits.MaxScrollAmount)),
+        ("query", StringSchema(maxLength: BrowserLimits.MaxFindQueryChars)),
+        ("value", StringSchema(maxLength: BrowserLimits.MaxSelectValueChars)),
+        ("accept", BooleanSchema()),
+        ("tab", IntegerSchema(1, BrowserLimits.MaxTabs)),
+        ("paths", ArraySchema(maxItems: BrowserLimits.MaxUploadFiles, itemMaxLength: BrowserLimits.MaxPathChars)),
         ("steps", new JsonObject
         {
             ["type"] = "array",
@@ -240,7 +277,12 @@ public static partial class AgentToolDefinitionCatalog
         ("text", StringSchema(maxLength: BrowserLimits.MaxTextChars)),
         ("key", StringSchema(maxLength: BrowserLimits.MaxKeyChars)),
         ("expression", StringSchema(maxLength: BrowserLimits.MaxExpressionChars)),
-        ("ms", IntegerSchema(BrowserLimits.MinWaitMilliseconds, BrowserLimits.MaxWaitMilliseconds)));
+        ("ms", IntegerSchema(BrowserLimits.MinWaitMilliseconds, BrowserLimits.MaxWaitMilliseconds)),
+        ("direction", EnumSchema("up", "down", "left", "right")),
+        ("amount", IntegerSchema(1, BrowserLimits.MaxScrollAmount)),
+        ("query", StringSchema(maxLength: BrowserLimits.MaxFindQueryChars)),
+        ("value", StringSchema(maxLength: BrowserLimits.MaxSelectValueChars)),
+        ("accept", BooleanSchema()));
     internal static JsonObject SkillSchema() => ObjectSchema(
         [],
         ("name", StringSchema(minLength: 1, maxLength: 96)),

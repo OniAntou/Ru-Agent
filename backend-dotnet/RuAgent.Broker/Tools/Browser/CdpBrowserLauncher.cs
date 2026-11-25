@@ -4,21 +4,21 @@ using RuAgent.Broker.Tools.Terminal;
 namespace RuAgent.Broker.Tools.Browser;
 
 /// <summary>
-/// A Chromium browser process started for the tool with an ephemeral profile and a random
-/// DevTools port (ADR 0055). Disposal kills the process tree and deletes the profile, so no
-/// user cookie or sign-in survives the run and no browser is left behind.
+/// A Chromium browser process started for the tool with a random DevTools port (ADR 0055).
+/// Disposal kills the process tree and releases the profile: an ephemeral profile is deleted, so
+/// no cookie survives the run; Ru's persistent profile (amendment 2026-11-25) is kept.
 /// </summary>
 internal sealed class CdpBrowserProcess : IAsyncDisposable
 {
     private readonly Process _process;
-    private readonly string _profileDirectory;
+    private readonly BrowserProfileLease _profile;
     private readonly WindowsJobProcessTree? _job;
     private int _disposed;
 
-    private CdpBrowserProcess(Process process, string profileDirectory, int port, Uri webSocketUri, WindowsJobProcessTree? job)
+    private CdpBrowserProcess(Process process, BrowserProfileLease profile, int port, Uri webSocketUri, WindowsJobProcessTree? job)
     {
         _process = process;
-        _profileDirectory = profileDirectory;
+        _profile = profile;
         _job = job;
         Port = port;
         WebSocketUri = webSocketUri;
@@ -31,10 +31,13 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
     public static async Task<CdpBrowserProcess> StartAsync(
         string executable,
         bool headless,
+        bool persistentProfile,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executable);
-        var profile = BrowserProfileDirectory.Create();
+        var profile = persistentProfile
+            ? BrowserProfileLease.Persistent("chromium", ["DevToolsActivePort"])
+            : BrowserProfileLease.Ephemeral();
 
         var startInfo = new ProcessStartInfo(executable)
         {
@@ -46,7 +49,7 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
         };
         startInfo.ArgumentList.Add("--remote-debugging-address=127.0.0.1");
         startInfo.ArgumentList.Add("--remote-debugging-port=0");
-        startInfo.ArgumentList.Add("--user-data-dir=" + profile);
+        startInfo.ArgumentList.Add("--user-data-dir=" + profile.Directory);
         startInfo.ArgumentList.Add("--no-first-run");
         startInfo.ArgumentList.Add("--no-default-browser-check");
         startInfo.ArgumentList.Add("--disable-extensions");
@@ -67,7 +70,7 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
         }
         catch (Exception error) when (error is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
-            await BrowserProfileDirectory.DeleteAsync(profile).ConfigureAwait(false);
+            await profile.DisposeAsync().ConfigureAwait(false);
             throw new BrowserEngineException(
                 "browser_launch_failed",
                 "The browser could not start: " + Bound(error.Message));
@@ -75,7 +78,7 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
 
         if (process is null)
         {
-            await BrowserProfileDirectory.DeleteAsync(profile).ConfigureAwait(false);
+            await profile.DisposeAsync().ConfigureAwait(false);
             throw new BrowserEngineException("browser_launch_failed", "The browser process did not start.");
         }
 
@@ -85,14 +88,14 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
         var job = BrowserProcessJob.TryAttach(process);
         try
         {
-            var (port, path) = await WaitForDevToolsAsync(process, profile, cancellationToken).ConfigureAwait(false);
+            var (port, path) = await WaitForDevToolsAsync(process, profile.Directory, cancellationToken).ConfigureAwait(false);
             return new CdpBrowserProcess(process, profile, port, new Uri("ws://127.0.0.1:" + port + path), job);
         }
         catch (Exception)
         {
             BrowserProcessJob.Release(job);
             Kill(process);
-            await BrowserProfileDirectory.DeleteAsync(profile).ConfigureAwait(false);
+            await profile.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -100,6 +103,21 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        if (_profile.IsPersistent)
+        {
+            // The engine asked the browser to close; letting it exit writes the persistent
+            // profile's cookies, which a kill could lose.
+            try
+            {
+                using var exit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await _process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is OperationCanceledException or InvalidOperationException)
+            {
+                // It did not exit in time; the kill below ends it.
+            }
+        }
+
         BrowserProcessJob.Release(_job);
         Kill(_process);
         try
@@ -113,7 +131,7 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
         }
 
         _process.Dispose();
-        await BrowserProfileDirectory.DeleteAsync(_profileDirectory).ConfigureAwait(false);
+        await _profile.DisposeAsync().ConfigureAwait(false);
     }
 
     private static async Task<(int Port, string Path)> WaitForDevToolsAsync(

@@ -20,8 +20,43 @@ public sealed partial class CustomizeView
         var generation = _activationGeneration;
         var settings = await api.GetSettingsAsync();
         if (!_active || generation != _activationGeneration || !ReferenceEquals(api, _api)) return;
-        if (settings is not null) SetComputerUseToggle(settings.ComputerUseEnabled);
+        if (settings is not null)
+        {
+            SetComputerUseToggle(settings.ComputerUseEnabled);
+            SetBrowserProfileToggle(settings.BrowserPersistentProfile);
+        }
         else if (PluginsTab.IsChecked == true) ShowStatus("Could not load plugin settings.");
+    }
+
+    private bool _applyingBrowserProfile;
+
+    private void SetBrowserProfileToggle(bool enabled)
+    {
+        _applyingBrowserProfile = true;
+        try { BrowserProfileToggle.IsOn = enabled; }
+        finally { _applyingBrowserProfile = false; }
+    }
+
+    // ADR 0055 amendment 2026-11-25: the Host owns the persistent-profile opt-in and pins it into new runs.
+    private async void OnBrowserProfileToggled(object sender, RoutedEventArgs e)
+    {
+        if (_applyingBrowserProfile || _api is not { } api) return;
+        var requested = BrowserProfileToggle.IsOn;
+        BrowserProfileToggle.IsEnabled = false;
+        try
+        {
+            if (!await api.SaveBrowserProfileAsync(requested)) SetBrowserProfileToggle(!requested);
+        }
+        catch (Exception error)
+        {
+            // async void: a failed save must leave the switch where the Host has it.
+            GuiDiagnosticWriter.AppendTraceLine($"[Customize] Browser profile save failed: {error.GetType().Name}");
+            SetBrowserProfileToggle(!requested);
+        }
+        finally
+        {
+            BrowserProfileToggle.IsEnabled = true;
+        }
     }
 
     private void SetComputerUseToggle(bool enabled)

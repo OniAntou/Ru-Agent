@@ -633,6 +633,178 @@ public sealed class ComputerUseTests
     public void App_names_normalize_to_lowercase_executables(string input, string? expected) =>
         Assert.Equal(expected, ComputerProtectedApps.Normalize(input));
 
+    [Fact]
+    public async Task Zoom_returns_a_masked_region_at_full_resolution_and_keeps_the_screenshot_frame()
+    {
+        var granted = Window("notepad.exe", new PixelRect(0, 0, 1280, 1440));
+        var desktop = new FakeDesktop(granted) { WindowAtPoint = granted };
+        var service = Service(desktop);
+        await Grant(service, granted.AppName);
+
+        var before = await service.ExecuteAsync(Run, Session, false, true,
+            Args("zoom", new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 100, ["h"] = 50 }), CancellationToken.None);
+        Assert.Equal("computer_screenshot_required", before.ErrorCode);
+
+        Assert.Null((await service.ExecuteAsync(Run, Session, false, true, Args("screenshot"), CancellationToken.None)).ErrorCode);
+        var zoom = await service.ExecuteAsync(Run, Session, false, true,
+            Args("zoom", new JsonObject { ["x"] = 600, ["y"] = 100, ["w"] = 100, ["h"] = 50 }), CancellationToken.None);
+        Assert.Null(zoom.ErrorCode);
+        Assert.NotNull(zoom.Image);
+        // The 1280x720 screenshot shows a 2560x1440 monitor, so the region doubles.
+        Assert.Equal(200, zoom.Output["width"]!.GetValue<int>());
+        Assert.Equal(100, zoom.Output["height"]!.GetValue<int>());
+        Assert.True(zoom.Output["masked"]!.GetValue<bool>());
+
+        var outside = await service.ExecuteAsync(Run, Session, false, true,
+            Args("zoom", new JsonObject { ["x"] = 1250, ["y"] = 0, ["w"] = 100, ["h"] = 50 }), CancellationToken.None);
+        Assert.Equal("computer_point_outside_screenshot", outside.ErrorCode);
+        var textOnly = await service.ExecuteAsync(Run, Session, false, false,
+            Args("zoom", new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 100, ["h"] = 50 }), CancellationToken.None);
+        Assert.Equal("image_unsupported_by_model", textOnly.ErrorCode);
+
+        // The screenshot frame is unchanged: a click at the screenshot's centre lands at the monitor's centre.
+        Assert.Null((await service.ExecuteAsync(Run, Session, false, true,
+            Args("click", new JsonObject { ["x"] = 640, ["y"] = 360 }), CancellationToken.None)).ErrorCode);
+        Assert.Equal((1281, 721), (desktop.LastClick!.Value.X, desktop.LastClick.Value.Y));
+    }
+
+    [Fact]
+    public async Task Modifiers_are_held_only_during_one_pointer_action_and_released_on_failure()
+    {
+        var granted = Window("notepad.exe", Primary);
+        var desktop = new FakeDesktop(granted) { WindowAtPoint = granted };
+        var service = Service(desktop);
+        await Grant(service, granted.AppName);
+        await service.ExecuteAsync(Run, Session, true, true, Args("screenshot"), CancellationToken.None);
+
+        var click = await service.ExecuteAsync(Run, Session, false, true,
+            Args("click", new JsonObject { ["x"] = 10, ["y"] = 10, ["modifiers"] = "ctrl+shift" }), CancellationToken.None);
+        Assert.Null(click.ErrorCode);
+        Assert.Equal(
+            new[] { (KeyChord.Control, true), (KeyChord.Shift, true), (KeyChord.Control, false), (KeyChord.Shift, false) },
+            desktop.ModifierEvents);
+
+        desktop.ModifierEvents.Clear();
+        desktop.WindowAtPoint = Window("mail.exe", Primary);
+        var denied = await service.ExecuteAsync(Run, Session, false, true,
+            Args("click", new JsonObject { ["x"] = 10, ["y"] = 10, ["modifiers"] = "shift" }), CancellationToken.None);
+        Assert.Equal("computer_app_not_granted", denied.ErrorCode);
+        Assert.Empty(desktop.ModifierEvents);
+
+        // Key events reach the foreground window, so a target that cannot take the focus gets none.
+        desktop.WindowAtPoint = granted;
+        desktop.Foreground = Window("mail.exe", Primary);
+        desktop.FocusSucceeds = false;
+        var unfocused = await service.ExecuteAsync(Run, Session, false, true,
+            Args("click", new JsonObject { ["x"] = 10, ["y"] = 10, ["modifiers"] = "shift" }), CancellationToken.None);
+        Assert.Equal("computer_focus_refused", unfocused.ErrorCode);
+        Assert.Empty(desktop.ModifierEvents);
+        desktop.FocusSucceeds = true;
+
+        var windowsKey = await service.ExecuteAsync(Run, Session, false, true,
+            Args("click", new JsonObject { ["x"] = 10, ["y"] = 10, ["modifiers"] = "win" }), CancellationToken.None);
+        Assert.Equal("computer_arguments_invalid", windowsKey.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Batch_runs_input_steps_in_one_action_and_names_the_failing_step()
+    {
+        var granted = Window("notepad.exe", Primary);
+        var desktop = new FakeDesktop(granted) { WindowAtPoint = granted, Foreground = granted };
+        var service = Service(desktop);
+        await Grant(service, granted.AppName);
+        await service.ExecuteAsync(Run, Session, true, true, Args("screenshot"), CancellationToken.None);
+
+        var batch = await service.ExecuteAsync(Run, Session, false, true, Args("batch", new JsonObject
+        {
+            ["steps"] = new JsonArray(
+                new JsonObject { ["action"] = "click", ["x"] = 10, ["y"] = 10 },
+                new JsonObject { ["action"] = "type", ["text"] = "Ada" },
+                new JsonObject { ["action"] = "clipboard_write", ["text"] = "Grace" }),
+        }), CancellationToken.None);
+        Assert.Null(batch.ErrorCode);
+        Assert.Equal(3, batch.Output["step_count"]!.GetValue<int>());
+        Assert.Equal("Ada", desktop.Typed);
+        Assert.Equal("Grace", desktop.Clipboard);
+
+        desktop.WindowAtPoint = Window("mail.exe", Primary);
+        var failed = await service.ExecuteAsync(Run, Session, false, true, Args("batch", new JsonObject
+        {
+            ["steps"] = new JsonArray(
+                new JsonObject { ["action"] = "type", ["text"] = "x" },
+                new JsonObject { ["action"] = "click", ["x"] = 10, ["y"] = 10 }),
+        }), CancellationToken.None);
+        Assert.Equal("computer_app_not_granted", failed.ErrorCode);
+        Assert.StartsWith("Step 2 (click)", failed.SafeSummary, StringComparison.Ordinal);
+
+        foreach (var nested in new[] { "request_access", "screenshot", "zoom", "clipboard_read", "batch", "list" })
+        {
+            var refused = await service.ExecuteAsync(Run, Session, false, true, Args("batch", new JsonObject
+            {
+                ["steps"] = new JsonArray(new JsonObject { ["action"] = nested }),
+            }), CancellationToken.None);
+            Assert.Equal("computer_arguments_invalid", refused.ErrorCode);
+        }
+    }
+
+    [Fact]
+    public async Task Request_access_with_launch_starts_missing_apps_and_never_a_shell()
+    {
+        var running = Window("notepad.exe", Primary);
+        var desktop = new FakeDesktop(running);
+        var started = Window("paint.exe", Primary);
+        desktop.LaunchResult = app => app == "paint.exe" ? null : "No installed application named " + app + " was found.";
+        desktop.NextWindowLists.Enqueue([running]);
+        desktop.NextWindowLists.Enqueue([running, started]);
+        var service = Service(desktop);
+
+        var result = await service.ExecuteAsync(Run, Session, false, true, Args("request_access", new JsonObject
+        {
+            ["apps"] = new JsonArray("notepad.exe", "paint.exe", "ghost.exe"),
+            ["launch"] = true,
+        }), CancellationToken.None);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(new[] { "paint.exe", "ghost.exe" }, desktop.Launched);
+        Assert.Equal("paint.exe", Assert.Single(result.Output["launched"]!.AsArray().Where(item => item!.GetValue<string>() == "paint.exe"))!.GetValue<string>());
+        Assert.Equal("ghost.exe", result.Output["launch_failed"]![0]!["app"]!.GetValue<string>());
+
+        var plain = await service.ExecuteAsync(Run, Session, false, true, Args("request_access", new JsonObject
+        {
+            ["apps"] = new JsonArray("calc.exe"),
+        }), CancellationToken.None);
+        Assert.Null(plain.ErrorCode);
+        Assert.DoesNotContain("calc.exe", desktop.Launched);
+
+        var shell = await service.ExecuteAsync(Run, Session, false, true, Args("request_access", new JsonObject
+        {
+            ["apps"] = new JsonArray("python.exe"),
+            ["launch"] = true,
+        }), CancellationToken.None);
+        Assert.Equal("computer_launch_refused", shell.ErrorCode);
+        Assert.DoesNotContain("python.exe", desktop.Launched);
+    }
+
+    [Fact]
+    public async Task Clipboard_reads_are_bounded_and_writes_are_checked()
+    {
+        var desktop = new FakeDesktop { Clipboard = new string('a', ComputerLimits.MaxClipboardChars + 5) };
+        var service = Service(desktop);
+
+        var read = await service.ExecuteAsync(Run, Session, false, false, Args("clipboard_read"), CancellationToken.None);
+        Assert.Null(read.ErrorCode);
+        Assert.Equal(ComputerLimits.MaxClipboardChars, read.Output["text"]!.GetValue<string>().Length);
+        Assert.Equal(ComputerLimits.MaxClipboardChars + 5, read.Output["truncated_from"]!.GetValue<int>());
+
+        desktop.Clipboard = null;
+        Assert.True((await service.ExecuteAsync(Run, Session, false, false, Args("clipboard_read"), CancellationToken.None)).Output["empty"]!.GetValue<bool>());
+
+        Assert.Null((await service.ExecuteAsync(Run, Session, false, false,
+            Args("clipboard_write", new JsonObject { ["text"] = "hello" }), CancellationToken.None)).ErrorCode);
+        Assert.Equal("hello", desktop.Clipboard);
+        Assert.Equal("computer_arguments_invalid", (await service.ExecuteAsync(Run, Session, false, false,
+            Args("clipboard_write"), CancellationToken.None)).ErrorCode);
+    }
+
     private static async Task Grant(ComputerUseService service, string app) =>
         Assert.Null((await service.ExecuteAsync(Run, Session, false, true,
             Args("request_access", new JsonObject { ["apps"] = new JsonArray(app) }), CancellationToken.None)).ErrorCode);
@@ -742,6 +914,27 @@ public sealed class ComputerUseTests
         public HashSet<int> RuHosts { get; } = [];
 
         public IReadOnlySet<int> RuHostProcessIds() => RuHosts;
+
+        public List<(ushort Key, bool Down)> ModifierEvents { get; } = [];
+
+        public void SetModifiers(IReadOnlyList<ushort> keys, bool down) =>
+            ModifierEvents.AddRange(keys.Select(key => (key, down)));
+
+        public List<string> Launched { get; } = [];
+
+        public Func<string, string?>? LaunchResult { get; set; }
+
+        public string? Launch(string appName)
+        {
+            Launched.Add(appName);
+            return LaunchResult?.Invoke(appName);
+        }
+
+        public string? Clipboard { get; set; }
+
+        public string? ReadClipboardText() => Clipboard;
+
+        public void WriteClipboardText(string text) => Clipboard = text;
     }
 
     private sealed class FakeHotkey : IComputerStopHotkey

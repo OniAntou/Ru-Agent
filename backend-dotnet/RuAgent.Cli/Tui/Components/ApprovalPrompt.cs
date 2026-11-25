@@ -30,6 +30,8 @@ public sealed class ApprovalPrompt
         "web_approval_required",
         "mcp_call_requires_approval",
         "computer_access_requires_approval",
+        "computer_launch_requires_approval",
+        "browser_open_requires_approval",
         "terminal_external_cwd_requires_approval",
         "terminal_cwd_untrusted",
         "terminal_network_requires_approval",

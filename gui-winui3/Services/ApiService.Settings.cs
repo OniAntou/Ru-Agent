@@ -56,6 +56,22 @@ namespace RuApp.Services
             }
         }
 
+        /// <summary>Saves only the browser persistent-profile opt-in; it applies to new runs (ADR 0055).</summary>
+        public async Task<bool> SaveBrowserProfileAsync(bool enabled)
+        {
+            try
+            {
+                var payload = new System.Text.Json.Nodes.JsonObject { ["browser_persistent_profile"] = enabled };
+                using var response = await _httpClient.PostAsJsonAsync($"{_baseUrl}/settings", payload);
+                return await HasOkEnvelopeAsync(response);
+            }
+            catch (Exception ex)
+            {
+                LogApiError("SaveBrowserProfileAsync", ex);
+                return false;
+            }
+        }
+
         /// <summary>Saves only the computer-use opt-in; it applies to new runs (ADR 0031).</summary>
         public async Task<bool> SaveComputerUseAsync(bool enabled)
         {

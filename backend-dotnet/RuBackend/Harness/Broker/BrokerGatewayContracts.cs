@@ -102,6 +102,10 @@ internal static class BrokerGatewayContracts
         "web_approval_required" => "web_approval_required",
         "mcp_call_requires_approval" => "mcp_call_requires_approval",
         "computer_access_requires_approval" => "computer_access_requires_approval",
+        "computer_launch_requires_approval" => "computer_launch_requires_approval",
+        "computer_clipboard_read_requires_approval" => "computer_clipboard_read_requires_approval",
+        "browser_open_requires_approval" => "browser_open_requires_approval",
+        "browser_upload_requires_approval" => "browser_upload_requires_approval",
         "subagent_apply_approval_required" => "subagent_apply_approval_required",
         _ => "approval_required",
     };

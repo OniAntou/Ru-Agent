@@ -223,7 +223,7 @@ public sealed class AgentProviderSnapshotFactory(
         options[RuAgent.Protocol.AgentToolProfiles.PinField] = AgentToolProfilePin.SelectNew();
         // The built-in browser tool is advertised to every new root run (ADR 0055); runs pinned
         // before this marker never see it.
-        BrowserPolicy.PinNew(options);
+        BrowserPolicy.PinNew(options, current);
         if (await ImageInputPolicy.AcceptsAsync(catalog, selected, ct).ConfigureAwait(false))
         {
             options[ImageInputPolicy.PinField] = true;

@@ -81,6 +81,7 @@ public sealed class AgentRunHandoffModelFacts(
             && string.Equals(ToolProfile(current), ToolProfile(source), StringComparison.Ordinal)
             && ComputerUsePolicy.IsPinned(current) == ComputerUsePolicy.IsPinned(source)
             && BrowserPolicy.IsPinned(current) == BrowserPolicy.IsPinned(source)
+            && BrowserPolicy.IsPersistentProfilePinned(current) == BrowserPolicy.IsPersistentProfilePinned(source)
             && ProviderWebSearchPolicy.IsPinned(current) == ProviderWebSearchPolicy.IsPinned(source);
     }
 

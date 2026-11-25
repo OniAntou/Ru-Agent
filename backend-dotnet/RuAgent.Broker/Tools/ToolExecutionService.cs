@@ -434,6 +434,15 @@ public sealed partial class ToolExecutionService : IDisposable, IAsyncDisposable
         && value.TryGetValue<bool>(out var accepted)
         && accepted;
 
+    /// <summary>
+    /// The run's pinned browser profile (ADR 0055 amendment 2026-11-25). Like image_input it travels
+    /// on the envelope, never in the model's arguments; anything but the literal "persistent" is ephemeral.
+    /// </summary>
+    private static bool ReadBrowserPersistentProfile(JsonObject payload) =>
+        payload["browser_profile"] is JsonValue value
+        && value.TryGetValue<string>(out var profile)
+        && string.Equals(profile, "persistent", StringComparison.Ordinal);
+
     private static string ReadString(JsonObject payload, string key) =>
         payload[key] is JsonValue value
         && value.TryGetValue<string>(out var result)

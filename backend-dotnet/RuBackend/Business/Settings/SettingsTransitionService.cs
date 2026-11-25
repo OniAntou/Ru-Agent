@@ -386,6 +386,7 @@ public sealed partial class SettingsTransitionService : ISettingsTransitionServi
 
         var raw = current.Raw.DeepClone().AsObject();
         Providers.ComputerUsePolicy.Apply(payload, raw);
+        Providers.BrowserPolicy.Apply(payload, raw);
         Providers.ProviderWebSearchPolicy.Apply(payload, raw);
         CustomProviders.Apply(payload, raw);
         // The advisor is chosen per session now (PUT /agent/v1/sessions/{id}/advisor); a

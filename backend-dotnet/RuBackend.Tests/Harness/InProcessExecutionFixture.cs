@@ -27,7 +27,8 @@ internal sealed class InProcessExecutionFixture : IDisposable
     public InProcessExecutionFixture(string? workspaceRoot = null, bool subagentControls = true,
         Lazy<global::RuBackend.Harness.Subagents.SubagentControlDispatcher>? subagents = null,
         Func<string, CancellationToken, Task<bool>>? imageInputAccepted = null,
-        IReadOnlyDictionary<string, string>? commandEnvironmentSnapshot = null)
+        IReadOnlyDictionary<string, string>? commandEnvironmentSnapshot = null,
+        Func<string, CancellationToken, Task<bool>>? browserPersistentProfile = null)
     {
         _ownsWorkspace = workspaceRoot is null;
         WorkspaceRoot = workspaceRoot ?? Path.Combine(
@@ -59,6 +60,7 @@ internal sealed class InProcessExecutionFixture : IDisposable
         Factory = new global::RuBackend.Harness.Broker.InProcessToolGatewayFactory(Runtime, subagents)
         {
             ImageInputAccepted = imageInputAccepted,
+            BrowserPersistentProfile = browserPersistentProfile,
         };
     }
 

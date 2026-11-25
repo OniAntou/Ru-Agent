@@ -383,9 +383,31 @@ public sealed partial class PolicyContextFactory
                     }
 
                     resolvedExecutable = "computer:" + op;
+                    if (arguments.ContainsKey("launch") && op != ComputerActions.RequestAccess)
+                    {
+                        throw new PolicyContextException("malformed_call", hint: "launch is only valid with action=request_access.");
+                    }
+
+                    if (arguments.ContainsKey("steps") != (op == ComputerActions.Batch))
+                    {
+                        throw new PolicyContextException("malformed_call", hint: "batch needs steps, and steps is only valid with action=batch.");
+                    }
+
                     if (op == ComputerActions.RequestAccess)
                     {
                         argv = ReadComputerApps(arguments);
+                        // ADR 0031 amendment 2026-11-25: starting the apps is a separate identity, so
+                        // an approval or remembered grant without launch never starts a program.
+                        if (arguments["launch"] is JsonValue launch && launch.TryGetValue<bool>(out var starts) && starts)
+                        {
+                            resolvedExecutable = "computer:request_access:launch";
+                        }
+                    }
+                    else if (op == ComputerActions.Batch)
+                    {
+                        // Every app a step names travels as argv, so the protected-app invariant
+                        // denies the whole batch before any step runs.
+                        argv = ReadComputerBatchApps(arguments);
                     }
                     else if (arguments.ContainsKey("apps"))
                     {
@@ -420,6 +442,18 @@ public sealed partial class PolicyContextFactory
                     }
 
                     resolvedExecutable = "browser:" + op;
+                    if (string.Equals(op, BrowserActions.Upload, StringComparison.Ordinal))
+                    {
+                        // ADR 0055 amendment 2026-11-25: an upload hands workspace files to a page.
+                        // The canonical paths travel as argv, so the approval binds the exact files;
+                        // a protected file becomes the target so the preset's guard applies to it.
+                        argv = BrowserUploadPaths(arguments, ref target);
+                    }
+                    else if (arguments.ContainsKey("paths"))
+                    {
+                        throw new PolicyContextException("malformed_call", hint: "paths is only valid with action=upload.");
+                    }
+
                     break;
                 case var control when SubagentContractValidator.IsControlTool(control):
                     op = control;
@@ -516,6 +550,53 @@ public sealed partial class PolicyContextFactory
         };
     }
 
+    private string[] BrowserUploadPaths(JsonObject arguments, ref ResolvedPath? target)
+    {
+        if (arguments["paths"] is not JsonArray paths || paths.Count == 0 || paths.Count > BrowserLimits.MaxUploadFiles)
+        {
+            throw new PolicyContextException(
+                "malformed_call",
+                hint: "upload needs paths: 1 to " + BrowserLimits.MaxUploadFiles + " workspace files.");
+        }
+
+        var canonical = new List<string>(paths.Count);
+        foreach (var item in paths)
+        {
+            if (item is not JsonValue value || !value.TryGetValue<string>(out var pathInput)
+                || string.IsNullOrWhiteSpace(pathInput) || pathInput.Length > BrowserLimits.MaxPathChars)
+            {
+                throw new PolicyContextException("malformed_call", hint: "each upload path must be a workspace file path.");
+            }
+
+            var resolved = ResolveNonTerminalTarget(pathInput);
+            // A protected file keeps its own classification, so "inside" is also checked by prefix.
+            if (resolved.IsOutsideWorkspace || !IsUnderWorkspace(resolved.CanonicalPath))
+            {
+                throw new PolicyContextException("invalid_arguments", hint: "upload takes files inside the workspace only.");
+            }
+
+            if (resolved.IsProtected && target is null)
+            {
+                target = resolved;
+            }
+
+            if (!canonical.Contains(resolved.CanonicalPath, StringComparer.OrdinalIgnoreCase))
+            {
+                canonical.Add(resolved.CanonicalPath);
+            }
+        }
+
+        return canonical.ToArray();
+    }
+
+    private bool IsUnderWorkspace(string canonicalPath)
+    {
+        var root = _canonicalRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return canonicalPath.Length > root.Length + 1
+            && canonicalPath.StartsWith(root, StringComparison.OrdinalIgnoreCase)
+            && canonicalPath[root.Length] is '\\' or '/';
+    }
+
     private ResolvedPath ResolveNonTerminalTarget(string pathInput)
     {
         var resolver = new CanonicalPathResolver(_canonicalRoot);
@@ -579,6 +660,47 @@ public sealed partial class PolicyContextFactory
         _ when SubagentContractValidator.IsControlTool(toolId) => PolicyOperationClasses.Read,
         _ => PolicyOperationClasses.Mutation,
     };
+
+    private static string[] ReadComputerBatchApps(JsonObject arguments)
+    {
+        if (arguments["steps"] is not JsonArray steps || steps.Count is 0 or > ComputerLimits.MaxBatchSteps)
+        {
+            throw new PolicyContextException(
+                "malformed_call",
+                hint: $"batch needs steps: 1 to {ComputerLimits.MaxBatchSteps} actions.");
+        }
+
+        var names = new List<string>();
+        foreach (var item in steps)
+        {
+            if (item is not JsonObject step
+                || OptionalText(step, "action") is not { } stepAction
+                || !ComputerActions.Batchable.Contains(stepAction))
+            {
+                throw new PolicyContextException(
+                    "malformed_call",
+                    hint: "batch steps may use " + string.Join(", ", ComputerActions.Batchable) + ".");
+            }
+
+            if (stepAction == ComputerActions.Focus && !step.ContainsKey("app"))
+            {
+                throw new PolicyContextException("malformed_call", hint: "a focus step needs app, an executable name such as notepad.exe.");
+            }
+
+            if (!step.ContainsKey("app")) continue;
+            if (!ComputerActions.NamesApp(stepAction))
+            {
+                throw new PolicyContextException("malformed_call", hint: "app is only valid with focus, type and key steps.");
+            }
+
+            var name = ComputerProtectedApps.Normalize(OptionalText(step, "app"))
+                ?? throw new PolicyContextException("malformed_call", hint: "app must be an executable name such as notepad.exe.");
+            if (!names.Contains(name, StringComparer.Ordinal)) names.Add(name);
+        }
+
+        names.Sort(StringComparer.Ordinal);
+        return names.ToArray();
+    }
 
     private static string[] ReadComputerApps(JsonObject arguments)
     {

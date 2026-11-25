@@ -73,4 +73,27 @@ public interface IDesktopController
     /// except the shell and system processes. Their windows are never targets.
     /// </summary>
     IReadOnlySet<int> RuHostProcessIds();
+
+    /// <summary>
+    /// Presses (<paramref name="down"/>) or releases modifier keys around one pointer action
+    /// (ADR 0031 amendment 2026-11-25). Callers release in a finally block, so no key stays held
+    /// across actions.
+    /// </summary>
+    void SetModifiers(IReadOnlyList<ushort> keys, bool down) =>
+        throw new ComputerUseException("computer_unavailable", "This desktop cannot hold modifier keys.");
+
+    /// <summary>
+    /// Starts an installed application by its executable name with no arguments; the caller has
+    /// already refused protected and launch-refused apps. Returns null when it started, otherwise
+    /// a short reason.
+    /// </summary>
+    string? Launch(string appName) => "This desktop cannot start applications.";
+
+    /// <summary>The clipboard's Unicode text, or null when it holds no text.</summary>
+    string? ReadClipboardText() =>
+        throw new ComputerUseException("computer_unavailable", "This desktop has no clipboard.");
+
+    /// <summary>Replaces the clipboard with Unicode text.</summary>
+    void WriteClipboardText(string text) =>
+        throw new ComputerUseException("computer_unavailable", "This desktop has no clipboard.");
 }

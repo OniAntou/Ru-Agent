@@ -225,6 +225,10 @@ public sealed partial class InProcessToolGateway
         var imageInput = ReturnsImages(pending.ToolId)
             && _imageInputAccepted is not null
             && await _imageInputAccepted(_runId, cancellationToken).ConfigureAwait(false);
+        // The run's pinned browser profile travels the same way (ADR 0055 amendment 2026-11-25).
+        var persistentBrowserProfile = pending.ToolId == "browser"
+            && _browserPersistentProfile is not null
+            && await _browserPersistentProfile(_runId, cancellationToken).ConfigureAwait(false);
         // A foreground command can detach at its wait limit. Its pump keeps
         // spooling, while the gateway stops admitting frames for this call.
         var publishing = true;
@@ -252,6 +256,7 @@ public sealed partial class InProcessToolGateway
                     {
                         ["run_id"] = _runId,
                         ["image_input"] = imageInput,
+                        ["browser_profile"] = persistentBrowserProfile ? "persistent" : "ephemeral",
                         ["tool_call_id"] = pending.Proposal.ToolCallId.Value,
                         ["tool_id"] = pending.ToolId,
                         ["tool_version"] = pending.ToolVersion,
@@ -353,5 +358,5 @@ public sealed partial class InProcessToolGateway
     /// Tools whose results can carry an image (ADRs 0026 and 0031): a workspace image
     /// read and a computer screenshot. Only these learn the run's image-input pin.
     /// </summary>
-    internal static bool ReturnsImages(string toolId) => toolId is "read" or "computer";
+    internal static bool ReturnsImages(string toolId) => toolId is "read" or "computer" or "browser";
 }

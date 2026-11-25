@@ -1245,6 +1245,167 @@ public sealed partial class PolicyEvaluationTests
         Assert.Equal(reason, evaluation.ReasonCode);
     }
 
+    [Theory]
+    [InlineData("plan", "clipboard_read", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "clipboard_read", "ask", "computer_clipboard_read_requires_approval")]
+    [InlineData("full_access", "clipboard_read", "allow", "full_access_allow")]
+    [InlineData("standard", "clipboard_write", "allow", "computer_action_grant_checked")]
+    [InlineData("standard", "zoom", "allow", "computer_action_grant_checked")]
+    [InlineData("standard", "batch", "allow", "computer_action_grant_checked")]
+    [InlineData("plan", "batch", "deny", "plan_preset_read_only")]
+    public void New_computer_actions_follow_the_preset(string preset, string action, string decision, string reason)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+        var arguments = new JsonObject { ["action"] = action };
+        if (action == "clipboard_write") arguments["text"] = "hello";
+        if (action == "zoom") { arguments["x"] = 0; arguments["y"] = 0; arguments["w"] = 50; arguments["h"] = 50; }
+        if (action == "batch") arguments["steps"] = new JsonArray(new JsonObject { ["action"] = "type", ["text"] = "a", ["app"] = "notepad.exe" });
+
+        var context = factory.Create("computer", "1.0.0", arguments);
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, Now);
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reason, evaluation.ReasonCode);
+        Assert.False(ApprovalRememberPolicy.IsRememberableTool(context));
+    }
+
+    [Fact]
+    public void A_computer_batch_naming_a_protected_app_is_denied_in_every_preset()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(PolicyEvalSnapshots.AllowAllRule()) with { Preset = "full_access" });
+        var context = factory.Create("computer", "1.0.0", new JsonObject
+        {
+            ["action"] = "batch",
+            ["steps"] = new JsonArray(
+                new JsonObject { ["action"] = "click", ["x"] = 1, ["y"] = 1 },
+                new JsonObject { ["action"] = "key", ["keys"] = "enter", ["app"] = "WindowsTerminal.exe" }),
+        });
+        Assert.Equal(new[] { "windowsterminal.exe" }, context.Argv);
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("computer_app_protected", evaluation.ReasonCode);
+
+        Assert.Throws<PolicyContextException>(() => factory.Create("computer", "1.0.0", new JsonObject
+        {
+            ["action"] = "batch",
+            ["steps"] = new JsonArray(new JsonObject { ["action"] = "request_access", ["apps"] = new JsonArray("notepad.exe") }),
+        }));
+        Assert.Throws<PolicyContextException>(() => factory.Create("computer", "1.0.0", new JsonObject { ["action"] = "batch" }));
+        Assert.Throws<PolicyContextException>(() => factory.Create("computer", "1.0.0", new JsonObject { ["action"] = "click", ["launch"] = true }));
+    }
+
+    [Fact]
+    public void Launching_is_its_own_approval_identity_and_never_starts_a_shell()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(PolicyEvalSnapshots.AllowAllRule()) with { Preset = "full_access" });
+        var shell = factory.Create("computer", "1.0.0", new JsonObject
+        {
+            ["action"] = "request_access",
+            ["apps"] = new JsonArray("notepad.exe", "python.exe"),
+            ["launch"] = true,
+        });
+        Assert.Equal("computer_launch_refused",
+            new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, shell, PolicyRequestInvariants.Valid, Now).ReasonCode);
+
+        // A grant remembered without launch never covers a request that starts the app.
+        var rule = PolicyEvalSnapshots.Rule("r-notepad", "allow", PolicyEvalSnapshots.Matcher(
+            toolId: "computer", resolvedExecutable: "computer:request_access", argvPattern: ["notepad.exe"]));
+        var (ruleLease, ruleFactory) = Bind(PolicyEvalSnapshots.SnapshotWith(rule));
+        PolicyEvaluation Request(bool launch) => new PolicySnapshotEvaluator().Evaluate(ruleLease.Snapshot,
+            ruleFactory.Create("computer", "1.0.0", new JsonObject
+            {
+                ["action"] = "request_access",
+                ["apps"] = new JsonArray("notepad.exe"),
+                ["launch"] = launch,
+            }),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("allow", Request(launch: false).Decision);
+        Assert.Equal("ask", Request(launch: true).Decision);
+    }
+
+    [Theory]
+    [InlineData("plan", "deny", "plan_preset_read_only")]
+    [InlineData("standard", "ask", "browser_upload_requires_approval")]
+    [InlineData("full_access", "allow", "full_access_allow")]
+    public void Browser_upload_asks_on_every_call_bound_to_its_workspace_files(string preset, string decision, string reason)
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty(preset));
+        var context = factory.Create("browser", "1.0.0", new JsonObject
+        {
+            ["action"] = "upload",
+            ["ref"] = "e3",
+            ["paths"] = new JsonArray("docs/a.txt", "docs/../docs/a.txt", "b.png"),
+        });
+
+        Assert.Equal(2, context.Argv.Count);
+        Assert.All(context.Argv, path => Assert.StartsWith(LeaseRoot.TrimEnd('\\'), path, StringComparison.OrdinalIgnoreCase));
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, context, PolicyRequestInvariants.Valid, Now);
+        Assert.Equal(decision, evaluation.Decision);
+        Assert.Equal(reason, evaluation.ReasonCode);
+        Assert.False(ApprovalRememberPolicy.IsRememberableTool(context));
+
+        var other = factory.Create("browser", "1.0.0", new JsonObject
+        {
+            ["action"] = "upload",
+            ["ref"] = "e3",
+            ["paths"] = new JsonArray("docs/c.txt"),
+        });
+        Assert.NotEqual(context.IntentHash, other.IntentHash);
+    }
+
+    [Fact]
+    public void Browser_upload_refuses_paths_outside_the_workspace_and_protected_files()
+    {
+        var (lease, factory) = Bind(PolicyEvalSnapshots.Empty("standard"));
+        var outside = Assert.Throws<PolicyContextException>(() => factory.Create("browser", "1.0.0", new JsonObject
+        {
+            ["action"] = "upload",
+            ["ref"] = "e3",
+            ["paths"] = new JsonArray(Path.Combine(Path.GetTempPath(), "secret.txt")),
+        }));
+        Assert.Equal("invalid_arguments", outside.Code);
+        Assert.Throws<PolicyContextException>(() => factory.Create("browser", "1.0.0", new JsonObject { ["action"] = "upload", ["ref"] = "e3" }));
+        Assert.Throws<PolicyContextException>(() => factory.Create("browser", "1.0.0", new JsonObject { ["action"] = "click", ["paths"] = new JsonArray("a.txt") }));
+
+        var protectedUpload = factory.Create("browser", "1.0.0", new JsonObject
+        {
+            ["action"] = "upload",
+            ["ref"] = "e3",
+            ["paths"] = new JsonArray("a.txt", "runtime_descriptor.json"),
+        });
+        var evaluation = new PolicySnapshotEvaluator().Evaluate(lease.Snapshot, protectedUpload, PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("deny", evaluation.Decision);
+        Assert.Equal("protected_path", evaluation.ReasonCode);
+    }
+
+    [Fact]
+    public void A_remembered_browser_open_allows_open_only()
+    {
+        var context = Bind(PolicyEvalSnapshots.Empty("standard")).Factory.Create("browser", "1.0.0", new JsonObject { ["action"] = "open" });
+        var plan = ApprovalRememberPolicy.Build(context, "browser", "1.0.0", "browser_open_requires_approval", externalDirectoryRequested: false);
+        Assert.True(plan.IsRememberable);
+        Assert.Equal("browser:open", plan.DurableMatcher!.ResolvedExecutable);
+
+        var rule = PolicyEvalSnapshots.Rule("r-open", "allow", PolicyEvalSnapshots.Matcher(toolId: "browser", resolvedExecutable: "browser:open"));
+        var (lease, factory) = Bind(PolicyEvalSnapshots.SnapshotWith(rule));
+        var open = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot, factory.Create("browser", "1.0.0", new JsonObject { ["action"] = "open" }), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", open.Decision);
+        var upload = new PolicySnapshotEvaluator().Evaluate(
+            lease.Snapshot,
+            factory.Create("browser", "1.0.0", new JsonObject { ["action"] = "upload", ["ref"] = "e1", ["paths"] = new JsonArray("a.txt") }),
+            PolicyRequestInvariants.Valid,
+            Now);
+        Assert.Equal("ask", upload.Decision);
+
+        // A broad allow keeps covering open as before, but never an upload or a clipboard read.
+        var (allLease, allFactory) = Bind(PolicyEvalSnapshots.SnapshotWith(PolicyEvalSnapshots.AllowAllRule()));
+        PolicyEvaluation Broad(string tool, JsonObject arguments) => new PolicySnapshotEvaluator().Evaluate(
+            allLease.Snapshot, allFactory.Create(tool, "1.0.0", arguments), PolicyRequestInvariants.Valid, Now);
+        Assert.Equal("allow", Broad("browser", new JsonObject { ["action"] = "open" }).Decision);
+        Assert.Equal("ask", Broad("browser", new JsonObject { ["action"] = "upload", ["ref"] = "e1", ["paths"] = new JsonArray("a.txt") }).Decision);
+        Assert.Equal("ask", Broad("computer", new JsonObject { ["action"] = "clipboard_read" }).Decision);
+    }
+
     [Fact]
     public void Computer_access_to_a_protected_app_is_denied_even_in_full_access_with_an_allow_rule()
     {

@@ -288,8 +288,8 @@ they do not make a retired public identity executable.
 | `ask_user` | always advertised (`user.input`) | Host-intercepted: the Broker never receives the call. Parks the run in `WaitingUser` with a durable `input.requested` event; the client answers through `POST /agent/v1/runs/{runId}/inputs/{inputId}`, a replayed or foreign id fails as `input_stale`, and the answer completes the parked call durably before the run resumes |
 | `advisor` (optional `model`, `effort`) | advertised only to a root run pinned with the advisor marker; never to subagents | Host-intercepted: the Broker never receives the call. One tool-less request to the pinned advisor model with the run quoted as a transcript; the advice is an ordinary read-only receipt, and every failure is a named `advisor_*` result the run continues past. See [Advisor](#advisor) |
 | `mcp` (`op=list_servers`, `list_tools`, `call`) | advertised while `~/.ru/mcp.json` declares an enabled server; never to subagents | `list_servers` reads the user's file and is automatic; `list_tools` and `call` start or call a server and take the `ExternalTerminal` decision: `plan` deny, `standard` ask (`mcp_call_requires_approval`), `full_access` automatic; "Always allow" remembers one server and op/tool (`call` with its tool name, or `list_tools`), never a whole server or another op; the card names the server and tool. See [MCP servers](#mcp-servers) |
-| `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `inspect`, `click`, `move`, `drag`, `scroll`, `type`, `key`, `wait`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run. Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
-| `browser` (`action=open`, `navigate`, `snapshot`, `click`, `type`, `fill`, `press`, `eval`, `wait`, `console`, `network`, `close`) | advertised to a root run that pinned the built-in browser marker; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `open` takes the `ExternalTerminal` decision: `standard` ask (`browser_open_requires_approval`), `full_access` automatic; later actions take the `WorkspaceTerminal` decision and fail closed with `browser_not_open` until this session opened a page through that approval. Chromium family over CDP, Firefox over WebDriver BiDi; `RU_BROWSER_EXE` pins one. See [Browser](#browser) |
+| `computer` (`action=list`, `request_access`, `focus`, `screenshot`, `zoom`, `inspect`, `click`, `move`, `drag`, `scroll`, `type`, `key`, `wait`, `batch`, `clipboard_read`, `clipboard_write`) | advertised only to a root run that pinned the computer-use opt-in with image input; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `request_access` takes the `ExternalTerminal` decision: `standard` ask (`computer_access_requires_approval`), `full_access` automatic; other actions are allowed by policy and checked against the session's app grants when they run; `clipboard_read` asks on every call (`computer_clipboard_read_requires_approval`). Protected apps are refused in every preset (`computer_app_protected`). See [Computer use](#computer-use) |
+| `browser` (`action=open`, `navigate`, `back`, `forward`, `reload`, `snapshot`, `find`, `screenshot`, `click`, `hover`, `type`, `fill`, `select`, `press`, `scroll`, `dialog`, `eval`, `wait`, `console`, `network`, `tabs`, `new_tab`, `switch_tab`, `close_tab`, `upload`, `close`, `batch`) | advertised to a root run that pinned the built-in browser marker; never to subagents or `run_code` | every action is a mutation, so `plan` denies all of them; `open` takes the `ExternalTerminal` decision: `standard` ask (`browser_open_requires_approval`), `full_access` automatic; later actions take the `WorkspaceTerminal` decision and fail closed with `browser_not_open` until this session opened a page through that approval; `upload` asks on every call (`browser_upload_requires_approval`). Chromium family over CDP, Firefox over WebDriver BiDi; `RU_BROWSER_EXE` pins one. See [Browser](#browser) |
 | connector libraries | not advertised | experimental/unwired |
 
 Large structured tool results are projected into bounded prompt references while
@@ -1009,9 +1009,10 @@ Per tool, "Always allow" and session memory remember: for file tools, the canoni
 outside folder, the target's own folder as a durable pattern; for `run_process` and `powershell`,
 the resolved executable, argv and canonical cwd (a `powershell` script exactly); for MCP `call` or
 `list_tools`, the server and tool (a remembered listing never covers a call); for computer use, the exact
-app list, so a request that names other apps is not covered.
+app list, so a request that names other apps is not covered (a request with `launch` is its own
+identity); for the browser, `open` only.
 `apply_patch`, `file_restore`, `run_code`, terminal read and stop, subagent controls,
-web and skill calls are never remembered, and `allow_always` on them is refused with
+web and skill calls, browser uploads and computer clipboard reads are never remembered, and `allow_always` on them is refused with
 `invalid_approval_command`. Rules saved by earlier builds for MCP or computer use carry
 no identity and no longer authorize, so those calls ask again. An allow of a rememberable call additionally remembers the approved
 intent in
@@ -1147,6 +1148,28 @@ accepts images gets the tool, so a run never changes mid-way.
   the Broker resolves the target window again.
 - `wait` pauses for `ms` (100 to 10,000, default 1,000) and reports the focused app, with its
   title only when the app has access. The stop hotkey ends a wait at once.
+- `zoom` takes `x`, `y`, `w`, `h` (at least 8 px each) in pixels of a monitor's latest
+  screenshot and returns that region at up to full physical resolution, masked like a
+  screenshot, to read small text on a high-resolution monitor. It needs a screenshot first and
+  keeps the screenshot's frame, so later pointer coordinates are unchanged.
+- `click`, `drag` and `scroll` accept `modifiers` (`ctrl`, `shift`, `alt`, joined with `+`),
+  pressed for that action only and always released, even when it fails.
+- `request_access` with `launch: true` also starts each requested app that is not running,
+  with no arguments, and waits up to ten seconds for its window; the result lists `launched`,
+  `launch_failed` and `not_running`. The executable is found through App Paths, the Windows
+  directories, absolute PATH entries and app execution aliases, never Ru's working directory.
+  Shells, interpreters and script or installer hosts (for example `python`, `node`, `wsl`,
+  `wscript`, `mshta`, `msiexec`) are never started (`computer_launch_refused`). A launching
+  request is approved separately from a plain grant, and "Always allow" on one does not cover
+  the other. An app whose window belongs to another executable (Calculator's `calc.exe` starts
+  `CalculatorApp.exe`) stays in `not_running`; call `list` and request access for that name.
+- `clipboard_write` sets up to 10,000 characters of clipboard text, for example to paste a
+  long text with `ctrl+v`. `clipboard_read` returns up to 10,000 characters (`truncated_from`
+  when longer, `empty` when the clipboard holds no text) and asks in `standard` on every call.
+- `batch` runs 1 to 10 `focus`, `click`, `move`, `drag`, `scroll`, `type`, `key`, `wait` or
+  `clipboard_write` steps in one action and stops at the first failure, naming the step
+  (`Step 2 (click): …`). Each step checks its target as a single call does; an `app` that a
+  step names is checked by policy for the whole batch.
 
 UWP apps such as Calculator are named by their own executable, not by
 `ApplicationFrameHost.exe`, which can never be granted. The Windows 11 Start menu belongs to
@@ -1164,8 +1187,9 @@ ends or is idle for two minutes), `computer_desktop_unavailable` (locked or secu
 `computer_stop_unavailable` (the stop hotkey could not be registered),
 `computer_stopped_by_user`, `computer_root_run_required` (a subagent or program),
 `computer_window_not_visible` (inspect found the app minimized, covered or off every monitor),
-`computer_inspect_timeout`, `computer_inspect_failed` and `image_unsupported_by_model` (its
-detail points a text-only model at `inspect`).
+`computer_inspect_timeout`, `computer_inspect_failed`, `computer_launch_refused`,
+`computer_clipboard_unavailable` (another program held the clipboard) and
+`image_unsupported_by_model` (its detail points a text-only model at `inspect`).
 
 The tool is the only path through which these checks apply. A `powershell` or `run_code`
 script runs as the user and can drive UI Automation or synthetic input itself, which bypasses
@@ -1192,8 +1216,14 @@ subagents and `run_code` never receive it.
 - `open` starts the browser with an ephemeral `--user-data-dir` under
   `%LOCALAPPDATA%\Ru\browser` (Chromium family) or `-profile` under the same root (Firefox) and,
   optionally, navigates to `url`. The profile holds no cookies or sign-ins and is deleted on
-  `close` and on Host exit. One browser process serves the Host, one page serves each agent
-  session.
+  `close` and on Host exit. One browser process serves the Host, and each agent session has
+  its own tabs. With **Customize → Plugins → Keep browser sign-ins** (or `/browser keep`) on,
+  new runs use Ru's persistent profile under `%LOCALAPPDATA%\Ru\browser-profile\<family>`
+  instead: Ru's own profile, never your browser's, kept between sessions so sites signed in
+  there stay signed in. `open` then reports `profile: persistent`. To sign in yourself, ask Ru to
+  open the browser with `headless: false`: when no page is open the browser restarts with a
+  visible window, and you sign in there. Only one Ru Host can run the profile at a time
+  (`browser_profile_in_use`); delete that folder to sign out of everything.
 - The Chromium family (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) is preferred when
   several browsers are installed and is driven over CDP. Firefox 129 or newer is driven over
   its built-in WebDriver BiDi server (no geckodriver or Selenium); an older Firefox fails as
@@ -1213,21 +1243,56 @@ subagents and `run_code` never receive it.
   `network` return bounded recent console entries and network requests. `wait` pauses 100 to
   10,000 ms. `close` closes the session's page; calling it again is a no-op.
 - `batch` runs 1 to 10 page actions in one tool call: `steps` is an array of objects with the
-  same fields as a single action. `open` and `close` cannot be nested, and a batch needs the
-  page opened by a prior `open`. Steps run in order on that page and stop at the first failure;
+  same fields as a single action. `open`, `close`, `screenshot`, the tab actions and `upload`
+  cannot be nested, and a batch needs the page opened by a prior `open`. Steps run in order on
+  the active tab and stop at the first failure;
   the failure detail names the step (`Step 2 (click): …`). Use it to fill a form, click and
   verify in one model step instead of paying one model step per action; take a snapshot
   before a batch when the steps need refs. The whole batch is one policy decision: `plan`
   denies it, `standard` allows it after `open` under the same session grant as a single
   action, and `full_access` allows it.
+- `screenshot` returns a PNG of the viewport (1280×800 by default) or of one `ref` scrolled
+  into view, through the [image read](#image-reads) path; a model that does not accept images
+  gets `image_unsupported_by_model`.
+- `find` takes `query` and lists up to 30 visible elements whose accessible name or text
+  contains it (`truncated_from` when more match), deepest match first. Their refs are added to
+  the latest snapshot's, so earlier refs stay valid; a new snapshot numbers them again.
+- `hover` moves the trusted pointer over a ref. `select` picks an option of a `<select>` ref by
+  `value` (its value or visible label; `browser_select_invalid` lists the options when none
+  matches). `scroll` scrolls a `ref` into view, or scrolls the scrollable area under the
+  viewport centre (the page when none) by `direction` and `amount` steps of 100 px (default 5);
+  the result reports the new offsets and `at_end` when nothing moved.
+- `back`, `forward` and `reload` move through the active tab's history and wait until another
+  document or url has loaded; `browser_timeout` after 10 s (20 s for reload) usually means
+  there is no page in that direction.
+- JavaScript dialogs never block a page: alert and beforeunload are accepted and confirm and
+  prompt dismissed, unless `dialog` with `accept` (and `text` for a prompt) set the answer for
+  the next dialog. Every answered dialog appears in the next result as `dialogs` (`kind`,
+  `message`, `accepted`).
+- A session has up to 8 tabs. A page that opens another (`window.open`, `target=_blank`) adds a
+  tab, reported as `new_tabs` (closed with `reason: tab_limit` past the limit). `tabs` lists
+  them with url, title and the `active` one; `new_tab` opens one (optionally at `url`) and
+  makes it active; `switch_tab` and `close_tab` take `tab` (1-based; close_tab defaults to the
+  active tab and never closes the last one). Every page action works on the active tab, and
+  `close` closes all of them.
+- `upload` sets `paths` (1 to 10 workspace files, each at most 100 MB) on an
+  `<input type=file>` ref; one path unless the input takes several. Paths outside the workspace
+  are refused, a protected file is denied in `plan` and `standard`, and `standard` asks on
+  every upload, bound to those exact files. The approval names the files, not the page that
+  receives them, so check which page is open before you approve. An allow rule covers uploads only
+  when it names `browser:upload`; a broader allow rule never does.
 - Named failures include `browser_unavailable` (no Edge/Chrome found), `browser_launch_failed`,
   `browser_not_open`, `browser_invalid_url`, `browser_element_not_found`, `browser_ref_invalid`,
-  `browser_navigation_failed`, `browser_timeout`, `browser_eval_failed`, `browser_key_invalid`
-  and `browser_arguments_invalid`.
+  `browser_navigation_failed`, `browser_timeout`, `browser_eval_failed`, `browser_key_invalid`,
+  `browser_arguments_invalid`, `browser_screenshot_failed`, `browser_select_invalid`,
+  `browser_tab_invalid`, `browser_tab_limit`, `browser_upload_target_invalid`,
+  `browser_upload_paths_required`, `browser_upload_path_invalid`, `browser_upload_file_missing`,
+  `browser_upload_file_too_large` and `browser_profile_in_use`.
 
 `plan` denies every browser action. In `standard`, `open` asks once and the approved call
 starts the session's page; later actions are allowed by policy and fail closed until that page
-exists. The approval is single-use and is not remembered as a durable rule in v1. The browser
+exists. "Always allow" on `open` saves a project rule bound to opening the browser, so later
+sessions open without asking; it never covers `upload`, which asks every time. The browser
 runs with the user's rights, and `eval` runs arbitrary page JavaScript, so treat a snapshot or
 a page's content as untrusted; the approval on `open` is the boundary. Ru does not confine what
 a visited page does. The MCP recipe below still exists for Playwright's full API, Chrome

@@ -25,6 +25,9 @@ public enum ApprovalIdentityClass
     /// <summary>A computer-use app grant (request_access or focus), bound with its app list.</summary>
     ComputerGrant,
 
+    /// <summary>Opening the built-in browser, bound with its operation (ADR 0055 amendment 2026-11-25).</summary>
+    BrowserOpen,
+
 }
 
 /// <summary>
@@ -116,9 +119,10 @@ public static class ApprovalRememberPolicy
         "run_process" or "powershell" => ApprovalIdentityClass.ProcessLaunch,
         "mcp" => ApprovalIdentityClass.McpCall,
         "computer" => ApprovalIdentityClass.ComputerGrant,
+        "browser" => ApprovalIdentityClass.BrowserOpen,
         "apply_patch" or "file_restore" or "run_code" or "terminal_read" or "terminal_stop"
             or "help" or "todo_write" or "web_search" or "web_fetch" or "skill" or "ask_user" or "advisor"
-            or "agent_spawn" or "agent_send" or "agent_wait" or "agent_cancel" or "agent_apply" or "browser"
+            or "agent_spawn" or "agent_send" or "agent_wait" or "agent_cancel" or "agent_apply"
             => ApprovalIdentityClass.NotRememberable,
         _ => ApprovalIdentityClass.Unknown,
     };
@@ -135,8 +139,16 @@ public static class ApprovalRememberPolicy
 
     /// <summary>True when an allow rule is missing the identity that <see cref="RequiresProcessIdentity"/> needs.</summary>
     internal static bool AllowRuleLacksProcessIdentity(MatcherSpec matcher, PolicyContext context) =>
-        RequiresProcessIdentity(context)
-        && (matcher.ResolvedExecutable is null || matcher.ArgvPattern.Count == 0);
+        (RequiresProcessIdentity(context)
+            && (matcher.ResolvedExecutable is null || matcher.ArgvPattern.Count == 0))
+        // A browser upload and a clipboard read ask on every call (ADR 0055 and ADR 0031 amendments
+        // 2026-11-25): only an allow rule that names that exact operation may cover them, so a broad
+        // allow rule never sends workspace files or the clipboard on its own.
+        || (matcher.ResolvedExecutable is null && IsPerCallAsk(context));
+
+    private static bool IsPerCallAsk(PolicyContext context) =>
+        (string.Equals(context.ToolId, "browser", StringComparison.Ordinal) && context.ToolOp is "upload")
+        || (string.Equals(context.ToolId, "computer", StringComparison.Ordinal) && context.ToolOp is "clipboard_read");
 
     /// <summary>
     /// True when the approved call's tool class may be remembered at all. A remembered pattern can still be
@@ -154,6 +166,8 @@ public static class ApprovalRememberPolicy
         ApprovalIdentityClass.ProcessLaunch => string.Equals(context.OperationClass, PolicyOperationClasses.Terminal, StringComparison.Ordinal),
         ApprovalIdentityClass.McpCall => context.ToolOp is "call" or "list_tools",
         ApprovalIdentityClass.ComputerGrant => context.ToolOp is "request_access" or "focus",
+        // Only open is remembered: an upload hands files to a page and asks every time.
+        ApprovalIdentityClass.BrowserOpen => context.ToolOp is "open",
         _ => false,
     };
 
@@ -165,6 +179,7 @@ public static class ApprovalRememberPolicy
         ApprovalIdentityClass.ProcessLaunch => new(Path: false, Executable: true, Argv: true, Cwd: true),
         ApprovalIdentityClass.McpCall or ApprovalIdentityClass.ComputerGrant
             => new(Path: false, Executable: true, Argv: true, Cwd: false),
+        ApprovalIdentityClass.BrowserOpen => new(Path: false, Executable: true, Argv: false, Cwd: false),
         _ => throw new ArgumentOutOfRangeException(nameof(identity), identity, "not a rememberable identity class"),
     };
 

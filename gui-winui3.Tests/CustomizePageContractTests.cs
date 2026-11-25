@@ -35,6 +35,11 @@ public sealed class CustomizePageContractTests
             computerUse.Ancestors(),
             element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "PluginsPanel");
         Assert.Equal("OnComputerUseToggled", computerUse.Attribute("Toggled")?.Value);
+        var browserProfile = GuiSource.Require(document, "BrowserProfileToggle");
+        Assert.Contains(
+            browserProfile.Ancestors(),
+            element => (string?)element.Attribute(GuiSource.Xaml + "Name") == "PluginsPanel");
+        Assert.Equal("OnBrowserProfileToggled", browserProfile.Attribute("Toggled")?.Value);
     }
 
     [Fact]

@@ -782,8 +782,78 @@ public sealed partial class ToolExecutionService
             return ToolExecutionOutcome.Failed("browser_unavailable", "Browser control is not available in this host.");
         }
 
-        return await browser.ExecuteAsync(context.RunId, context.SessionId, arguments, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string>? uploadPaths = null;
+        if (arguments["action"] is JsonValue action
+            && action.TryGetValue<string>(out var name)
+            && string.Equals(name, BrowserActions.Upload, StringComparison.Ordinal))
+        {
+            try
+            {
+                uploadPaths = ResolveUploadPaths(context, arguments);
+            }
+            catch (ToolExecutionException error)
+            {
+                return ToolExecutionOutcome.Failed(error.Message, UploadFailureDetail(error.Message));
+            }
+        }
+
+        var options = new BrowserCallOptions(context.ImageInputAccepted, uploadPaths, context.BrowserPersistentProfile);
+        return await browser.ExecuteAsync(context.RunId, context.SessionId, arguments, cancellationToken, options).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Resolves an approved upload's paths again at execution (ADR 0055 amendment 2026-11-25): each
+    /// must still be an existing workspace file within the size bound, and a protected file is
+    /// refused unless the preset opens protected paths. The policy approval bound the same files.
+    /// </summary>
+    private List<string> ResolveUploadPaths(ToolExecutionContext context, JsonObject arguments)
+    {
+        if (arguments["paths"] is not JsonArray paths || paths.Count == 0 || paths.Count > BrowserLimits.MaxUploadFiles)
+        {
+            throw new ToolExecutionException("browser_upload_paths_required");
+        }
+
+        var profile = ActivePolicyProfile(context);
+        var root = ToolsFor(context).MutationResolver.CanonicalRoot;
+        var resolver = new CanonicalPathResolver(root, allowProtectedPaths: profile is not null && AgentPolicyProfileCatalog.OpensProtectedPaths(profile));
+        var resolved = new List<string>(paths.Count);
+        foreach (var item in paths)
+        {
+            if (item is not JsonValue value || !value.TryGetValue<string>(out var input) || string.IsNullOrWhiteSpace(input))
+            {
+                throw new ToolExecutionException("browser_upload_paths_required");
+            }
+
+            ResolvedPath path;
+            try
+            {
+                path = resolver.Resolve(input);
+            }
+            catch (ArgumentException)
+            {
+                throw new ToolExecutionException("browser_upload_path_invalid");
+            }
+
+            if (path.IsProtected) throw new ToolExecutionException("protected_path");
+            if (!path.IsInsideWorkspace) throw new ToolExecutionException("browser_upload_path_invalid");
+            var file = new FileInfo(path.CanonicalPath);
+            if (!file.Exists) throw new ToolExecutionException("browser_upload_file_missing");
+            if (file.Length > BrowserLimits.MaxUploadFileBytes) throw new ToolExecutionException("browser_upload_file_too_large");
+            if (!resolved.Contains(path.CanonicalPath, StringComparer.OrdinalIgnoreCase)) resolved.Add(path.CanonicalPath);
+        }
+
+        return resolved;
+    }
+
+    private static string UploadFailureDetail(string code) => code switch
+    {
+        "browser_upload_paths_required" => "upload needs paths: 1 to " + BrowserLimits.MaxUploadFiles + " workspace files.",
+        "browser_upload_path_invalid" => "upload takes files inside the workspace only.",
+        "browser_upload_file_missing" => "An upload path is not an existing file.",
+        "browser_upload_file_too_large" => "An upload file is larger than " + (BrowserLimits.MaxUploadFileBytes / (1024 * 1024)) + " MB.",
+        "protected_path" => "An upload path is protected.",
+        _ => "The upload paths could not be used.",
+    };
 
     private async ValueTask<ToolExecutionOutcome> ExecuteReadAsync(
         ToolExecutionContext context,

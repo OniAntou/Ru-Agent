@@ -103,6 +103,54 @@ Amendment 2026-11-23 (owner asked for faster multi-action steps):
   took 2.49 s and two events on Chromium, and 3.23 s / two events on Firefox. A real provider
   saves more because every removed tool call also removes a model round trip.
 
+Amendment 2026-11-25 (owner asked to upgrade browser use and chose the security options for
+profile, approval and uploads):
+
+- **Seeing and moving through the page.** `screenshot` returns a PNG of the viewport or of one
+  ref through the ADR 0026 `ToolImage` path. The Host now passes the run's pinned image-input
+  decision to `browser` as it does to `read` and `computer`; a text-only model gets
+  `image_unsupported_by_model`. `scroll` scrolls a ref into view, or the scrollable area under
+  the viewport centre (the page when none) by `direction` and `amount` steps of 100 px. `hover`
+  moves the trusted pointer over a ref. `select` picks a `<select>` option by value or label.
+  `back`, `forward` and `reload` run in the page and wait until another document or url has
+  loaded (`browser_timeout` after 10 s, 20 s for reload). `find` adds refs for visible elements
+  whose name or text contains `query`, appended to the snapshot's refs so those stay valid.
+  These run through shared page scripts, so both engine families answer the same way.
+- **Dialogs never block.** Each engine answers a JavaScript dialog the moment it opens: alert
+  and beforeunload are accepted, confirm and prompt dismissed, unless `dialog` set `accept` (and
+  `text` for a prompt) for the next one. Firefox starts its BiDi session with
+  `unhandledPromptBehavior: ignore` so the engine, not the browser, answers. Every answered
+  dialog is reported in the next result's `dialogs`.
+- **Tabs.** A session holds up to eight tabs. Pages a session page opens itself (`window.open`,
+  `target=_blank`) become tabs and are reported in `new_tabs`; past the limit they are closed.
+  `tabs`, `new_tab`, `switch_tab` and `close_tab` manage them, every page action works on the
+  active tab, and `close` closes them all. Chromium attaches popups through target discovery,
+  Firefox through `browsingContext.contextCreated` with `originalOpener`.
+- **Uploads.** `upload` sets 1 to 10 workspace files on an `<input type=file>` ref. The policy
+  context resolves `paths` like a file target: a path outside the workspace is
+  `invalid_arguments`, a protected file becomes the target so `plan` and `standard` deny it
+  (`protected_path`), and the canonical paths travel as argv, so the approval binds the exact
+  files. `standard` asks on every upload (`browser_upload_requires_approval`), `full_access`
+  allows, and an upload is never remembered. Execution resolves the paths again and requires
+  existing files of at most 100 MB.
+- **Ru's persistent profile.** A Host setting, `browser_persistent_profile`, is off by default.
+  Like the computer-use opt-in it is read when a new run pins its selection, which then
+  carries `_ru_browser_profile_v1`; the marker is removed before provider options and a
+  malformed one fails closed. A pinned run's sessions use a second engine whose browser runs
+  over `%LOCALAPPDATA%\Ru\browser-profile\<chromium|firefox>`: Ru's own profile, never the
+  user's, kept between sessions so sign-ins made there persist. A lock file keeps a second Host
+  from starting the same profile (`browser_profile_in_use`), a stale endpoint file is deleted
+  before launch, and disposal asks the browser to close before the process tree is killed so
+  cookies are written. `open` reports `profile: persistent`. To sign in, the user asks for a
+  visible window (`headless: false`): when no page is open, an engine running headless restarts
+  visibly; while other pages are open it keeps its current mode.
+- **Remembered `open`.** "Always allow" on `open` now saves a project rule bound to
+  `browser:open`, so later sessions open without asking. Uploads are never remembered, and an
+  allow rule covers an upload only when it names `browser:upload`, so a broad allow rule (which
+  still covers `open` and page actions as before) never hands files to a page. The approval binds
+  the files, not the page that receives them.
+- `batch` accepts the new page actions except `screenshot`, the tab actions and `upload`.
+
 ## Alternatives and consequences
 
 - **MCP browser server only.** Rejected as the product path: third-party code, a Node.js

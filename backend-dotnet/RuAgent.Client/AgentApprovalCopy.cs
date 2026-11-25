@@ -35,6 +35,10 @@ public static class AgentApprovalCopy
     public const string RuleAsks = "rule_asks";
     public const string McpCallRequiresApproval = "mcp_call_requires_approval";
     public const string ComputerAccessRequiresApproval = "computer_access_requires_approval";
+    public const string ComputerLaunchRequiresApproval = "computer_launch_requires_approval";
+    public const string ComputerClipboardReadRequiresApproval = "computer_clipboard_read_requires_approval";
+    public const string BrowserOpenRequiresApproval = "browser_open_requires_approval";
+    public const string BrowserUploadRequiresApproval = "browser_upload_requires_approval";
 
     private static readonly Dictionary<string, string> Table = new(StringComparer.Ordinal)
     {
@@ -52,6 +56,14 @@ public static class AgentApprovalCopy
             "This starts or calls one of your MCP servers, a program that runs with your rights.",
         [ComputerAccessRequiresApproval] =
             "This lets Ru see and control these apps on your screen for the rest of the session. Press Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) to stop it.",
+        [ComputerLaunchRequiresApproval] =
+            "This starts these apps if they are not running and lets Ru see and control them for the rest of the session. Press Ctrl+Alt+Backspace (or Ctrl+Alt+Pause) to stop it.",
+        [ComputerClipboardReadRequiresApproval] =
+            "This sends the text on your clipboard to the model. It may hold something you copied, such as a password.",
+        [BrowserOpenRequiresApproval] =
+            "This opens Ru's browser and lets Ru navigate, click, type and run page scripts in it for the rest of the session.",
+        [BrowserUploadRequiresApproval] =
+            "This gives these workspace files to the page open in Ru's browser.",
         [TerminalUnknownExecutable] =
             "Ru has not recognized the executable for this terminal command.",
         [TerminalProtectedPathRequiresApproval] =

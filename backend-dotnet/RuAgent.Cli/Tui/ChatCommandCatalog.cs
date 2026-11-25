@@ -12,6 +12,7 @@ public static class ChatCommandCatalog
         new("/reasoning", "Show or set the active model's reasoning effort", "/reasoning [effort]"),
         new("/advisor", "Choose a model the agent may consult in new runs", "/advisor [off | <model> | <provider> <model>]"),
         new("/computer", "Show or set computer use for new turns", "/computer [on|off]"),
+        new("/browser", "Keep or clear browser sign-ins for new turns", "/browser [keep|fresh]"),
         new("/preset", "Choose permissions or manage remembered rules", "/preset [plan|standard|full_access|rules]"),
         new("/new", "Start a new session", "/new"),
         new("/sessions", "Browse saved sessions and reopen by id", "/sessions [query|id:<session-id>]"),

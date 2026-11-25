@@ -25,6 +25,11 @@ namespace RuApp.Models
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool ComputerUseEnabled { get; set; }
 
+        /// <summary>The built-in browser's persistent-profile opt-in (ADR 0055); absent in older Hosts, so off.</summary>
+        [JsonPropertyName("browser_persistent_profile")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        public bool BrowserPersistentProfile { get; set; }
+
         [JsonPropertyName("custom_model")]
         public string CustomModel { get; set; } = string.Empty;
 

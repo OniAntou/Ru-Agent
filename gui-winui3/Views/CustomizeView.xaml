@@ -365,6 +365,26 @@
                                               AutomationProperties.Name="Computer use" />
                             </Grid>
                         </Border>
+                        <Border Style="{StaticResource FluentCardStyle}" Padding="16,12">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                                <Border Grid.Column="0" Width="32" Height="32" VerticalAlignment="Top"
+                                        CornerRadius="{StaticResource AppControlCornerRadius}"
+                                        Background="{StaticResource RuSurfaceBrush}">
+                                    <FontIcon Glyph="&#xE774;" FontSize="14" Foreground="{StaticResource RuMutedBrush}"
+                                              AutomationProperties.AccessibilityView="Raw" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="Keep browser sign-ins" FontFamily="{StaticResource RuUiFontFamily}" FontSize="13.5"
+                                               FontWeight="SemiBold" Foreground="{StaticResource RuInkBrush}" />
+                                    <TextBlock FontSize="12.5" Foreground="{StaticResource RuMutedBrush}" TextWrapping="Wrap"
+                                               Text="Ru's built-in browser keeps its own profile between sessions, so sites you sign in to there stay signed in, for new turns. It never uses your own browser's profile. Off: every session starts with no cookies." />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="BrowserProfileToggle" Grid.Column="2" VerticalAlignment="Center"
+                                              OnContent="" OffContent="" MinWidth="0"
+                                              Toggled="OnBrowserProfileToggled"
+                                              AutomationProperties.Name="Keep browser sign-ins" />
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>

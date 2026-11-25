@@ -20,6 +20,7 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
 
     /// <summary>The run's pinned image-input decision (ADR 0026); absent means no images.</summary>
     private readonly Func<string, CancellationToken, Task<bool>>? _imageInputAccepted;
+    private readonly Func<string, CancellationToken, Task<bool>>? _browserPersistentProfile;
     private readonly Func<BrokerRunLeaseIdentity, string, JsonObject, CancellationToken, Task>? _observeToolResult;
     private readonly object _sync = new();
     private readonly Dictionary<string, PendingExecution> _pending = new(StringComparer.Ordinal);
@@ -44,7 +45,8 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
         BrokerApprovalState? approvals = null,
         Lazy<Subagents.SubagentControlDispatcher>? subagents = null,
         Func<string, CancellationToken, Task<bool>>? imageInputAccepted = null,
-        Func<BrokerRunLeaseIdentity, string, JsonObject, CancellationToken, Task>? observeToolResult = null)
+        Func<BrokerRunLeaseIdentity, string, JsonObject, CancellationToken, Task>? observeToolResult = null,
+        Func<string, CancellationToken, Task<bool>>? browserPersistentProfile = null)
     {
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
         _lease = lease ?? throw new ArgumentNullException(nameof(lease));
@@ -58,6 +60,7 @@ public sealed partial class InProcessToolGateway : IToolGateway, IToolRunCancell
         _approvals = approvals;
         _subagents = subagents;
         _imageInputAccepted = imageInputAccepted;
+        _browserPersistentProfile = browserPersistentProfile;
         _observeToolResult = observeToolResult;
         _runId = lease.RunId;
         _generation = lease.Generation;

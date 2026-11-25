@@ -11,7 +11,8 @@ public sealed record ToolExecutionContext(
     int DeadlineMs,
     IReadOnlySet<string>? SessionScopes = null,
     string RunId = "",
-    bool ImageInputAccepted = false)
+    bool ImageInputAccepted = false,
+    bool BrowserPersistentProfile = false)
 {
     internal Terminal.TerminalOutputDeltaHandler? TerminalOutput { get; init; }
     internal Terminal.CanonicalCommandIntent? AuthorizedTerminalIntent { get; init; }

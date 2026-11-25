@@ -46,7 +46,8 @@ Outside what the mode allows, Ru stops and asks. You can:
 - **Always allow**, which saves the approved target as a project rule: a terminal command (its program
   and up to two leading words, or the exact script for PowerShell), an outside folder (its subfolders
   are covered; a drive or share root is never saved), an MCP server tool, the exact set of computer-use
-  apps, or a language-server launch. A tool outside that list, such as a patch or `run_code`, can only
+  apps (with or without starting them, each its own rule), opening the built-in browser, or a
+  language-server launch. A tool outside that list, such as a patch or `run_code`, can only
   be allowed once.
 - **Deny.**
 
@@ -63,18 +64,26 @@ it controls an app, by name, and the answer lasts for the session. Screenshots a
 element lists Ru reads (`inspect`) show only the visible windows of apps it may control; in
 `standard` those are the apps you approved; `plan` never controls the desktop; `full_access` controls
 any app without asking. Ru's own windows, terminals, and sign-in or elevation prompts are
-never reachable. Press **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) to stop it at once. See
+never reachable. When Ru asks to control apps it may also ask to start them; that is a separate
+question, and it never starts a shell, interpreter or script host. Reading the clipboard asks
+every time in `standard`, because it may hold something you copied such as a password; putting
+text on the clipboard does not ask. Press **Ctrl+Alt+Backspace** (or **Ctrl+Alt+Pause** on keyboards that have it) to stop it at once. See
 [Computer use](../operations/agent-tools.md#computer-use).
 
 ## Browser
 
 The built-in browser tool is available to new Agent runs; no setting turns it on. It launches
 an installed Chromium browser (Edge, Chrome, Brave, Vivaldi, Opera, Chromium, Arc) or Mozilla
-Firefox and drives one isolated page per session, with no cookies or sign-ins and no MCP server
-or Node.js. `RU_BROWSER_EXE` pins a specific browser when several are installed. In `standard`,
-Ru asks once before it opens the browser; that answer lets this session navigate, click, type
-and run page JavaScript, so later browser actions are not asked again. `plan` never opens a
-browser, and subagents do not receive the tool. Treat page content as untrusted: a page or a
+Firefox and drives up to eight tabs per session, with no MCP server or Node.js. By default the
+profile starts with no cookies or sign-ins; **Customize → Plugins → Keep browser sign-ins** (or
+`/browser keep`) gives new runs Ru's own persistent profile, so sites you sign in to there stay
+signed in; to sign in, ask Ru to open the browser in a visible window. It is never your own
+browser's profile. `RU_BROWSER_EXE` pins a specific browser
+when several are installed. In `standard`, Ru asks before it opens the browser; that answer
+lets this session navigate, click, type and run page JavaScript, so later browser actions are
+not asked again, and "Always allow" lets later sessions open it without asking. Uploading a
+file to a page asks every time, names the exact workspace files, and never covers files
+outside the workspace. `plan` never opens a browser, and subagents do not receive the tool. Treat page content as untrusted: a page or a
 script can address the Agent but grants no permission. See
 [Browser](../operations/agent-tools.md#browser).
 

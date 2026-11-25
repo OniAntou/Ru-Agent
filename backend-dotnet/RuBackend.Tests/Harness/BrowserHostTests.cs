@@ -29,6 +29,38 @@ public sealed class BrowserHostTests
     }
 
     [Fact]
+    public void The_persistent_profile_is_pinned_only_with_the_setting_and_removed_before_providers()
+    {
+        static RuBackend.Business.Settings.SettingsSnapshot Settings(JsonObject raw) =>
+            new(raw, "OpenAI", "model", string.Empty, string.Empty, "model", string.Empty);
+
+        var off = new JsonObject();
+        BrowserPolicy.PinNew(off, Settings(new JsonObject()));
+        Assert.False(off.ContainsKey(BrowserPolicy.ProfilePinField));
+
+        var on = new JsonObject();
+        BrowserPolicy.PinNew(on, Settings(new JsonObject { [BrowserPolicy.ProfileSettingField] = true }));
+        Assert.True(BrowserPolicy.IsPersistentProfilePinned(Selection(on.ToJsonString())));
+        Assert.False(BrowserPolicy.IsPersistentProfilePinned(Selection("{\"_ru_browser_profile_v1\":true}")));
+        Assert.True(BrowserPolicy.TakePinnedCapability(on));
+        Assert.Empty(on);
+        Assert.ThrowsAny<Exception>(() => BrowserPolicy.TakePinnedCapability(new JsonObject
+        {
+            [BrowserPolicy.PinField] = true,
+            [BrowserPolicy.ProfilePinField] = "yes",
+        }));
+
+        var raw = new JsonObject();
+        BrowserPolicy.Apply(new JsonObject { [BrowserPolicy.ProfileSettingField] = true }, raw);
+        Assert.True(raw[BrowserPolicy.ProfileSettingField]!.GetValue<bool>());
+        Assert.Throws<ArgumentException>(() => BrowserPolicy.Apply(new JsonObject { [BrowserPolicy.ProfileSettingField] = "on" }, raw));
+    }
+
+    [Fact]
+    public void Browser_calls_receive_the_image_input_decision() =>
+        Assert.True(InProcessToolGateway.ReturnsImages("browser"));
+
+    [Fact]
     public void The_tool_is_advertised_only_to_a_pinned_root_run()
     {
         static bool Advertised(AgentToolRuntimeAvailability availability) =>
@@ -45,6 +77,11 @@ public sealed class BrowserHostTests
     [InlineData("snapshot", ToolAccessKind.ReadOnly)]
     [InlineData("console", ToolAccessKind.ReadOnly)]
     [InlineData("network", ToolAccessKind.ReadOnly)]
+    [InlineData("screenshot", ToolAccessKind.ReadOnly)]
+    [InlineData("find", ToolAccessKind.ReadOnly)]
+    [InlineData("tabs", ToolAccessKind.ReadOnly)]
+    [InlineData("upload", ToolAccessKind.Terminal)]
+    [InlineData("select", ToolAccessKind.Terminal)]
     [InlineData("open", ToolAccessKind.Terminal)]
     [InlineData("navigate", ToolAccessKind.Terminal)]
     [InlineData("click", ToolAccessKind.Terminal)]

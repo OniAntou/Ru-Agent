@@ -23,6 +23,9 @@ public sealed record BrowserConsoleEntry(string Level, string Text);
 
 public sealed record BrowserNetworkEntry(string Method, string Url, int? Status, string ResourceType);
 
+/// <summary>A JavaScript dialog the engine answered: its kind, bounded message and the answer it gave.</summary>
+public sealed record BrowserDialog(string Kind, string Message, bool Accepted);
+
 /// <summary>
 /// The browser seam: one isolated page driven over a direct browser protocol (ADR 0055): the
 /// Chrome DevTools Protocol for the Chromium family (Edge, Chrome, Brave, Vivaldi, Opera,
@@ -68,6 +71,27 @@ public interface IBrowserEngine : IAsyncDisposable
         CancellationToken cancellationToken);
 
     Task ClosePageAsync(BrowserPageHandle page, CancellationToken cancellationToken);
+
+    /// <summary>A PNG of the viewport, or of one snapshot ref scrolled into view.</summary>
+    Task<byte[]> ScreenshotAsync(BrowserPageHandle page, string? elementRef, CancellationToken cancellationToken);
+
+    /// <summary>Moves the trusted pointer over a snapshot ref so hover menus and tooltips open.</summary>
+    Task HoverAsync(BrowserPageHandle page, string elementRef, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Sets the answer for the page's next JavaScript dialog only. Without one, alert and
+    /// beforeunload are accepted and confirm and prompt are dismissed, so a dialog never blocks.
+    /// </summary>
+    void SetNextDialogAnswer(BrowserPageHandle page, bool accept, string? promptText);
+
+    /// <summary>Dialogs answered on the page since the last call, oldest first.</summary>
+    IReadOnlyList<BrowserDialog> TakeDialogs(BrowserPageHandle page);
+
+    /// <summary>Pages the page opened itself (window.open, target=_blank) since the last call.</summary>
+    IReadOnlyList<BrowserPageHandle> TakeOpenedPages(BrowserPageHandle page);
+
+    /// <summary>Sets the files of a snapshot ref that is an &lt;input type=file&gt;; paths are already authorized.</summary>
+    Task SetFilesAsync(BrowserPageHandle page, string elementRef, IReadOnlyList<string> paths, CancellationToken cancellationToken);
 }
 
 /// <summary>A named browser failure the tool reports as a bounded code plus detail.</summary>

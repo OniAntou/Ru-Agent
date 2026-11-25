@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Harness.Core;
 
@@ -14,6 +15,12 @@ public enum TransientFrameKind
     /// meter moving while the model is still working.
     /// </summary>
     UsageEstimate,
+
+    /// <summary>
+    /// One absolute line of the running model step's reasoning summary. The content is
+    /// the whole line, not a delta; a reset frame means "clear this row's line".
+    /// </summary>
+    ReasoningPreview,
 }
 
 public sealed record HarnessTransientFrame
@@ -25,7 +32,8 @@ public sealed record HarnessTransientFrame
         string content,
         ModelStepId? modelStepId = null,
         ExecutionId? executionId = null,
-        bool isReset = false)
+        bool isReset = false,
+        string? activityId = null)
     {
         _ = runId.Value;
         if (!Enum.IsDefined(kind))
@@ -60,6 +68,11 @@ public sealed record HarnessTransientFrame
             _ = toolExecutionId.Value;
         }
 
+        if (activityId is not null && !AgentActivityWireValidator.IsValidActivityId(activityId))
+        {
+            throw new ArgumentException("Transient activity id is invalid.", nameof(activityId));
+        }
+
         RunId = runId;
         Kind = kind;
         Sequence = sequence;
@@ -67,6 +80,7 @@ public sealed record HarnessTransientFrame
         ModelStepId = modelStepId;
         ExecutionId = executionId;
         IsReset = isReset;
+        ActivityId = activityId;
     }
 
     public RunId RunId { get; }
@@ -75,6 +89,9 @@ public sealed record HarnessTransientFrame
     public string Content { get; }
     public ModelStepId? ModelStepId { get; }
     public ExecutionId? ExecutionId { get; }
+
+    /// <summary>The activity row this frame belongs to, when it carries one.</summary>
+    public string? ActivityId { get; }
 
     /// <summary>
     /// True when this frame tells the client to discard the text it has already

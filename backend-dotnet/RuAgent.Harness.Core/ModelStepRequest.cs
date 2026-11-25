@@ -92,9 +92,24 @@ public sealed record ModelStepRequest
         SessionId);
 }
 
+/// <summary>Which stream an <see cref="AssistantDelta"/> belongs to.</summary>
+public enum AssistantDeltaKind
+{
+    /// <summary>The visible answer text a client appends.</summary>
+    Text,
+
+    /// <summary>Private model reasoning, shown only as the running row's summary line.</summary>
+    Reasoning,
+}
+
 public sealed record AssistantDelta
 {
-    public AssistantDelta(ModelStepId modelStepId, long sequence, string content, bool isReset = false)
+    public AssistantDelta(
+        ModelStepId modelStepId,
+        long sequence,
+        string content,
+        bool isReset = false,
+        AssistantDeltaKind kind = AssistantDeltaKind.Text)
     {
         _ = modelStepId.Value;
         if (sequence <= 0)
@@ -120,11 +135,13 @@ public sealed record AssistantDelta
         Sequence = sequence;
         Content = content;
         IsReset = isReset;
+        Kind = kind;
     }
 
     public ModelStepId ModelStepId { get; }
     public long Sequence { get; }
     public string Content { get; }
+    public AssistantDeltaKind Kind { get; }
 
     /// <summary>
     /// True when this frame supersedes the text streamed so far for the step. The

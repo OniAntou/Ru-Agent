@@ -68,4 +68,18 @@ public sealed class AgentActivityWireKindsTests
         Assert.Throws<JsonException>(() => AgentActivityWireCodec.Parse(
             "{\"activity_id\":\"act_x1\",\"kind\":\"terminal\",\"state\":\"completed\",\"stdout\":\"secret\"}"));
     }
+
+    [Theory]
+    [InlineData("act_0123456789abcdef0123456789abcdef", true)]
+    [InlineData("act_0123456789abcdef0123456789abcdef_narration", true)]
+    [InlineData("act_", false)]
+    [InlineData("act_bad-id", false)]
+    [InlineData("step_0123456789abcdef0123456789abcdef", false)]
+    [InlineData(null, false)]
+    public void Activity_id_shape_is_shared_with_transient_frames(string? value, bool expected) =>
+        Assert.Equal(expected, AgentActivityWireValidator.IsValidActivityId(value));
+
+    [Fact]
+    public void An_over_long_activity_id_is_invalid() =>
+        Assert.False(AgentActivityWireValidator.IsValidActivityId("act_" + new string('a', 125)));
 }

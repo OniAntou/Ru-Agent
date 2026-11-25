@@ -310,14 +310,23 @@ public static class AgentActivityWireValidator
         }
     }
 
+    /// <summary>
+    /// Whether a value has the generated activity-row identity shape. The activity wire
+    /// and the transient frames that target a row share this one rule.
+    /// </summary>
+    /// <param name="value">Candidate id, for example <c>act_0123...</c>.</param>
+    /// <returns>True when the value can name an activity row.</returns>
+    public static bool IsValidActivityId(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Length <= MaximumActivityIdLength
+        && value.StartsWith("act_", StringComparison.Ordinal)
+        && IsSafeToken(value.AsSpan(4), allowDash: false);
+
     public static void Validate(AgentActivityWire activity)
     {
         ArgumentNullException.ThrowIfNull(activity);
 
-        if (string.IsNullOrWhiteSpace(activity.ActivityId)
-            || activity.ActivityId.Length > MaximumActivityIdLength
-            || !activity.ActivityId.StartsWith("act_", StringComparison.Ordinal)
-            || !IsSafeToken(activity.ActivityId.AsSpan(4), allowDash: false))
+        if (!IsValidActivityId(activity.ActivityId))
         {
             throw new JsonException("Activity id is invalid.");
         }

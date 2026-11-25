@@ -28,6 +28,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
     private const string ProjectionSpoolIdPlaceholder = "$projection_spool_id";
     private const int MaxScriptedCallsPerStep = 8;
     private const int MaximumScriptedReasoningCharacters = 4_000;
+    private const int MaximumScriptedReasoningDelayMs = 2_000;
 
     private readonly IReadOnlyList<ScriptedStep> _steps;
     private readonly object _gate = new();
@@ -110,6 +111,22 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                     $"A scripted \"reasoning\" value must stay within {MaximumScriptedReasoningCharacters} characters.");
             }
 
+            var reasoningDelayMs = 0;
+            if (step["reasoning_delay_ms"] is { } delayNode)
+            {
+                if (reasoning is null)
+                {
+                    throw new InvalidOperationException("A scripted \"reasoning_delay_ms\" needs a \"reasoning\" value.");
+                }
+
+                reasoningDelayMs = delayNode.GetValue<int>();
+                if (reasoningDelayMs is < 0 or > MaximumScriptedReasoningDelayMs)
+                {
+                    throw new InvalidOperationException(
+                        $"A scripted \"reasoning_delay_ms\" must be between 0 and {MaximumScriptedReasoningDelayMs}.");
+                }
+            }
+
             if (step["tool"] is not null && step["tools"] is not null)
             {
                 throw new InvalidOperationException("A scripted step must use either \"tool\" or \"tools\", not both.");
@@ -123,7 +140,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                     text,
                     Array.Empty<ModelToolCall>(),
                     AssistantFinishReason.Stop,
-                    0), ScriptedContextOracle.Read(step), cursorSourceCallId, reasoning));
+                    0), ScriptedContextOracle.Read(step), cursorSourceCallId, reasoning, reasoningDelayMs));
                 continue;
             }
 
@@ -131,7 +148,7 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
                 text,
                 tools,
                 AssistantFinishReason.ToolCalls,
-                0), ScriptedContextOracle.Read(step), cursorSourceCallId, reasoning));
+                0), ScriptedContextOracle.Read(step), cursorSourceCallId, reasoning, reasoningDelayMs));
         }
 
         return steps;
@@ -249,10 +266,18 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         if (scriptedStep.Reasoning is { } reasoning)
         {
             // One delta per line, so the client's paragraph heuristic advances exactly as
-            // it would against a real provider stream.
+            // it would against a real provider stream. A scripted delay keeps the live line
+            // on screen long enough to inspect in the desktop app.
             var sequence = 0L;
+            var first = true;
             foreach (var line in reasoning.Split('\n'))
             {
+                if (!first && scriptedStep.ReasoningDelayMs > 0)
+                {
+                    await Task.Delay(scriptedStep.ReasoningDelayMs, cancellationToken).ConfigureAwait(false);
+                }
+
+                first = false;
                 await publishDelta(new AssistantDelta(
                         request.ModelStepId,
                         ++sequence,
@@ -292,7 +317,8 @@ public sealed class ScriptedModelStepRunner : IModelStepRunner
         AssistantStep Step,
         ScriptedContextOracle? ContextOracle,
         string? CursorSourceCallId,
-        string? Reasoning = null);
+        string? Reasoning = null,
+        int ReasoningDelayMs = 0);
 
     private AssistantStep ResolveProjectionCursor(
         AssistantStep step,

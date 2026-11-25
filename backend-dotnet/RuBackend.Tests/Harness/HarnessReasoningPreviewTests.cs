@@ -62,6 +62,48 @@ public sealed class HarnessReasoningPreviewTests
     }
 
     [Fact]
+    public async Task A_scripted_reasoning_delay_paces_the_lines_for_manual_checks()
+    {
+        var runner = ScriptedModelStepRunner.FromJsonForTests(
+            """[{"text":"done","reasoning":"first\nsecond\n","reasoning_delay_ms":40}]""");
+        var request = new ModelStepRequest(
+            Run,
+            Step,
+            new ModelContextSnapshot(Array.Empty<ModelContextEntry>(), ReadOnlyMemory<byte>.Empty),
+            AgentPermissionPreset.Standard,
+            policySnapshotVersion: 1,
+            policySnapshotSha256: new string('a', 64));
+        var deltas = new List<AssistantDelta>();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        await runner.RunStepAsync(
+            request,
+            delta =>
+            {
+                deltas.Add(delta);
+                return ValueTask.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.True(watch.ElapsedMilliseconds >= 60, $"elapsed {watch.ElapsedMilliseconds}ms");
+        Assert.Equal(3, deltas.Count(delta => delta.Kind == AssistantDeltaKind.Reasoning));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(2_001)]
+    public void A_scripted_reasoning_delay_outside_the_bound_is_rejected(int delay)
+    {
+        Assert.Throws<InvalidOperationException>(() => ScriptedModelStepRunner.FromJsonForTests(
+            $$"""[{"text":"done","reasoning":"first\n","reasoning_delay_ms":{{delay}}}]"""));
+    }
+
+    [Fact]
+    public void A_scripted_reasoning_delay_without_reasoning_is_rejected() =>
+        Assert.Throws<InvalidOperationException>(() => ScriptedModelStepRunner.FromJsonForTests(
+            """[{"text":"done","reasoning_delay_ms":40}]"""));
+
+    [Fact]
     public async Task A_scripted_step_streams_its_reasoning_lines_before_the_answer()
     {
         var runner = ScriptedModelStepRunner.FromJsonForTests(

@@ -181,6 +181,12 @@ public sealed partial class AgentRunController : INotifyPropertyChanged, IDispos
 
     public event EventHandler<AgentToolOutputModel>? ToolOutputReceived;
 
+    /// <summary>
+    /// One absolute line of the running thinking row, or a reset that clears it. The row
+    /// owns the text; the controller only checks feed ownership before delivering it.
+    /// </summary>
+    public event EventHandler<AgentReasoningPreviewModel>? ReasoningPreviewReceived;
+
     public event EventHandler<AgentUsageReceivedEventArgs>? UsageReceived;
     public event EventHandler<AgentModelStepStartedEventArgs>? ContextStepStarted;
     public event EventHandler<AgentContextEstimateEventArgs>? ContextEstimateReceived;

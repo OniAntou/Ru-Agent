@@ -52,5 +52,6 @@ public interface IAgentRunClient
         Func<AgentActivityModel, Task>? onActivity = null,
         Func<AgentRunSummaryModel, Task>? onSummary = null,
         Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
-        Func<AgentToolOutputModel, Task>? onToolOutput = null);
+        Func<AgentToolOutputModel, Task>? onToolOutput = null,
+        Func<AgentReasoningPreviewModel, Task>? onReasoningPreview = null);
 }

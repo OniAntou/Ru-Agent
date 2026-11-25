@@ -373,6 +373,42 @@ public sealed partial class AgentRunClientAdapterTests
     }
 
     [Fact]
+    public async Task SubscribeEvents_delivers_a_typed_reasoning_preview_frame()
+    {
+        var inner = "{\"activity_id\":\"act_0123456789abcdef0123456789abcdef\"," +
+            "\"model_step_id\":\"step_0123456789abcdef0123456789abcdef\"," +
+            "\"text\":\"Investigating the store\",\"reset\":null}";
+        var preview = JsonSerializer.Serialize(new { kind = "agent.reasoning_preview", data = inner });
+        var sse = $"event: transient\nid: t21\ndata: {preview}\n\n";
+        var handler = new FakeHttpHandler
+        {
+            Responder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream"),
+            },
+        };
+        using var http = new HttpClient(handler);
+        var adapter = new AgentRunClientAdapter(MakeSession(), http);
+        var received = new List<AgentReasoningPreviewModel>();
+
+        await adapter.SubscribeEventsAsync(
+            RunId,
+            0,
+            _ => Task.CompletedTask,
+            onReasoningPreview: model =>
+            {
+                received.Add(model);
+                return Task.CompletedTask;
+            });
+
+        var line = Assert.Single(received);
+        Assert.Equal("act_0123456789abcdef0123456789abcdef", line.ActivityId);
+        Assert.Equal("Investigating the store", line.Text);
+        Assert.False(line.IsReset);
+        Assert.Equal(21, line.TransientSequence);
+    }
+
+    [Fact]
     public async Task SubscribeEvents_unknown_version_fails_closed()
     {
         var sse =

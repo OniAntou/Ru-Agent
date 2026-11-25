@@ -140,7 +140,8 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
         Func<AgentActivityModel, Task>? onActivity = null,
         Func<AgentRunSummaryModel, Task>? onSummary = null,
         Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
-        Func<AgentToolOutputModel, Task>? onToolOutput = null)
+        Func<AgentToolOutputModel, Task>? onToolOutput = null,
+        Func<AgentReasoningPreviewModel, Task>? onReasoningPreview = null)
     {
         ArgumentNullException.ThrowIfNull(onEvent);
 
@@ -155,6 +156,7 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
                     onSummary,
                     onAssistantDelta,
                     onToolOutput,
+                    onReasoningPreview,
                     token),
                 cancellationToken,
                 new AgentRunFeedOptions
@@ -190,6 +192,7 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
         Func<AgentRunSummaryModel, Task>? onSummary,
         Func<AgentAssistantDeltaModel, Task>? onAssistantDelta,
         Func<AgentToolOutputModel, Task>? onToolOutput,
+        Func<AgentReasoningPreviewModel, Task>? onReasoningPreview,
         CancellationToken cancellationToken)
     {
         if (frame.IsTransient)
@@ -215,6 +218,15 @@ public sealed partial class AgentRunClientAdapter : IAgentRunClient, IDisposable
                 && summary is not null)
             {
                 await DispatchAsync(() => onSummary(summary), cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (onReasoningPreview is not null
+                && AgentReasoningPreviewModel.TryParse(frame, out var reasoningPreview)
+                && reasoningPreview is not null)
+            {
+                await DispatchAsync(() => onReasoningPreview(reasoningPreview), cancellationToken)
                     .ConfigureAwait(false);
                 return;
             }

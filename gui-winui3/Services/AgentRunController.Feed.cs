@@ -373,6 +373,47 @@ public sealed partial class AgentRunController
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// A preview frame is absolute state, not an append: duplicates are harmless and a
+    /// dropped frame only leaves the line one paragraph behind, so it needs no sequence
+    /// gate — only the same feed-ownership check as every other visual frame.
+    /// </summary>
+    private Task OnReasoningPreviewAsync(AgentReasoningPreviewModel model, string runId, long ownershipGeneration)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        lock (_gate)
+        {
+            if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy || _isCancelRequested || _currentRunId is null)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        RunOnUi(() =>
+        {
+            try
+            {
+                lock (_gate)
+                {
+                    if (!OwnsFeedLocked(runId, ownershipGeneration) || !_isBusy
+                        || _isCancelRequested
+                        || !string.Equals(_currentRunId, runId, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+                }
+
+                ReasoningPreviewReceived?.Invoke(this, model);
+            }
+            catch
+            {
+                // A visual preview subscriber is observational and must not fail the
+                // Agent SSE subscription or its durable run state.
+            }
+        });
+        return Task.CompletedTask;
+    }
+
     private void WriteSink(AgentEventModel model)
     {
         if (_sink is null)
@@ -447,6 +488,11 @@ public sealed partial class AgentRunController
                 {
                     onFrame?.Invoke();
                     return OnToolOutputAsync(model, runId, ownershipGeneration);
+                },
+                model =>
+                {
+                    onFrame?.Invoke();
+                    return OnReasoningPreviewAsync(model, runId, ownershipGeneration);
                 })
             .ConfigureAwait(false);
         // The SSE stream ends after the terminal snapshot, but the create response

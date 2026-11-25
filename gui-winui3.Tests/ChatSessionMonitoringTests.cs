@@ -112,7 +112,8 @@ public sealed class ChatSessionMonitoringTests
         public Task SubscribeEventsAsync(string runId, long afterSequence, Func<AgentEventModel, Task> onEvent,
             CancellationToken cancellationToken = default, Func<AgentActivityModel, Task>? onActivity = null,
             Func<AgentRunSummaryModel, Task>? onSummary = null, Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
-            Func<AgentToolOutputModel, Task>? onToolOutput = null) => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            Func<AgentToolOutputModel, Task>? onToolOutput = null,
+            Func<AgentReasoningPreviewModel, Task>? onReasoningPreview = null) => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         public Task<AgentRunModel> CreateRunAsync(CreateAgentRunRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<AgentPayloadModel> GetPayloadAsync(string runId, string payloadId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task TrustAsync(string runId, TrustAgentRunRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();

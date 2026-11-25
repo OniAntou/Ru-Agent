@@ -291,6 +291,7 @@ public sealed partial class AgentRunControllerTests
         public List<AgentRunSummaryModel> SummaryStream { get; } = new();
         public List<AgentAssistantDeltaModel> AssistantDeltaStream { get; } = new();
         public List<AgentToolOutputModel> ToolOutputStream { get; } = new();
+        public List<AgentReasoningPreviewModel> ReasoningPreviewStream { get; } = new();
         public bool CancelCalled;
         public bool TrustCalled;
         public List<(string RunId, TrustAgentRunRequest Request)> TrustRequests { get; } = new();
@@ -430,7 +431,8 @@ public sealed partial class AgentRunControllerTests
             Func<AgentActivityModel, Task>? onActivity = null,
             Func<AgentRunSummaryModel, Task>? onSummary = null,
             Func<AgentAssistantDeltaModel, Task>? onAssistantDelta = null,
-            Func<AgentToolOutputModel, Task>? onToolOutput = null)
+            Func<AgentToolOutputModel, Task>? onToolOutput = null,
+            Func<AgentReasoningPreviewModel, Task>? onReasoningPreview = null)
         {
             SubscribeRunId = runId;
             SubscribeAfter = after;
@@ -465,6 +467,14 @@ public sealed partial class AgentRunControllerTests
                 foreach (var output in ToolOutputStream)
                 {
                     await onToolOutput(output).ConfigureAwait(false);
+                }
+            }
+
+            if (onReasoningPreview is not null)
+            {
+                foreach (var preview in ReasoningPreviewStream)
+                {
+                    await onReasoningPreview(preview).ConfigureAwait(false);
                 }
             }
 
@@ -1989,6 +1999,24 @@ public sealed partial class AgentRunControllerTests
         var method = typeof(AgentRunController).GetMethod(nameof(AgentRunController.CreateAndRunAsync));
 
         Assert.Equal(typeof(Task<bool>), method?.ReturnType);
+    }
+
+    [Fact]
+    public async Task Reasoning_preview_reaches_observers_for_the_current_run()
+    {
+        var fake = new FakeClient { Run = MakeRun() };
+        fake.ReasoningPreviewStream.Add(new AgentReasoningPreviewModel(
+            "act_11111111111111111111111111111111", null, "Investigating", 4, false));
+        var controller = new AgentRunController(fake);
+        var received = new List<AgentReasoningPreviewModel>();
+        controller.ReasoningPreviewReceived += (_, preview) => received.Add(preview);
+
+        await controller.CreateAndRunAsync(new CreateAgentRunRequest(
+            "sess_1", "C:\\work", "do it", "standard", null, "reasoning-preview"));
+
+        var preview = Assert.Single(received);
+        Assert.Equal("Investigating", preview.Text);
+        Assert.Equal("act_11111111111111111111111111111111", preview.ActivityId);
     }
 
     private static AgentRunModel MakeWorkspaceTrustRun() =>

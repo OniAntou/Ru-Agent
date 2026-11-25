@@ -186,7 +186,14 @@ namespace RuApp.Views
             }
 
             if (_liveSteerActivityIds.Add(activityId) && !string.IsNullOrWhiteSpace(text))
-                ContinueTurnAfterSteer(SteerMessage(text));
+            {
+                // Sent from another window: its images are read back like a reopened chat's.
+                var steer = SteerMessage(text);
+                steer.SourceRunId = _agentController?.CurrentRun?.RunId;
+                steer.SourceSteerId = ReplayImageAssignment.SteerIdFromActivityId(activityId);
+                ContinueTurnAfterSteer(steer);
+                HydrateReplayedImages();
+            }
         }
 
         /// <summary>

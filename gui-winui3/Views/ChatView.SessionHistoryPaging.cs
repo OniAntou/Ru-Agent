@@ -164,6 +164,7 @@ namespace RuApp.Views
                 }
 
                 UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(additions));
+                HydrateReplayedImages();
                 _sidePanelEditsDirty = true;
                 RefreshSidePanelEdits();
                 UpdateLoadEarlierHistoryButton();

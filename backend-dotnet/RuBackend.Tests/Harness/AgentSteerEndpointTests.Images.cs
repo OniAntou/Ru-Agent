@@ -27,7 +27,7 @@ public sealed partial class AgentInputEndpointTests
             factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
             var client = factory.CreateAuthenticatedClient();
             var sessionId = await CreateSessionAsync(client);
-            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "steer with an image");
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "steer with an image", [OnePixelPng]);
             var runId = created.GetProperty("run_id").GetString()!;
             var request = await WaitForInputRequestAsync(client, runId, StateDeadline);
             Assert.NotNull(request);
@@ -64,6 +64,50 @@ public sealed partial class AgentInputEndpointTests
             using var replay = await client.GetAsync($"/agent/v1/runs/{runId}/activities");
             replay.EnsureSuccessStatusCode();
             Assert.Contains("Images attached to this message: 2", await replay.Content.ReadAsStringAsync());
+
+            // A reopened chat finds each steer's own images and can read them back.
+            var steerIds = (await ListSteersAsync(client, runId)).Select(item => item.GetProperty("steer_id").GetString()).ToArray();
+            var run = await client.GetFromJsonAsync<JsonElement>($"/agent/v1/runs/{runId}");
+            var images = run.GetProperty("image_payloads").EnumerateArray()
+                .Select(item => (Payload: item.GetProperty("payload_id").GetString()!, Steer: item.GetProperty("steer_id").GetString()))
+                .ToArray();
+            // The prompt's own image first, then each steer's in delivery order.
+            Assert.Equal(new[] { null, steerIds[0], steerIds[0], steerIds[1] }, images.Select(image => image.Steer));
+            foreach (var image in images)
+            {
+                var payload = await client.GetFromJsonAsync<JsonElement>($"/agent/v1/runs/{runId}/payloads/{image.Payload}");
+                Assert.Equal(OnePixelPng, payload.GetProperty("content").GetString());
+            }
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+    [Fact]
+    public async Task An_image_at_the_per_image_bound_reads_back_whole()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: new RecordingRunner(FinalStep("done")));
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var large = "data:image/png;base64," + Convert.ToBase64String(new byte[AgentRunLimits.MaxImageBytes]);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "a large image", [large]);
+            var runId = created.GetProperty("run_id").GetString()!;
+
+            var run = await client.GetFromJsonAsync<JsonElement>($"/agent/v1/runs/{runId}");
+            var image = Assert.Single(run.GetProperty("image_payloads").EnumerateArray());
+            Assert.Equal(JsonValueKind.Null, image.GetProperty("steer_id").ValueKind);
+            using var response = await client.GetAsync($"/agent/v1/runs/{runId}/payloads/{image.GetProperty("payload_id").GetString()}");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            // The client reads responses through its 8 MiB bound.
+            var body = await RuAgent.Client.BoundedHttpResponseReader.ReadAsync(response.Content, default);
+            Assert.Equal(large, JsonDocument.Parse(body).RootElement.GetProperty("content").GetString());
         }
         finally
         {

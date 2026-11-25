@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: A reopened chat shows the images its messages carried, for a turn and for a
+  steer, instead of only "N images attached". `GET /agent/v1/runs/{runId}` now lists the run's
+  images with the steer that brought each (`image_payloads`), the payload route returns an image
+  up to the per-image bound, and Desktop reads them back as thumbnails after the chat opens;
+  opening a thumbnail reads the full image. A failed read keeps the count label.
+
 - **feat(agent)!**: A message carries up to ten images (was four), as a new turn or a steer.
   The decoded total per message and per request is 16 MiB (was 20 MiB, which four images at
   4 MiB each never reached), so requests stay within the 24 MiB body bound and providers'

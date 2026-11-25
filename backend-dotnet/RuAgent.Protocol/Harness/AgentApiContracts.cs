@@ -70,7 +70,18 @@ public sealed record GetAgentRunResponse(
     [property: JsonPropertyName("output_token_reserve")] int? OutputTokenReserve = null,
     [property: JsonPropertyName("tool_profile")] string? ToolProfile = null,
     [property: JsonPropertyName("failure_kind")] string? FailureKind = null,
-    [property: JsonPropertyName("failure_site")] string? FailureSite = null);
+    [property: JsonPropertyName("failure_site")] string? FailureSite = null,
+    [property: JsonPropertyName("image_payloads")] IReadOnlyList<AgentRunImagePayload>? ImagePayloads = null);
+
+/// <summary>
+/// One image a user message of the run carried, read through
+/// <c>GET /agent/v1/runs/{runId}/payloads/{payloadId}</c>. <see cref="SteerId"/> names the
+/// steer that brought it; null means the run's own prompt. Lets a reopened chat show the
+/// images instead of only their count.
+/// </summary>
+public sealed record AgentRunImagePayload(
+    [property: JsonPropertyName("payload_id")] string PayloadId,
+    [property: JsonPropertyName("steer_id")] string? SteerId = null);
 
 public sealed record TrustAgentRunRequest(
     [property: JsonPropertyName("trust_request_id")] string TrustRequestId,

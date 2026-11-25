@@ -54,6 +54,7 @@ internal static class TranscriptSteerSplitter
                 Content = written,
                 SessionId = message.SessionId,
                 SourceRunId = message.SourceRunId,
+                SourceSteerId = ReplayImageAssignment.SteerIdFromActivityId(steer.Item.ActivityId),
                 Attachments = new ObservableCollection<ImageAttachmentItem>(),
                 MissingImageCount = imageCount,
             };

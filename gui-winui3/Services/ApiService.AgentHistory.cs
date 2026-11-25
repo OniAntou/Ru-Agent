@@ -384,6 +384,56 @@ namespace RuApp.Services
         }
 
         /// <summary>
+        /// The images a run's user messages carried, each with the steer that brought it
+        /// (none for the run's own prompt). Null when the run has none or cannot be read.
+        /// </summary>
+        internal async Task<IReadOnlyList<RuAgent.Protocol.Harness.AgentRunImagePayload>?> GetRunImagePayloadsAsync(
+            string runId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}", cancellationToken);
+                if (!response.IsSuccessStatusCode) return null;
+                var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken);
+                var run = JsonSerializer.Deserialize<RuAgent.Protocol.Harness.GetAgentRunResponse>(body);
+                return run?.ImagePayloads;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("GetRunImagePayloadsAsync", ex);
+                return null;
+            }
+        }
+
+        /// <summary>One stored image of a run as its data URL, or null when it cannot be read.</summary>
+        internal async Task<string?> ReadImageDataUrlAsync(string runId, string payloadId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/payloads/{Uri.EscapeDataString(payloadId)}",
+                    cancellationToken);
+                if (!response.IsSuccessStatusCode) return null;
+                var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken);
+                return ReadPayloadContent(body);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("ReadImageDataUrlAsync", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
         /// The question a waiting_input run is parked on, reconstructed from its
         /// replayed durable events and the request payload they point at. Best
         /// effort: any failure returns null and the session still opens, just

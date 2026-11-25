@@ -264,6 +264,7 @@ namespace RuApp.Views
                     DetachAgentActivitiesFromMessages();
                     UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(Messages));
                     RefreshSidePanelEdits();
+                    HydrateReplayedImages();
 
                     if (history.Count > 0 && wasFollowing)
                     {
@@ -289,13 +290,15 @@ namespace RuApp.Views
                 : null;
         }
 
-        private static async Task<Microsoft.UI.Xaml.Media.Imaging.BitmapImage?> FullSizePreviewAsync(ImageAttachmentItem item)
+        private async Task<Microsoft.UI.Xaml.Media.Imaging.BitmapImage?> FullSizePreviewAsync(ImageAttachmentItem item)
         {
-            if (string.IsNullOrEmpty(item.Base64Data)) return null;
+            // A reopened image keeps only its thumbnail; the full image is read again here.
+            var stored = string.IsNullOrEmpty(item.Base64Data) ? await ReadRemoteImageBytesAsync(item) : null;
+            if (string.IsNullOrEmpty(item.Base64Data) && stored is null) return null;
             try
             {
                 var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
-                using var bytes = new MemoryStream(Convert.FromBase64String(item.Base64Data), writable: false);
+                using var bytes = new MemoryStream(stored ?? Convert.FromBase64String(item.Base64Data!), writable: false);
                 using var stream = bytes.AsRandomAccessStream();
                 await bitmap.SetSourceAsync(stream);
                 return bitmap;
@@ -613,6 +616,7 @@ namespace RuApp.Views
                     UpdateTodoPanel(_agentActivityFeed.RegisterReplayedMessages(opened));
                     JumpToLatestForNewTurn();
                     Messages.ReplaceAll(opened);
+                    HydrateReplayedImages();
                     EndSidePanelLayoutDeferral();
                     RefreshSidePanelEdits();
 

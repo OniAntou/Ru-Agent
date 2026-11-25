@@ -264,7 +264,8 @@ public sealed partial class AgentInputEndpointTests
         HttpClient client,
         string sessionId,
         string workspacePath,
-        string prompt)
+        string prompt,
+        string[]? images = null)
     {
         var runBody = new
         {
@@ -273,6 +274,7 @@ public sealed partial class AgentInputEndpointTests
             prompt,
             preset = "standard",
             idempotency_key = Guid.NewGuid().ToString("N"),
+            image_attachments = images,
         };
         using var runResponse = await client.PostAsJsonAsync("/agent/v1/runs", runBody);
         runResponse.EnsureSuccessStatusCode();

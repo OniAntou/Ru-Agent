@@ -342,6 +342,37 @@ public sealed partial class AgentApiClientTests
         Assert.Equal(2, attempts);
     }
 
+    [Theory]
+    [InlineData("[{\"payload_id\":\"payload_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"steer_id\":null},{\"payload_id\":\"payload_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"steer_id\":\"steer_cccccccccccccccccccccccccccccccc\"}]", true)]
+    [InlineData("null", true)]
+    [InlineData("[{\"payload_id\":\"not-a-payload\"}]", false)]
+    [InlineData("[{\"payload_id\":\"payload_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"steer_id\":\"steer_X\"}]", false)]
+    [InlineData("{}", false)]
+    public async Task GetRun_reads_the_runs_image_payloads_and_refuses_malformed_ones(string images, bool accepted)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(RunSummary("OpenAI", "gpt-5")))!.AsObject();
+        node["image_payloads"] = System.Text.Json.Nodes.JsonNode.Parse(images);
+        var body = node.ToJsonString();
+        var client = new AgentApiClient(Session(), new HttpClient(new FakeHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") })));
+
+        if (!accepted)
+        {
+            Assert.Equal("invalid_response", (await Assert.ThrowsAsync<AgentApiException>(() =>
+                client.GetRunAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))).ErrorCode);
+            return;
+        }
+
+        var run = await client.GetRunAsync("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        if (images == "null")
+        {
+            Assert.Null(run.ImagePayloads);
+            return;
+        }
+
+        Assert.Equal(new string?[] { null, "steer_" + new string('c', 32) }, run.ImagePayloads!.Select(image => image.SteerId));
+    }
+
     [Fact]
     public async Task CreateRun_marks_server_error_as_potentially_ambiguous()
     {

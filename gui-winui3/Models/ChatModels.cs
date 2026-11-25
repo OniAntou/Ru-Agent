@@ -11,6 +11,9 @@ namespace RuApp.Models
     {
         // Durable run ownership for history/replay reconciliation, not display.
         public string? SourceRunId { get; set; }
+
+        /// <summary>The steer a replayed user message came from; null for a run's own prompt.</summary>
+        public string? SourceSteerId { get; set; }
         public int? SourceMessageIndex { get; set; }
 
         /// <summary>
@@ -359,10 +362,10 @@ namespace RuApp.Models
         private int _missingImageCount;
 
         /// <summary>
-        /// Image attachments the persisted turn carried that this view cannot render.
-        /// History keeps the count and the encrypted payloads, but the message DTO does
-        /// not carry image references yet, so a reopened turn shows this count instead
-        /// of silently looking like it had no attachment.
+        /// Image attachments the persisted turn carried that this view has not loaded yet.
+        /// History keeps only the count; a reopened chat reads the images back from the
+        /// run and lowers this as each thumbnail arrives, so the label shows only what
+        /// could not be loaded.
         /// </summary>
         public int MissingImageCount
         {
@@ -472,6 +475,11 @@ namespace RuApp.Models
             get => _filePath;
             set => SetProperty(ref _filePath, value);
         }
+
+        /// <summary>The run and payload a reopened image is read from; it keeps only a thumbnail.</summary>
+        public string? RemoteRunId { get; set; }
+
+        public string? RemotePayloadId { get; set; }
 
         public string? Base64Data
         {

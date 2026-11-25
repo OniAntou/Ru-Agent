@@ -162,7 +162,7 @@ public sealed partial class AgentApiClient
         using (doc)
         {
         var root = doc.RootElement;
-        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve", "tool_profile", "failure_kind", "failure_site"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["run_id", "session_id", "workspace_id", "status", "history_wait_kind", "preset", "policy_snapshot_version", "policy_snapshot_sha256", "version", "last_sequence", "created_at", "updated_at", "terminal_at", "terminal_error_code", "trust_request_id", "display_identity_hash", "provider_backend", "provider_model", "provider_protocol", "provider_model_label", "provider_calling_mode", "context_window_tokens", "context_window_source", "context_window_version", "output_token_reserve", "tool_profile", "failure_kind", "failure_site", "image_payloads"], StringComparer.Ordinal);
         foreach (var prop in root.EnumerateObject())
         {
             if (!allowed.Contains(prop.Name))
@@ -170,6 +170,7 @@ public sealed partial class AgentApiClient
         }
         ValidateProviderPins(root);
         ValidateRunMetadata(root);
+        ValidateImagePayloads(root);
         try
         {
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -181,6 +182,25 @@ public sealed partial class AgentApiClient
             return result;
         }
         catch (JsonException ex) { throw new AgentApiException("invalid_response", ex.Message); }
+        }
+    }
+
+    /// <summary>The run's images: payload ids, each with the steer that brought it or null.</summary>
+    private static void ValidateImagePayloads(JsonElement root)
+    {
+        if (!root.TryGetProperty("image_payloads", out var images) || images.ValueKind == JsonValueKind.Null) return;
+        if (images.ValueKind != JsonValueKind.Array || images.GetArrayLength() > 4096)
+            throw new AgentApiException("invalid_response", "Invalid image_payloads");
+        foreach (var image in images.EnumerateArray())
+        {
+            var valid = image.ValueKind == JsonValueKind.Object
+                && image.TryGetProperty("payload_id", out var payload) && payload.ValueKind == JsonValueKind.String
+                && payload.GetString() is { Length: 40 } payloadId
+                && payloadId.StartsWith("payload_", StringComparison.Ordinal)
+                && payloadId.AsSpan(8).IndexOfAnyExcept("0123456789abcdef") < 0
+                && (!image.TryGetProperty("steer_id", out var steer) || steer.ValueKind == JsonValueKind.Null
+                    || steer.ValueKind == JsonValueKind.String && AgentSteerLimits.IsValidSteerId(steer.GetString()));
+            if (!valid) throw new AgentApiException("invalid_response", "Invalid image_payloads");
         }
     }
 

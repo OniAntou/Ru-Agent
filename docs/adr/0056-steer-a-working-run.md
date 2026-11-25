@@ -128,6 +128,10 @@ The owner asked for images in a steer and for limits that do not refuse ordinary
    (`AgentRunLimits.MaxImagesPerLocalRequest`), since many local vision servers take few
    images, and the newest are sent with the omitted note above. The Desktop draft store keeps
    a full turn of images plus files.
+7. **Reopened images.** `GET /agent/v1/runs/{runId}` adds `image_payloads`: the run's
+   `UserImage` payloads for its prompt and each delivered steer's own images (its
+   `agent_run_steer_images` rows survive delivery), with the steer id. Desktop reads them back
+   when a chat reopens, so a steer and a turn show thumbnails instead of only their count.
 4. **Returned steers.** Their images go back into the next turn up to one message's bound;
    any beyond it are named on screen, never refused by the Host.
 5. **RPC.** `run.steer` takes the larger text bound; it does not carry images.

@@ -69,8 +69,50 @@ public sealed class AgentRunQueryService
             ToolProfile = providerSelection?.Selection is { } pinnedSelection
                 ? RuAgent.Protocol.AgentToolProfiles.ReadSupportedLabel(System.Text.Json.Nodes.JsonNode.Parse(pinnedSelection.RequestOptionsJson)!.AsObject())
                 : null,
+            ImagePayloads = await ReadImagePayloadsAsync(run.RunId, cancellationToken).ConfigureAwait(false),
         };
         return new AgentServiceResult(200, response);
+    }
+
+    /// <summary>
+    /// The run's user images, grouped by the message that carried them: the prompt's images
+    /// first, then each delivered steer's in delivery order. A delivered steer keeps its
+    /// <c>SteerImage</c> rows, which name exactly its images; the run's <c>UserImage</c>
+    /// payloads beyond those are the prompt's, in the order they were stored. Null when the
+    /// run carried no image.
+    /// </summary>
+    internal async Task<IReadOnlyList<AgentRunImagePayload>?> ReadImagePayloadsAsync(
+        RunId runId, CancellationToken cancellationToken)
+    {
+        await using var conn = await OpenHarnessConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var userImages = new List<string>();
+        await using (var command = conn.CreateCommand())
+        {
+            command.CommandText = "SELECT payload_id FROM agent_payloads WHERE run_id=$run AND kind=$kind ORDER BY rowid";
+            command.Parameters.AddWithValue("$run", runId.Value);
+            command.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.UserImage);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) userImages.Add(reader.GetString(0));
+        }
+
+        var steerImages = new List<AgentRunImagePayload>();
+        await using (var command = conn.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT i.steer_id, i.payload_id FROM agent_run_steer_images i
+                JOIN agent_run_steers s ON s.steer_id = i.steer_id
+                WHERE s.run_id=$run AND s.delivered_event_id IS NOT NULL
+                ORDER BY s.delivered_at_utc, s.created_at_utc, s.steer_id, i.ordinal
+                """;
+            command.Parameters.AddWithValue("$run", runId.Value);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                steerImages.Add(new AgentRunImagePayload(reader.GetString(1), reader.GetString(0)));
+        }
+
+        var promptCount = Math.Max(0, userImages.Count - steerImages.Count);
+        if (promptCount == 0 && steerImages.Count == 0) return null;
+        return userImages.Take(promptCount).Select(id => new AgentRunImagePayload(id)).Concat(steerImages).ToArray();
     }
 
     /// <summary>
@@ -214,7 +256,11 @@ public sealed class AgentRunQueryService
             // value as a prompt or recovery artifact, so truncation would turn a
             // valid document/base64 blob into corrupt data.  Keep the response
             // bounded by rejecting oversized payloads explicitly instead.
-            const int maxClientPayloadCharacters = 4 * 1024 * 1024;
+            // An image is a data URL up to the per-image bound, which is larger than the
+            // general limit; the response still fits a client's 8 MiB reader.
+            int maxClientPayloadCharacters = kind is HarnessPayloadKind.UserImage or HarnessPayloadKind.SteerImage
+                ? RuAgent.Protocol.Harness.AgentRunLimits.MaxImageDataUrlChars
+                : 4 * 1024 * 1024;
             if (payloadJson.Length > maxClientPayloadCharacters)
             {
                 return BoundedError(413, "payload_too_large", "Payload exceeds the client response limit.");

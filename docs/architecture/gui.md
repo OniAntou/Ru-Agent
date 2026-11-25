@@ -605,8 +605,13 @@ cumulative for the run, so the new bubble shows only the text after `_replyTextB
 sent from another client appears the same way when it is read. On history reload
 `TranscriptSteerSplitter` splits a replayed run at the same points, so live and reloaded
 transcripts match. Both draw a steer's files as chips (`AttachedPromptDisplay`), not as
-inlined text; this window's own steer keeps its image thumbnails, and one read from the Host
-shows its image count (`AgentSteerText`), as a reopened turn does. The run keeps one "Edited files" card: replies above a steer show none
+inlined text; this window's own steer keeps its image thumbnails. A reopened chat, and a
+steer sent from another window, first shows each user message's image count, then reads the
+images back (`ChatView.ReplayImages`): `GET /agent/v1/runs/{runId}` lists the run's images with
+the steer that brought each (`image_payloads`), `ReplayImageAssignment` gives the prompt the
+images without a steer and each steer its own, and each payload is decoded straight to a
+thumbnail, one at a time, while the session stays open. Opening a thumbnail reads the full
+image again. Any failure leaves the "N images attached" label. The run keeps one "Edited files" card: replies above a steer show none
 (`ContinuesInLaterReply`), and the last reply's card covers every change of the run
 (`EarlierReplyActivities`). A message the run ends without reading (it finished, or the user
 pressed Stop) is sent as the next turn ahead of queued turns, so Stop doubles as "send it

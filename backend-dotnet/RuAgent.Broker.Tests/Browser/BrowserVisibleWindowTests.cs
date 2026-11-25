@@ -21,6 +21,56 @@ public sealed class BrowserVisibleWindowTests
     [FirefoxFact]
     public Task Firefox_leaves_no_window_after_its_last_page_closes() => RunAsync(new FirefoxBrowserEngine());
 
+    [BrowserFact]
+    public Task Chromium_exits_on_its_own_instead_of_being_killed() => ExitsCleanlyAsync(() => new ChromiumBrowserEngine());
+
+    [FirefoxFact]
+    public Task Firefox_exits_on_its_own_instead_of_being_killed() => ExitsCleanlyAsync(() => new FirefoxBrowserEngine());
+
+    /// <summary>
+    /// A killed browser can leave unclosable ghost entries in Alt+Tab, so disposal asks the browser
+    /// to exit and every process it started ends with its own exit code, never the kill's.
+    /// </summary>
+    private static async Task ExitsCleanlyAsync(Func<IBrowserEngine> create)
+    {
+        await using var server = new BrowserPageActionsTests.PageServer();
+        foreach (var headless in new[] { false, true })
+        {
+            var engine = create();
+            var page = await engine.OpenPageAsync(headless, CancellationToken.None);
+            await engine.NavigateAsync(page, server.Url, CancellationToken.None);
+            // The handle is opened now, so the exit code stays readable after the process ends.
+            var browsers = ChildProcessIds(Environment.ProcessId)
+                .Select(id =>
+                {
+                    try
+                    {
+                        var process = Process.GetProcessById(id);
+                        _ = process.Handle;
+                        return process;
+                    }
+                    catch (Exception error) when (error is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+                    {
+                        return null;
+                    }
+                })
+                .OfType<Process>()
+                .ToList();
+            Assert.NotEmpty(browsers);
+
+            await engine.DisposeAsync();
+
+            foreach (var browser in browsers)
+            {
+                using (browser)
+                {
+                    Assert.True(browser.WaitForExit(10_000), $"Browser process {browser.Id} is still running.");
+                    Assert.True(browser.ExitCode != -1, $"Browser process {browser.Id} was killed (headless={headless}).");
+                }
+            }
+        }
+    }
+
     private static async Task RunAsync(IBrowserEngine engine)
     {
         await using var server = new BrowserPageActionsTests.PageServer();
@@ -76,12 +126,28 @@ public sealed class BrowserVisibleWindowTests
     }
 
     /// <summary>Browser processes descended from <paramref name="root"/>; Firefox starts its real process through a launcher.</summary>
+    private static readonly DateTime TestProcessStart = Process.GetCurrentProcess().StartTime;
+
     private static HashSet<int> ChildProcessIds(int root)
     {
         var parents = new Dictionary<int, int>();
         foreach (var process in Process.GetProcessesByName("msedge").Concat(Process.GetProcessesByName("chrome")).Concat(Process.GetProcessesByName("firefox")))
         {
-            using (process) parents[process.Id] = ParentOf(process.Id);
+            using (process)
+            {
+                // A reused process id could make an older browser look like a child; only
+                // processes started after this test process can descend from it.
+                try
+                {
+                    if (process.StartTime < TestProcessStart) continue;
+                }
+                catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    continue;
+                }
+
+                parents[process.Id] = ParentOf(process.Id);
+            }
         }
 
         var result = new HashSet<int>();

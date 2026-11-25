@@ -108,20 +108,10 @@ internal sealed class CdpBrowserProcess : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        if (_profile.IsPersistent)
-        {
-            // The engine asked the browser to close; letting it exit writes the persistent
-            // profile's cookies, which a kill could lose.
-            try
-            {
-                using var exit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await _process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
-            }
-            catch (Exception error) when (error is OperationCanceledException or InvalidOperationException)
-            {
-                // It did not exit in time; the kill below ends it.
-            }
-        }
+        // The engine asked the browser to close; letting it exit writes a persistent profile's
+        // cookies and removes its windows cleanly, which a kill could not. The kill below ends
+        // whatever did not exit in time.
+        await BrowserProcessJob.WaitForExitAsync(_job, _process, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
         BrowserProcessJob.Release(_job);
         Kill(_process);

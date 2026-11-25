@@ -667,10 +667,14 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         }
     }
 
-    /// <summary>A clean exit lets the browser write the persistent profile's cookies before the process is killed.</summary>
+    /// <summary>
+    /// Asks the browser to exit on its own before its process is killed: a clean exit writes the
+    /// persistent profile's cookies and lets Windows remove its windows, where a killed browser can
+    /// leave unclosable ghost entries in Alt+Tab.
+    /// </summary>
     private async Task CloseCleanlyAsync(BidiConnection connection)
     {
-        if (!_persistentProfile || connection.IsClosed) return;
+        if (connection.IsClosed) return;
         try
         {
             await connection.SendAsync("browser.close", new JsonObject(), TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false);
@@ -1378,20 +1382,10 @@ public sealed class FirefoxBrowserEngine : IBrowserEngine
         public async ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-            if (_profile.IsPersistent)
-            {
-                // The engine asked the browser to close; letting it exit writes the persistent
-                // profile's cookies, which a kill could lose.
-                try
-                {
-                    using var exit = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    await _process.WaitForExitAsync(exit.Token).ConfigureAwait(false);
-                }
-                catch (Exception error) when (error is OperationCanceledException or InvalidOperationException)
-                {
-                    // It did not exit in time; the kill below ends it.
-                }
-            }
+            // The engine asked the browser to close; letting it exit writes a persistent profile's
+            // cookies and removes its windows cleanly, which a kill could not. Firefox runs
+            // through a launcher, so the job's process count decides when it is gone.
+            await BrowserProcessJob.WaitForExitAsync(_job, _process, TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
             BrowserProcessJob.Release(_job);
             Kill(_process);

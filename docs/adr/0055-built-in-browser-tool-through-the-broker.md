@@ -131,6 +131,9 @@ profile, approval and uploads):
   window outlives the sessions that used it; the next visible open starts a fresh one. Chromium
   starts with background and occlusion throttling off, so a window behind others keeps
   painting instead of showing blank.
+- **Clean exit.** Disposal always asks the browser to close (`Browser.close` or BiDi
+  `browser.close`) and waits, bounded, until every process of its job has exited; the kill is
+  only the fallback. A killed browser could leave unclosable ghost entries in Alt+Tab.
 - **Uploads.** `upload` sets 1 to 10 workspace files on an `<input type=file>` ref. The policy
   context resolves `paths` like a file target: a path outside the workspace is
   `invalid_arguments`, a protected file becomes the target so `plan` and `standard` deny it

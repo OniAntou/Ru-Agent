@@ -550,10 +550,14 @@ public sealed class ChromiumBrowserEngine : IBrowserEngine
         }
     }
 
-    /// <summary>A clean exit lets the browser write the persistent profile's cookies before the process is killed.</summary>
+    /// <summary>
+    /// Asks the browser to exit on its own before its process is killed: a clean exit writes the
+    /// persistent profile's cookies and lets Windows remove its windows, where a killed browser can
+    /// leave unclosable ghost entries in Alt+Tab.
+    /// </summary>
     private async Task CloseCleanlyAsync(CdpConnection connection)
     {
-        if (!_persistentProfile || connection.IsClosed) return;
+        if (connection.IsClosed) return;
         try
         {
             await connection.SendAsync("Browser.close", null, sessionId: null, TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false);

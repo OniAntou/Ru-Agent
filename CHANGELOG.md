@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(broker)**: The built-in browser now exits on its own when Ru closes it, instead of
+  being killed. A killed browser could leave unclosable ghost entries in Alt+Tab that stayed
+  until Windows Explorer restarted. Ru asks the browser to close and waits up to five seconds
+  for every process it started (Firefox runs through a launcher) before falling back to a kill.
+
 - **fix(harness)**: A `plan` run's user hooks start in the user's profile folder, not the
   workspace. `cmd.exe` resolves a bare program name in its working folder first, so a user hook
   such as `git status` could run a `git.cmd` a cloned repository supplied, in a preset that must

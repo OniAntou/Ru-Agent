@@ -89,6 +89,23 @@ public sealed class WindowsJobProcessTree : IProcessTreeController
         }
     }
 
+    /// <summary>
+    /// How many processes in the job are still running, or null when Windows cannot say. A
+    /// launcher may exit while the process it started keeps running, so this counts the whole tree.
+    /// </summary>
+    public int? ActiveProcessCount()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return QueryInformationJobObject(
+                _handle,
+                JobObjectBasicAccountingInformation,
+                out var accounting,
+                Marshal.SizeOf<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>(),
+                out _)
+            ? (int)accounting.ActiveProcesses
+            : null;
+    }
+
     public bool KillTree()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -145,6 +162,30 @@ public sealed class WindowsJobProcessTree : IProcessTreeController
         public UIntPtr PeakProcessMemoryUsed;
         public UIntPtr PeakJobMemoryUsed;
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION
+    {
+        public long TotalUserTime;
+        public long TotalKernelTime;
+        public long ThisPeriodTotalUserTime;
+        public long ThisPeriodTotalKernelTime;
+        public uint TotalPageFaultCount;
+        public uint TotalProcesses;
+        public uint ActiveProcesses;
+        public uint TotalTerminatedProcesses;
+    }
+
+    private const int JobObjectBasicAccountingInformation = 1;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryInformationJobObject(
+        IntPtr hJob,
+        int infoClass,
+        out JOBOBJECT_BASIC_ACCOUNTING_INFORMATION info,
+        int length,
+        out int returnLength);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr CreateJobObjectW(IntPtr lpJobAttributes, string? lpName);

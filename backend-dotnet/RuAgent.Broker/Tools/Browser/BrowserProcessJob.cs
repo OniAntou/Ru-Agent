@@ -28,6 +28,31 @@ internal static class BrowserProcessJob
         }
     }
 
+    /// <summary>
+    /// Waits, bounded, until the browser and every process it started have exited on their own.
+    /// Firefox runs through a launcher that exits first, so the job's process count decides; a
+    /// browser outside a job is judged by its own process.
+    /// </summary>
+    internal static async Task WaitForExitAsync(WindowsJobProcessTree? job, Process process, TimeSpan timeout)
+    {
+        var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
+        while (Environment.TickCount64 < deadline)
+        {
+            bool exited;
+            try
+            {
+                exited = process.HasExited && (job?.ActiveProcessCount() ?? 0) == 0;
+            }
+            catch (Exception error) when (error is InvalidOperationException or Win32Exception or ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (exited) return;
+            await Task.Delay(100).ConfigureAwait(false);
+        }
+    }
+
     internal static void Release(WindowsJobProcessTree? job)
     {
         if (job is null) return;

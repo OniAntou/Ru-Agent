@@ -23,7 +23,11 @@ Two constraints decided the design:
 ## Decision
 
 1. **One hidden renderer.** `SandboxRenderer` owns one off-screen `CoreWebView2Controller`
-   (`IsVisible = false`) under the main window. It loads `Assets/render/render.html` from
+   (`IsVisible = false`) under the main window, in its own WebView2 profile
+   (`%LOCALAPPDATA%\Ru\WebView2Renderer`). The profile turns off Chromium's background
+   throttling, which otherwise slowed the never-shown page until a first render timed
+   out. The page says it is ready only after MathJax has started and both libraries have
+   drawn once. It loads `Assets/render/render.html` from
    the virtual host `https://ru-render.local/` and returns PNG pictures. The transcript and
    the Preview tab show those pictures with native `Image` controls, so virtualization,
    overlays and selection work as before. No WebView2 is created per block.

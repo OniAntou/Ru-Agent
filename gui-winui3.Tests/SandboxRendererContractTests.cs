@@ -51,6 +51,8 @@ public sealed class SandboxRendererContractTests
         Assert.Contains("var svg = inert(parseSvg(request.source));", script, StringComparison.Ordinal);
         Assert.Contains("'script, foreignObject, iframe, object, embed, audio, video'", script, StringComparison.Ordinal);
         Assert.Contains("render_image_timeout", script, StringComparison.Ordinal);
+        // Ready only once MathJax has started and both libraries have drawn once.
+        Assert.Contains("window.MathJax.startup.promise", script, StringComparison.Ordinal);
 
         var config = File.ReadAllText(Path.Combine(root, "render-config.js"));
         Assert.Contains("'require', 'autoload'", config, StringComparison.Ordinal);
@@ -65,6 +67,7 @@ public sealed class SandboxRendererContractTests
                      "AreDevToolsEnabled = false", "AreDefaultContextMenusEnabled = false", "AreHostObjectsAllowed = false",
                      "AreDefaultScriptDialogsEnabled = false", "IsGeneralAutofillEnabled = false", "IsPasswordAutosaveEnabled = false",
                      "controller.IsVisible = false", "CoreWebView2HostResourceAccessKind.DenyCors",
+                     "SandboxRenderPolicy.UserDataFolder(", "AdditionalBrowserArguments = SandboxRenderPolicy.BrowserArguments",
                      "AddWebResourceRequestedFilter(\"*\", CoreWebView2WebResourceContext.All)",
                      "SandboxRenderPolicy.MayLoad(args.Request.Uri)",
                      "SandboxRenderPolicy.IsRendererPage(args.Uri)",

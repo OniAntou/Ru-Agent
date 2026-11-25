@@ -36,6 +36,17 @@ public static class SandboxRenderPolicy
     /// <summary>The page and its vendored libraries must say they are ready within this time.</summary>
     public static readonly TimeSpan LoadTimeout = TimeSpan.FromSeconds(20);
 
+    /// <summary>
+    /// The renderer never shows, so Chromium would treat its page as a background tab
+    /// and slow its timers and work to a crawl; these switches keep it running at
+    /// foreground speed. They apply only to the renderer's own browser profile.
+    /// </summary>
+    public const string BrowserArguments =
+        "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
+
+    /// <summary>The renderer's own WebView2 profile, apart from the terminal's.</summary>
+    public static string UserDataFolder(string localAppData) => Path.Combine(localAppData, "Ru", "WebView2Renderer");
+
     public const int MaxSide = 4096;
     public const int MaxPngBase64Chars = 24 * 1024 * 1024;
     public const int MaxCachedPictures = 64;

@@ -833,8 +833,10 @@ hidden, locked-down WebView2 loads the vendored Mermaid and MathJax page from
 `Assets/render` and returns PNGs that native `Image` controls show. Model text goes
 to it only as a JSON string; the reply is untrusted data read by
 `SandboxRenderPolicy` (request id, PNG signature, size bounds); a page failure is
-traced only as its plain error code. A diagram shows at its own size and scrolls
-sideways when wider than the column. A closed
+traced only as its plain error code. The renderer has its own WebView2 profile with
+background throttling off, and reports ready only once both libraries are warm. A
+diagram fits its column down to 75% of its own size (`MarkdownPictures.DiagramWidth`)
+and scrolls sideways past that. A closed
 ```` ```mermaid ```` fence and a closed `$$` block become a picture card with a
 Source toggle and Copy (which copies the source); inline `$…$` becomes a picture on
 the text baseline; inside a table cell (a TextBlock, which cannot host a picture)

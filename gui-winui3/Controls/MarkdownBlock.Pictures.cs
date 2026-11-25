@@ -115,15 +115,24 @@ namespace RuApp.Controls
                         return;
                     }
 
-                    // Drawn at its own size: shrinking a wide diagram to the column made its
-                    // labels unreadable, so a wider picture scrolls sideways instead.
+                    // Fitted to the column down to MinDiagramScale; a wider picture scrolls
+                    // sideways rather than shrinking its labels out of reading.
                     var drawn = new Image
                     {
                         Source = image,
-                        Stretch = Stretch.Fill,
+                        Stretch = Stretch.Uniform,
                         Width = picture!.Width,
                         Height = picture.Height,
                     };
+                    void Fit()
+                    {
+                        double available = body.ActualWidth - body.Padding.Left - body.Padding.Right;
+                        drawn.Width = MarkdownPictures.DiagramWidth(picture.Width, available);
+                        drawn.Height = drawn.Width * picture.Height / picture.Width;
+                    }
+
+                    body.SizeChanged += (_, _) => Fit();
+                    Fit();
                     drawn.SetValue(AutomationProperties.NameProperty, kind == SandboxRenderKind.Math ? "Formula: " + text : "Diagram");
                     var view = new ScrollViewer
                     {

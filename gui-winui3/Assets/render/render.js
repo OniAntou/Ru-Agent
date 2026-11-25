@@ -188,6 +188,18 @@
                 bridge.postMessage(reply);
             });
         });
-        bridge.postMessage({ type: 'ready' });
+        // Ready means warm: MathJax has started and both libraries have drawn once, so
+        // the first real request does not pay their one-time setup inside its time limit.
+        var started = window.MathJax && window.MathJax.startup && window.MathJax.startup.promise
+            ? window.MathJax.startup.promise
+            : Promise.resolve();
+        started.then(function () {
+            return Promise.all([
+                render({ kind: 'math', source: 'x', fontSize: 14 }),
+                render({ kind: 'mermaid', source: 'graph LR; a --> b' }),
+            ]);
+        }, function () { return null; }).then(function () {
+            bridge.postMessage({ type: 'ready' });
+        });
     }
 })();

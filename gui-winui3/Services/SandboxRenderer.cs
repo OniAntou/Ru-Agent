@@ -135,7 +135,13 @@ public sealed class SandboxRenderer
         try
         {
             nint owner = WinRT.Interop.WindowNative.GetWindowHandle(window);
-            var environment = await CoreWebView2Environment.CreateAsync();
+            // Its own profile: the renderer's browser switches never touch the terminal's
+            // web view, and nothing it stores is shared with it.
+            var environment = await CoreWebView2Environment.CreateWithOptionsAsync(
+                browserExecutableFolder: null,
+                userDataFolder: SandboxRenderPolicy.UserDataFolder(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)),
+                options: new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = SandboxRenderPolicy.BrowserArguments });
             var controller = await environment.CreateCoreWebView2ControllerAsync(
                 CoreWebView2ControllerWindowReference.CreateFromWindowHandle((ulong)owner));
             controller.IsVisible = false;

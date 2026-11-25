@@ -208,6 +208,22 @@ public sealed class SandboxRenderPolicyTests
         Assert.Equal(2, MarkdownPictures.Retained(2, built, index => MarkdownPictures.IsSettled(index, 2, streaming: true)));
     }
 
+    [Theory]
+    [InlineData(300, 500, 300)]
+    [InlineData(600, 500, 500)]
+    [InlineData(600, 300, 450)]
+    [InlineData(600, 0, 600)]
+    public void A_diagram_fits_its_column_but_keeps_its_labels_readable(double natural, double available, double width) =>
+        Assert.Equal(width, MarkdownPictures.DiagramWidth(natural, available));
+
+    [Fact]
+    public void The_renderer_has_its_own_unthrottled_profile()
+    {
+        Assert.Equal(Path.Combine("C:\\Local", "Ru", "WebView2Renderer"), SandboxRenderPolicy.UserDataFolder("C:\\Local"));
+        Assert.Contains("--disable-background-timer-throttling", SandboxRenderPolicy.BrowserArguments, StringComparison.Ordinal);
+        Assert.Contains("--disable-renderer-backgrounding", SandboxRenderPolicy.BrowserArguments, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Ink_comes_from_the_reader_color() =>
         Assert.Equal("#0f172a", MarkdownPictures.Ink(15, 23, 42));

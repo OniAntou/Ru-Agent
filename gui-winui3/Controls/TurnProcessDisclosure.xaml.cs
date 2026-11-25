@@ -40,6 +40,15 @@ public sealed partial class TurnProcessDisclosure : UserControl
         nameof(HeaderIsWaiting), typeof(bool), typeof(TurnProcessDisclosure),
         new PropertyMetadata(false, OnHeaderChromeChanged));
 
+    /// <summary>
+    /// True while <see cref="HeaderMeta"/> is the live thinking line: visual only, so the
+    /// disclosure's accessible name and tooltip keep just the title and its action instead
+    /// of re-reading a line that changes every paragraph.
+    /// </summary>
+    public static readonly DependencyProperty HeaderMetaIsTransientProperty = DependencyProperty.Register(
+        nameof(HeaderMetaIsTransient), typeof(bool), typeof(TurnProcessDisclosure),
+        new PropertyMetadata(false, OnHeaderChromeChanged));
+
     public static readonly DependencyProperty HeaderVisibleProperty = DependencyProperty.Register(
         nameof(HeaderVisible), typeof(bool), typeof(TurnProcessDisclosure),
         new PropertyMetadata(false, OnHeaderVisibleChanged));
@@ -105,6 +114,12 @@ public sealed partial class TurnProcessDisclosure : UserControl
     {
         get => (bool)GetValue(HeaderIsWaitingProperty);
         set => SetValue(HeaderIsWaitingProperty, value);
+    }
+
+    public bool HeaderMetaIsTransient
+    {
+        get => (bool)GetValue(HeaderMetaIsTransientProperty);
+        set => SetValue(HeaderMetaIsTransientProperty, value);
     }
 
     public bool HeaderVisible
@@ -181,7 +196,11 @@ public sealed partial class TurnProcessDisclosure : UserControl
         ApplyTone();
         var action = IsExpanded ? "Hide turn process" : "Show turn process";
         // The recap tail can be trimmed in a narrow column; the tooltip and name keep it whole.
-        var line = string.IsNullOrEmpty(HeaderMeta) ? HeaderText : $"{HeaderText} · {HeaderMeta}";
+        // A live reasoning line is visual only: it changes every paragraph, so it stays out of
+        // the accessible name a focused header would otherwise re-announce.
+        var line = HeaderMetaIsTransient || string.IsNullOrEmpty(HeaderMeta)
+            ? HeaderText
+            : $"{HeaderText} · {HeaderMeta}";
         AutomationProperties.SetName(HeaderButton, $"{line}. {action}");
         AutomationProperties.SetItemStatus(HeaderButton, IsExpanded ? "Expanded" : "Collapsed");
         ToolTipService.SetToolTip(HeaderButton, $"{line}\n{action}");

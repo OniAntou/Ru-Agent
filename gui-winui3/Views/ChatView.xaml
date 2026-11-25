@@ -207,6 +207,7 @@
                                      FontFamily="{StaticResource RuUiFontFamily}"
                                      Foreground="{StaticResource RuMutedBrush}"
                                      VerticalAlignment="Center"
+                                     AutomationProperties.AccessibilityView="Raw"
                                      Visibility="{x:Bind HasThinkingPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                           <TextBlock x:Name="ThinkingPreviewLine"
                                      Text="{x:Bind ThinkingPreview, Mode=OneWay}"
@@ -398,6 +399,7 @@
                     <controls:TurnProcessDisclosure
                         HeaderText="{x:Bind ProcessHeader, Mode=OneWay}"
                         HeaderMeta="{x:Bind ProcessMeta, Mode=OneWay}"
+                        HeaderMetaIsTransient="{x:Bind IsLiveThinkingDetail, Mode=OneWay}"
                         HeaderGlyph="{x:Bind ProcessGlyph, Mode=OneWay}"
                         HeaderIsFailed="{x:Bind ProcessIsFailed, Mode=OneWay}"
                         HeaderIsWaiting="{x:Bind ProcessIsWaiting, Mode=OneWay}"

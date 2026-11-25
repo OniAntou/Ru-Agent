@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Prompting;
 using RuBackend.Business;
@@ -42,6 +43,49 @@ public sealed class ReasoningPreviewSseTests
             Assert.Contains("\"kind\":\"agent.reasoning_preview\"", received, StringComparison.Ordinal);
             Assert.True(received.Contains("First line", StringComparison.Ordinal), received);
             Assert.True(received.Contains("Second paragraph", StringComparison.Ordinal), received);
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { SqliteTestPools.ClearHarnessDatabase(dataPaths.AgentHarnessDatabase); } catch { }
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task Thinking_lines_never_carry_a_known_secret_to_the_live_stream()
+    {
+        const string secret = "reasoning-secret-123456";
+        var root = Path.Combine(Path.GetTempPath(), "ru-reasoning-secret-" + Guid.NewGuid().ToString("N"));
+        var workspace = Path.Combine(root, "ws");
+        var dataRoot = Path.Combine(root, "data");
+        Directory.CreateDirectory(workspace);
+        Directory.CreateDirectory(dataRoot);
+        var dataPaths = DataPaths.Resolve(root, root, root, dataRoot, Path.Combine(root, "logs"));
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            factory = new BackendWebApplicationFactory(
+                dataPaths: dataPaths,
+                modelStepRunner: new PacedReasoningRunner($"First line {secret}\n"),
+                // The Host seeds its runtime redactor with the credentials it knows; this
+                // fixture installs the same singleton so the preview path is proven to use
+                // a real secrets redactor, not a passthrough.
+                configureServices: services =>
+                {
+                    services.RemoveAll<RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor>();
+                    services.AddSingleton(new RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor([secret]));
+                });
+            using var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var runId = await CreateRunAndTrustAsync(client, sessionId, workspace, "reasoning secret delivery");
+
+            var (received, completed) = await ReadAllAsync(client, runId, TimeSpan.FromSeconds(20));
+
+            Assert.True(completed, "the run's live stream did not finish. Received: " + received);
+            Assert.Contains("\"kind\":\"agent.reasoning_preview\"", received, StringComparison.Ordinal);
+            Assert.DoesNotContain(secret, received, StringComparison.Ordinal);
+            Assert.Contains("[REDACTED]", received, StringComparison.Ordinal);
         }
         finally
         {
@@ -130,7 +174,7 @@ public sealed class ReasoningPreviewSseTests
     }
 
     /// <summary>Streams a reasoning line, waits, then starts a second paragraph.</summary>
-    private sealed class PacedReasoningRunner : IModelStepRunner
+    private sealed class PacedReasoningRunner(string firstLine = "First line\n") : IModelStepRunner
     {
         public async Task<ModelStepResult> RunStepAsync(
             ModelStepRequest request,
@@ -138,7 +182,7 @@ public sealed class ReasoningPreviewSseTests
             CancellationToken cancellationToken)
         {
             await publishDelta(new AssistantDelta(
-                request.ModelStepId, 1, "First line\n", kind: AssistantDeltaKind.Reasoning));
+                request.ModelStepId, 1, firstLine, kind: AssistantDeltaKind.Reasoning));
             await Task.Delay(700, cancellationToken);
             await publishDelta(new AssistantDelta(
                 request.ModelStepId, 2, "\nSecond paragraph\n", kind: AssistantDeltaKind.Reasoning));

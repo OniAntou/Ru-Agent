@@ -111,6 +111,7 @@ public sealed class AgentActivityWordingTests
         Assert.Contains(nameof(ChatMessageItem.ProcessMeta), raised);
         Assert.Equal("Thinking", message.ProcessHeader);
         Assert.Equal("Inspecting the session store", message.ProcessMeta);
+        Assert.True(message.IsLiveThinkingDetail);
 
         thinking.SetThinkingPreview("Next paragraph first line");
         Assert.Equal("Next paragraph first line", message.ProcessMeta);
@@ -119,6 +120,7 @@ public sealed class AgentActivityWordingTests
         Assert.Equal("A third paragraph begins", message.ProcessMeta);
 
         message.IsStreaming = false;
+        Assert.False(message.IsLiveThinkingDetail);
         Assert.DoesNotContain("A third paragraph", message.ProcessMeta, StringComparison.Ordinal);
     }
 

@@ -103,6 +103,14 @@ public partial class ChatMessageItem
     public TimeSpan? Duration =>
         _completedAt is { } end && end >= Timestamp ? end - Timestamp : null;
 
+    /// <summary>
+    /// True while the header's tail carries the live thinking line. That line changes every
+    /// reasoning paragraph, so the disclosure keeps it out of its accessible name and tooltip:
+    /// visual only, like the activity row's preview.
+    /// </summary>
+    public bool IsLiveThinkingDetail =>
+        ShowProcessHeader && IsStreaming && ProcessSummary.LiveDetail.Length > 0;
+
     /// <summary>DSH-style disclosure title: Worked for / Took, with a named failure state.</summary>
     public string ProcessHeader
     {
@@ -175,6 +183,7 @@ public partial class ChatMessageItem
         OnPropertyChanged(nameof(ProcessHeader));
         OnPropertyChanged(nameof(ProcessGlyph));
         OnPropertyChanged(nameof(ProcessMeta));
+        OnPropertyChanged(nameof(IsLiveThinkingDetail));
         OnPropertyChanged(nameof(ProcessIsFailed));
         OnPropertyChanged(nameof(ProcessIsWaiting));
         OnPropertyChanged(nameof(DisplayedSegments));

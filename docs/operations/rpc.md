@@ -181,8 +181,9 @@ Details that are easy to get wrong:
   never replayed and never buffered, so a reconnect starts without them.
   `agent.reasoning_preview` carries one absolute line of a running thinking row
   (`{activity_id, model_step_id, text}`) or a reset that clears it
-  (`{activity_id, reset:true}`); it is display text, never the model's reasoning, and
-  a reconnect simply leaves the row without its live line.
+  (`{activity_id, reset:true}`; the `text` field may be absent or null on a reset); it is
+  display text, never the model's reasoning, and a reconnect simply leaves the row without
+  its live line.
   `transient.frames_dropped` is **not** one of these — it is a durable event and
   arrives as `run.event`.
 - **`run.detached`** — the subscription pump ended before the run reached a terminal

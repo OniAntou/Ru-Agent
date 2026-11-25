@@ -39,6 +39,7 @@ public partial class ChatMessageItem
     {
         OnPropertyChanged(nameof(ProcessHeader));
         OnPropertyChanged(nameof(ProcessMeta));
+        OnPropertyChanged(nameof(IsLiveThinkingDetail));
         OnPropertyChanged(nameof(ProcessGlyph));
         OnPropertyChanged(nameof(ProcessIsFailed));
         OnPropertyChanged(nameof(ProcessIsWaiting));

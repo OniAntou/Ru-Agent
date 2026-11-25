@@ -7,11 +7,12 @@ namespace RuAgent.Harness.Core;
 /// summary line as an absolute transient frame whenever that line changes.
 /// </summary>
 /// <remarks>
-/// The content is redacted incrementally with the same session the assistant text uses,
-/// so a secret split across provider deltas is held back before it can enter a line. The
-/// accumulated tail is bounded: the paragraph heuristic only needs the newest paragraphs.
-/// A reset clears the line for a superseded attempt; completion needs no frame, because the
-/// row's own settled state hides the preview.
+/// The content is redacted incrementally with a secrets redactor, so a secret split across
+/// provider deltas is held back before it can enter a line. Reply-text sanitation is
+/// deliberately not applied here: its cumulative-chunk rewrite would swallow the blank
+/// lines that mark paragraph boundaries. The accumulated tail is bounded: the paragraph
+/// heuristic only needs the newest paragraphs. A reset clears the line for a superseded
+/// attempt; completion needs no frame, because the row's own settled state hides the preview.
 /// </remarks>
 internal sealed class ReasoningPreviewStream
 {

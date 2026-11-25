@@ -35,6 +35,19 @@ public sealed class AgentReasoningPreviewModelTests
         Assert.Null(preview.ModelStepId);
     }
 
+    [Fact]
+    public void TryParse_accepts_a_reset_without_a_line_field()
+    {
+        // The documented reset shape is {activity_id, reset:true}; the host currently
+        // also sends "text":null, but a client must accept the documented shape.
+        var frame = Frame(9, new { activity_id = ActivityId, reset = true });
+
+        Assert.True(AgentReasoningPreviewModel.TryParse(frame, out var preview));
+        Assert.NotNull(preview);
+        Assert.True(preview.IsReset);
+        Assert.Equal(string.Empty, preview.Text);
+    }
+
     [Theory]
     [InlineData(false, "agent.reasoning_preview", 1, "{\"activity_id\":\"act_0123456789abcdef0123456789abcdef\",\"text\":\"hello\"}")]
     [InlineData(true, "agent.reasoning_preview", 0, "{\"activity_id\":\"act_0123456789abcdef0123456789abcdef\",\"text\":\"hello\"}")]

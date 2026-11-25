@@ -155,11 +155,12 @@ public sealed record AgentReasoningPreviewModel(
 
         return hasActivityId
             && IsValidActivityId(activityId)
-            && hasText
             && (modelStepId is null || IsGeneratedId(modelStepId, "step_"))
             && (isReset
-                ? textWasNull || text.Length == 0
-                : !textWasNull
+                // The documented reset shape carries no text at all; the host also sends null.
+                ? !hasText || textWasNull || text.Length == 0
+                : hasText
+                    && !textWasNull
                     && text.Length is >= 1 and <= MaximumTextCharacters
                     && !text.Contains('\0'));
     }

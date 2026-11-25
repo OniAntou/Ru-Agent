@@ -531,6 +531,30 @@ public sealed class AgentActivityUiSourceContractTests
         Assert.Contains("StartTextSweep", feed, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void The_live_thinking_line_is_visual_only_in_the_turn_header()
+    {
+        // The header's accessible name and tooltip follow the disclosure's own chrome;
+        // a line that changes every paragraph must not be re-read by a screen reader.
+        var document = GuiSource.Xml("Views", "ChatView.xaml");
+        var disclosure = document.Descendants()
+            .FirstOrDefault(element => element.Name.LocalName == "TurnProcessDisclosure");
+        Assert.NotNull(disclosure);
+        Assert.True(Binds(disclosure!, "IsLiveThinkingDetail"));
+
+        var control = GuiSource.Xml("Controls", "TurnProcessDisclosure.xaml");
+        Assert.Contains("HeaderButton", GuiSource.NamedElements(control).Keys);
+        string controlCode = GuiSource.Text("Controls", "TurnProcessDisclosure.xaml.cs");
+        Assert.Contains("HeaderMetaIsTransient", controlCode, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.SetName", controlCode, StringComparison.Ordinal);
+
+        // The separator is decoration beside the line; it stays out of the content view.
+        var separator = ActivityTemplate().Descendants().FirstOrDefault(element =>
+            element.Attribute(GuiSource.Xaml + "Name")?.Value == "ThinkingPreviewSeparator");
+        Assert.NotNull(separator);
+        Assert.Equal("Raw", GuiSource.AttributeValue(separator!, "AutomationProperties.AccessibilityView"));
+    }
+
     private static XElement ActivityTemplate()
     {
         var template = GuiSource.Xml("Views", "ChatView.xaml").Descendants()

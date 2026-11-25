@@ -20,9 +20,12 @@ public sealed partial class ModelStepService
     /// </summary>
     public const string MaxConcurrentProviderStepsVariable = "RU_MAX_CONCURRENT_MODEL_STEPS";
 
-    /// <summary>Tail-kept provider reasoning per step. The projector clamps
-    /// further for the activity wire; this cap bounds in-process memory.</summary>
-    private const int MaximumReasoningChars = 8_000;
+    /// <summary>
+    /// Head-kept provider reasoning per step: one past the stored bound, so the store sees
+    /// an over-long step and says it was cut. This used to keep the last 8,000 characters,
+    /// which lost the beginning of every long deliberation before the Host ever saw it.
+    /// </summary>
+    private const int MaximumReasoningChars = RuAgent.Harness.Core.Persistence.ModelReasoningPayloadId.MaximumBytes + 1;
     private const int ImageInputTokenAllowance = RequestContextEstimator.ImageInputTokenAllowance;
     /// <summary>Shared with the Host's compaction budget; see <see cref="ContextWindowDefaults"/>.</summary>
     private const long UnknownContextWindowTokens = ContextWindowDefaults.UnknownContextWindowTokens;
@@ -339,10 +342,10 @@ public sealed partial class ModelStepService
                                 throw new ModelStepException("provider_continuation_too_large", false);
                             replayReasoning.Append(delta.Reasoning);
                         }
-                        reasoning.Append(delta.Reasoning);
-                        if (reasoning.Length > MaximumReasoningChars)
+                        if (reasoning.Length < MaximumReasoningChars)
                         {
-                            reasoning.Remove(0, reasoning.Length - MaximumReasoningChars);
+                            reasoning.Append(delta.Reasoning, 0,
+                                Math.Min(delta.Reasoning.Length, MaximumReasoningChars - reasoning.Length));
                         }
 
                         if (onReasoning is not null && delta.Reasoning.Length > 0)

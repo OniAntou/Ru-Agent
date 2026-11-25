@@ -169,7 +169,7 @@ public sealed partial class HarnessPayloadStore
                 HarnessPayloadAudience.ModelContext,
                 [HarnessPayloadEncoding.Utf8Text]),
             [HarnessPayloadKind.ModelReasoning] = new(
-                32 * 1024,
+                RuAgent.Harness.Core.Persistence.ModelReasoningPayloadId.MaximumBytes,
                 HarnessPayloadAudience.AuthenticatedClient,
                 [HarnessPayloadEncoding.Utf8Text]),
             [HarnessPayloadKind.UserInputRequest] = new(

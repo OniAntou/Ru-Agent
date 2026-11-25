@@ -40,4 +40,5 @@ public sealed record AgentActivity(
     string? Detail = null,
     IReadOnlyList<AgentTodoRow>? Todos = null,
     int? ExitCode = null,
-    string? RelativePath = null);
+    string? RelativePath = null,
+    string? ReasoningPayloadId = null);

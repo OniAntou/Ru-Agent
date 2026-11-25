@@ -66,7 +66,10 @@ public sealed partial class AgentActivityProjectorTests
         Assert.Equal(5000, activity.DurationMs);
         Assert.Null(activity.FileName);
         Assert.Null(activity.Symbol);
-        Assert.DoesNotContain("reason", activity.ToString(), StringComparison.OrdinalIgnoreCase);
+        // A step projected without reasoning carries none, and names no stored reasoning.
+        // (The record now has a ReasoningPayloadId field, so its ToString names the word.)
+        Assert.Null(activity.Detail);
+        Assert.Null(activity.ReasoningPayloadId);
     }
 
     [Theory]

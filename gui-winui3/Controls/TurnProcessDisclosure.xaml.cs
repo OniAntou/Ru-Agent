@@ -188,7 +188,15 @@ public sealed partial class TurnProcessDisclosure : UserControl
         // disclosure one step smaller than the rows it folds.
         HeaderTextBlock.FontSize = Typography.ActivityFontSize;
         MetaText.FontSize = Typography.ActivityFontSize;
-        MetaText.Text = string.IsNullOrEmpty(HeaderMeta) ? string.Empty : $"· {HeaderMeta}";
+        var meta = string.IsNullOrEmpty(HeaderMeta) ? string.Empty : $"· {HeaderMeta}";
+        // A live thinking line in the tail fades in when its paragraph changes, like the row's.
+        if (HeaderMetaIsTransient && meta.Length > 0 && MetaText.Text.Length > 0
+            && !string.Equals(meta, MetaText.Text, StringComparison.Ordinal) && UiTiming.AnimationsEnabled)
+        {
+            MetaText.Opacity = 0.25;
+            UiMotion.FadeOpacity(MetaText, 1);
+        }
+        MetaText.Text = meta;
         MetaText.Visibility = string.IsNullOrEmpty(HeaderMeta) ? Visibility.Collapsed : Visibility.Visible;
         LeadingIcon.Glyph = string.IsNullOrEmpty(HeaderGlyph) ? "\uE945" : HeaderGlyph;
         ChevronIcon.Glyph = IsExpanded ? "\uE70E" : "\uE70D";

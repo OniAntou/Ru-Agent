@@ -57,11 +57,11 @@ public sealed partial class ModelStepService
             return null;
         }
 
-        // Keep the tail: the final deliberation is the most relevant excerpt.
+        // Keep the head: a deliberation read without its beginning cannot be followed.
         var excerpt = collected.ToString().Trim();
         if (excerpt.Length > MaximumReasoningChars)
         {
-            excerpt = excerpt[^MaximumReasoningChars..];
+            excerpt = excerpt[..MaximumReasoningChars];
         }
 
         return excerpt.Length == 0 ? null : excerpt;

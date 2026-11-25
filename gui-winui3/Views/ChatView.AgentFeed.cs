@@ -188,6 +188,8 @@ namespace RuApp.Views
             }
 
             var item = update.Value.Item;
+            // The run whose payloads hold the row's stored reasoning, read when it is opened.
+            item.OwnerRunId ??= _agentController?.CurrentRun?.RunId;
             if (!update.Value.Added)
             {
                 // Every frame is applied as it arrives. A completion used to be held
@@ -468,27 +470,48 @@ namespace RuApp.Views
         /// not seen yet is dropped (the next line arrives after the batched activity frame
         /// applied); a reset clears the line.
         /// </summary>
+        private readonly Dictionary<string, AgentReasoningPreviewModel> _pendingThinkingPreviews = new(StringComparer.Ordinal);
+        private bool _thinkingPreviewDrainQueued;
+
+        /// <remarks>
+        /// Frames are coalesced: only the newest line per row is kept and they are applied in
+        /// one dispatcher turn, so a burst of paragraphs costs one layout pass, not one each.
+        /// </remarks>
         private void OnAgentReasoningPreviewReceived(object? sender, AgentReasoningPreviewModel model)
         {
-            if (!DispatcherQueue.HasThreadAccess)
+            lock (_pendingThinkingPreviews)
             {
-                DispatcherQueue.TryEnqueue(() => OnAgentReasoningPreviewReceived(sender, model));
-                return;
+                _pendingThinkingPreviews[model.ActivityId] = model;
+                if (_thinkingPreviewDrainQueued) return;
+                _thinkingPreviewDrainQueued = true;
             }
 
-            AgentRunModel? run = _agentController?.CurrentRun;
-            if (run is null || !HasRunInHand())
+            if (!DispatcherQueue.TryEnqueue(DrainThinkingPreviews))
             {
-                return;
+                lock (_pendingThinkingPreviews) _thinkingPreviewDrainQueued = false;
+            }
+        }
+
+        private void DrainThinkingPreviews()
+        {
+            AgentReasoningPreviewModel[] frames;
+            lock (_pendingThinkingPreviews)
+            {
+                frames = _pendingThinkingPreviews.Values.ToArray();
+                _pendingThinkingPreviews.Clear();
+                _thinkingPreviewDrainQueued = false;
             }
 
-            // The preview frame can arrive in the same dispatcher turn as the activity
-            // frame that creates the row, and activity frames are batched: drain them so
-            // the row exists before its line is applied.
-            FlushAgentActivities();
-            _agentActivityFeed.ApplyThinkingPreview(
-                model.ActivityId,
-                model.IsReset ? string.Empty : model.Text);
+            if (_agentController?.CurrentRun is null || !HasRunInHand()) return;
+            foreach (var model in frames)
+            {
+                var text = model.IsReset ? string.Empty : model.Text;
+                if (_agentActivityFeed.ApplyThinkingPreview(model.ActivityId, text)) continue;
+                // The frame can arrive in the same turn as the batched activity frame that
+                // creates its row: drain those once, then apply the line.
+                FlushAgentActivities();
+                _agentActivityFeed.ApplyThinkingPreview(model.ActivityId, text);
+            }
         }
 
         private void OnAgentUsageReceived(object? sender, AgentUsageReceivedEventArgs usage)
@@ -917,13 +940,32 @@ namespace RuApp.Views
             ApplyActivityLiveSetting(grid, item);
             if (item.IsRunning && grid.FindName(ThinkingPreviewElementName) is TextBlock thinkingPreview)
             {
+                UseFixedScaleSweep(thinkingPreview);
                 StartTextSweep(thinkingPreview, item);
             }
             var wasRunning = item.IsRunning;
 
+            LoadFullThinkingIfOpened(item);
             PropertyChangedEventHandler handler = null!;
             handler = (s, args) =>
             {
+                // An opened block reads the whole reasoning; so does a settle that names it while open.
+                if (args.PropertyName is nameof(AgentActivityItem.IsThinkingExpanded) or nameof(AgentActivityItem.ReasoningPayloadId)
+                    && s is AgentActivityItem opened)
+                {
+                    LoadFullThinkingIfOpened(opened);
+                    return;
+                }
+
+                // A new paragraph line fades in instead of replacing the last one in a frame.
+                if (args.PropertyName == nameof(AgentActivityItem.ThinkingPreview)
+                    && s is AgentActivityItem { HasThinkingPreview: true }
+                    && grid.FindName(ThinkingPreviewElementName) is TextBlock line)
+                {
+                    FadeInThinkingLine(line);
+                    return;
+                }
+
                 if (string.IsNullOrEmpty(args.PropertyName) ||
                     args.PropertyName == nameof(AgentActivityItem.State) ||
                     args.PropertyName == nameof(AgentActivityItem.IsRunning) ||
@@ -1103,6 +1145,39 @@ namespace RuApp.Views
         {
             var mutedBrush = Application.Current.Resources["RuMutedBrush"] as SolidColorBrush;
             return mutedBrush?.Color ?? Windows.UI.Color.FromArgb(255, 148, 163, 184);
+        }
+
+        /// <summary>The width a thinking line's shimmer travels, whatever the line's own length.</summary>
+        internal const double ThinkingSweepSpan = 360;
+
+        /// <summary>
+        /// Gives the thinking line a shimmer measured in pixels, not in its own width. The
+        /// shared sweep maps across the text block, so each new paragraph line of another
+        /// length moved the beam and changed its speed: the line looked like it stuttered.
+        /// </summary>
+        private static void UseFixedScaleSweep(TextBlock line)
+        {
+            if (line.Tag is LinearGradientBrush { MappingMode: BrushMappingMode.Absolute }) return;
+            var baseColor = ResolveWaveBaseColor();
+            var brush = new LinearGradientBrush
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(ThinkingSweepSpan, 0),
+            };
+            foreach (var offset in new[] { 0.0, 0.25, 0.5, 0.75, 1.0 })
+                brush.GradientStops.Add(new GradientStop { Color = baseColor, Offset = offset });
+            line.Tag = brush;
+        }
+
+        /// <summary>A short fade for a new thinking line; instant with animations off.</summary>
+        internal const double ThinkingLineFadeFrom = 0.25;
+
+        private static void FadeInThinkingLine(TextBlock line)
+        {
+            if (!Services.UiTiming.AnimationsEnabled) return;
+            line.Opacity = ThinkingLineFadeFrom;
+            Services.UiMotion.FadeOpacity(line, 1);
         }
 
         private void StopTextSweep(TextBlock textBlock)

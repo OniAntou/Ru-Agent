@@ -337,12 +337,33 @@
                         Padding="12,10"
                         Margin="0,6,0,0"
                         HorizontalAlignment="Stretch">
-                    <TextBlock Text="{x:Bind Detail, Mode=OneWay}"
-                               FontFamily="{StaticResource RuUiFontFamily}"
-                               FontSize="12.5"
-                               LineHeight="20"
-                               Foreground="{StaticResource RuMutedBrush}"
-                               TextWrapping="Wrap" />
+                    <!--
+                      The excerpt the row carries, or a slice of the whole reasoning once the
+                      opened block has read it: a long deliberation is shown a slice at a time
+                      so one row cannot stall the transcript's layout.
+                    -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{x:Bind ThinkingText, Mode=OneWay}"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="12.5"
+                                   LineHeight="20"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   IsTextSelectionEnabled="True"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{x:Bind ThinkingLoadStatus, Mode=OneWay}"
+                                   FontFamily="{StaticResource RuUiFontFamily}"
+                                   FontSize="11.5"
+                                   Foreground="{StaticResource RuMutedBrush}"
+                                   AutomationProperties.LiveSetting="Polite"
+                                   Visibility="{x:Bind HasThinkingLoadStatus, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        <HyperlinkButton Content="Show more"
+                                         Padding="0"
+                                         FontSize="11.5"
+                                         Click="OnShowMoreThinkingClick"
+                                         Tag="{x:Bind}"
+                                         AutomationProperties.Name="Show more of this thinking"
+                                         Visibility="{x:Bind HasMoreThinking, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    </StackPanel>
                 </Border>
                   <controls:FileEditPreviewControl Grid.Row="2"
                                                     Visibility="{x:Bind ShowEditPreview, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"

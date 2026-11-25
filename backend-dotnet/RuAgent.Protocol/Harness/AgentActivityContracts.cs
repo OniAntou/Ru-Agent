@@ -81,7 +81,8 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("todos")] IReadOnlyList<AgentTodoWire>? Todos = null,
     [property: JsonPropertyName("durable_sequence")] long? DurableSequence = null,
     [property: JsonPropertyName("exit_code")] int? ExitCode = null,
-    [property: JsonPropertyName("relative_path")] string? RelativePath = null);
+    [property: JsonPropertyName("relative_path")] string? RelativePath = null,
+    [property: JsonPropertyName("reasoning_payload_id")] string? ReasoningPayloadId = null);
 
 public static class AgentActivityWireCodec
 {
@@ -168,6 +169,7 @@ public static class AgentActivityWireValidator
         "durable_sequence",
         "exit_code",
         "relative_path",
+        "reasoning_payload_id",
     };
 
     private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
@@ -380,6 +382,23 @@ public static class AgentActivityWireValidator
         ValidateDetail(activity.Detail,
             activity.Kind == AgentActivityKind.Steer ? AgentSteerLimits.MaxDeliveredCharacters : MaximumDetailLength);
         ValidateTodos(activity.Todos);
+        ValidateReasoningPayloadId(activity);
+    }
+
+    /// <summary>
+    /// A thinking row whose excerpt was cut names its stored reasoning: a generated payload
+    /// id and nothing else, and only on a thinking row.
+    /// </summary>
+    private static void ValidateReasoningPayloadId(AgentActivityWire activity)
+    {
+        if (activity.ReasoningPayloadId is not { } id) return;
+        if (activity.Kind != AgentActivityKind.Thinking
+            || id.Length != "payload_".Length + 32
+            || !id.StartsWith("payload_", StringComparison.Ordinal)
+            || !id.AsSpan("payload_".Length).ToString().All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')))
+        {
+            throw new JsonException("Reasoning payload id is invalid.");
+        }
     }
 
     /// <summary>

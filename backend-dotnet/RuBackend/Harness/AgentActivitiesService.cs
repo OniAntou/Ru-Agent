@@ -266,7 +266,7 @@ public sealed class AgentActivitiesService
         var thinkingSteps = new HashSet<string>(
             thinking.Select(row => row.ModelStepId.Value),
             StringComparer.Ordinal);
-        var reasoningDetails = new Dictionary<string, string>(StringComparer.Ordinal);
+        var reasoningDetails = new Dictionary<string, (string Text, PayloadId PayloadId)>(StringComparer.Ordinal);
         foreach (var entry in reasoning)
         {
             if (!thinkingSteps.Contains(entry.Key))
@@ -277,16 +277,19 @@ public sealed class AgentActivitiesService
             var detail = await ReadReasoningDetailAsync(runId, entry.Value.PayloadId, cancellationToken).ConfigureAwait(false);
             if (detail is not null)
             {
-                reasoningDetails[entry.Key] = detail;
+                reasoningDetails[entry.Key] = (detail, entry.Value.PayloadId);
             }
         }
 
         foreach (var row in thinking)
         {
-            reasoningDetails.TryGetValue(row.ModelStepId.Value, out var detail);
+            // A long reasoning replays as an excerpt that names its payload, read whole on demand.
+            var found = reasoningDetails.TryGetValue(row.ModelStepId.Value, out var reasoningDetail);
             rows.Add(new ReplayedActivityRow(
                 row.Sequence,
-                AgentActivityProjector.ProjectModelStep(row.ModelStepId, AgentActivityState.Completed, row.DurationMs, detail: detail)));
+                AgentActivityProjector.ProjectModelStep(row.ModelStepId, AgentActivityState.Completed, row.DurationMs,
+                    detail: found ? reasoningDetail.Text : null,
+                    reasoningPayloadId: found ? reasoningDetail.PayloadId : null)));
         }
 
         var wires = new List<JsonElement>();
@@ -634,7 +637,8 @@ public sealed class AgentActivitiesService
             activity.Todos?.Select(todo => new ProtocolTodoWire(todo.Content, todo.Status)).ToArray(),
             durableSequence,
             activity.ExitCode,
-            activity.RelativePath);
+            activity.RelativePath,
+            activity.ReasoningPayloadId);
 
     private sealed record StepTextReplayRow(PayloadId PayloadId, long Sequence);
 

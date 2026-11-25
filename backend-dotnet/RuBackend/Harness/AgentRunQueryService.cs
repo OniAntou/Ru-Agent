@@ -25,11 +25,13 @@ public sealed class AgentRunQueryService
     private readonly HarnessPayloadStore _payloadStore;
     private readonly HarnessSqliteOptions _options;
     private readonly ILogger<AgentRunQueryService>? _logger;
+    private readonly RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor _secrets;
 
     public AgentRunQueryService(IHarnessEventStore store, ISessionStore sessions,
         AgentWorkspaceTrustService workspaceTrust, AgentV1SubagentGuard subagentGuard,
         SqliteAgentRunProviderSelectionStore providerSelections, HarnessPayloadStore payloadStore,
-        HarnessSqliteOptions options, ILogger<AgentRunQueryService>? logger = null)
+        HarnessSqliteOptions options, ILogger<AgentRunQueryService>? logger = null,
+        RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor? secrets = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
@@ -39,7 +41,11 @@ public sealed class AgentRunQueryService
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;
+        _secrets = secrets ?? RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Empty;
     }
+
+    /// <summary>The redactor a whole reasoning read passes through; the Host's own known-secret set.</summary>
+    internal RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor Secrets => _secrets;
     public async Task<AgentServiceResult> GetRunAsync(string runIdRaw, CancellationToken cancellationToken)
     {
         if (!IsRunId(runIdRaw))
@@ -273,6 +279,12 @@ public sealed class AgentRunQueryService
             var payloadJson = content.Encoding == HarnessPayloadEncoding.Opaque
                 ? Convert.ToBase64String(content.Plaintext.ToArray())
                 : Encoding.UTF8.GetString(content.Plaintext.Span);
+            // A thinking row's whole reasoning gets the same redaction as its excerpt: the
+            // stored text was redacted when written, and a secret configured since is hidden too.
+            if (kind == HarnessPayloadKind.ModelReasoning)
+            {
+                payloadJson = _secrets.Redact(payloadJson);
+            }
             // Never silently truncate a payload: callers may persist the returned
             // value as a prompt or recovery artifact, so truncation would turn a
             // valid document/base64 blob into corrupt data.  Keep the response

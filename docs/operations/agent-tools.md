@@ -898,7 +898,8 @@ the typed fields `activity_id`, `kind`, `state`, optional safe `file_name`
 (basename/line range only), `line_start`/`line_end`, `symbol`, `count`, `added`, `removed`,
 `duration_ms`, bounded `safe_code`, a bounded `tool_display` and `detail`, for a
 terminal row the process `exit_code` its receipt reported, and for an edit row an
-optional `relative_path`. That path is present only when the model passed a
+optional `relative_path` (and for a thinking row whose excerpt was cut, the
+`reasoning_payload_id` described below). That path is present only when the model passed a
 workspace-relative path: at most 16 segments and 512 characters, every segment a safe
 basename, the last one equal to `file_name`. Rooted, drive, UNC and `..` paths give no
 `relative_path`, because the projector never guesses where an absolute path lands.
@@ -941,6 +942,16 @@ or a reset that clears it. It is absolute state, not a delta — a dropped frame
 leaves the line one paragraph behind — and it is display text, never the full
 reasoning; the row's fold still carries the bounded excerpt after the step settles,
 while the live line disappears.
+
+A settled thinking row's `detail` is an excerpt of at most 4,000 characters. When the
+step's reasoning is longer, the excerpt ends with "…" and the row carries
+`reasoning_payload_id` (only on `thinking` rows, a generated `payload_` id): the step's
+whole reasoning, stored up to 512 KB (past that the head is kept and a closing note says
+it was cut). The id is derived from the model step, so the live completion frame names it
+before the step commits. A client reads the whole text on demand through
+`GET /agent/v1/runs/{runId}/payloads/{payloadId}`, which passes `model_reasoning` text
+through the same known-secret redaction as the excerpt. Reasoning used to be stored as
+its last 8,000 characters and replayed as the first 4,000 of those.
 
 Each desktop row reads as one line: a glyph for the kind of work, a verb in the
 row's tense ("Running", "Ran"), then the subject it acted on (file, command, query,

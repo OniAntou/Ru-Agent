@@ -31,6 +31,10 @@ public sealed class AgentServiceCompositionTests
         Assert.Same(
             factory.Services.GetRequiredService<RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor>(),
             factory.Services.GetRequiredService<AgentActivitiesService>().Secrets);
+        // A thinking row's whole reasoning, read on demand, is redacted the same way.
+        Assert.Same(
+            factory.Services.GetRequiredService<RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor>(),
+            factory.Services.GetRequiredService<AgentRunQueryService>().Secrets);
         Assert.NotNull(factory.Services.GetRequiredService<AgentCommandsService>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentInputsService>());
         Assert.IsType<AgentRuntimeCoordinatorFactory>(factory.Services.GetRequiredService<IAgentRuntimeCoordinatorFactory>());

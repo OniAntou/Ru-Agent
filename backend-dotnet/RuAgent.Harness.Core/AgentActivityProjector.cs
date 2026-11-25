@@ -18,20 +18,44 @@ public static class AgentActivityProjector
     private const int MaximumSymbolLength = 128;
     public const int MaximumDetailLength = 4_000;
 
+    /// <param name="reasoningPayloadId">
+    /// The step's stored reasoning. The row's detail is an excerpt bounded by the activity
+    /// contract; when the excerpt had to be cut it ends with "…" and names this payload, so a
+    /// client can read the whole reasoning on demand.
+    /// </param>
     public static AgentActivity ProjectModelStep(
         ModelStepId modelStepId,
         AgentActivityState state,
         int? durationMs = null,
         string? safeCode = null,
-        string? detail = null) =>
-        new(
+        string? detail = null,
+        PayloadId? reasoningPayloadId = null)
+    {
+        var excerpt = ThinkingExcerpt(detail, out var cut);
+        return new(
             ActivityId(modelStepId.Value),
             AgentActivityKind.Thinking,
             state,
             DurationMs: ClampDuration(durationMs),
             SafeCode: SafeCodeFor(state, safeCode),
             ToolDisplay: null,
-            Detail: ClampDetail(detail));
+            Detail: excerpt,
+            ReasoningPayloadId: cut ? reasoningPayloadId?.Value : null);
+    }
+
+    /// <summary>The thinking row's excerpt; a cut one ends with "…" instead of stopping mid-word silently.</summary>
+    private static string? ThinkingExcerpt(string? detail, out bool cut)
+    {
+        cut = false;
+        if (string.IsNullOrWhiteSpace(detail)) return null;
+        var trimmed = detail.Trim();
+        if (trimmed.Contains('\0')) return null;
+        if (trimmed.Length <= MaximumDetailLength) return trimmed;
+        cut = true;
+        var length = MaximumDetailLength - 1;
+        if (char.IsHighSurrogate(trimmed[length - 1])) length--;
+        return trimmed[..length].TrimEnd() + "…";
+    }
 
     /// <summary>
     /// What the model says while it works, as a row of its own.

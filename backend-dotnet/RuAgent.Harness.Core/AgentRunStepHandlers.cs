@@ -890,7 +890,8 @@ internal sealed partial class AgentRunStepHandlers
         }
 
         var bytes = Encoding.UTF8.GetBytes(excerpt);
-        var payloadId = _ids.NewPayloadId();
+        // Derived from the step, so the live thinking row could already name it.
+        var payloadId = ModelReasoningPayloadId.For(modelStepId);
         var payload = new HarnessPayloadIntent(
             payloadId,
             HarnessPayloadKind.ModelReasoning,
@@ -941,21 +942,41 @@ internal sealed partial class AgentRunStepHandlers
             safeCode: continuation.Protocol));
     }
 
-    private static string? ClipReasoning(string? reasoningText)
+    /// <summary>
+    /// The reasoning a step stores: all of it up to <see cref="ModelReasoningPayloadId.MaximumBytes"/>.
+    /// It used to keep only the last 8,000 characters, so a reopened chat could never show
+    /// how a long deliberation began. Past the bound the head is kept and the cut is stated.
+    /// </summary>
+    internal static string? ClipReasoning(string? reasoningText)
     {
         if (string.IsNullOrWhiteSpace(reasoningText))
         {
             return null;
         }
 
-        const int maxChars = 8_000;
         var trimmed = reasoningText.Trim();
-        if (trimmed.Length > maxChars)
+        if (Encoding.UTF8.GetByteCount(trimmed) <= ModelReasoningPayloadId.MaximumBytes)
         {
-            trimmed = trimmed[^maxChars..];
+            return trimmed;
         }
 
-        return trimmed.Length == 0 ? null : trimmed;
+        var budget = ModelReasoningPayloadId.MaximumBytes - Encoding.UTF8.GetByteCount(ModelReasoningPayloadId.TruncationNote);
+        var bytes = 0;
+        var index = 0;
+        while (index < trimmed.Length)
+        {
+            var length = char.IsSurrogatePair(trimmed, index) ? 2 : 1;
+            var size = Encoding.UTF8.GetByteCount(trimmed.AsSpan(index, length));
+            if (bytes + size > budget)
+            {
+                break;
+            }
+
+            bytes += size;
+            index += length;
+        }
+
+        return trimmed[..index].TrimEnd() + ModelReasoningPayloadId.TruncationNote;
     }
 
     private async Task<AgentRun> CommitAsync(

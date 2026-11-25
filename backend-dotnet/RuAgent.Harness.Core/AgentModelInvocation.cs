@@ -308,7 +308,8 @@ internal sealed class AgentModelInvocation
                     AgentActivityState.Completed,
                     ElapsedMilliseconds(thinkingStartedAt),
                     safeCode: "succeeded",
-                    detail: RedactDetail(modelResult.ReasoningText)));
+                    detail: RedactDetail(modelResult.ReasoningText),
+                    reasoningPayloadId: ModelReasoningPayloadId.For(modelStepId)));
         HarnessTelemetry.SetProviderExecution(telemetryActivity, modelResult.ProviderAttempts,
             modelResult.SelectedEffort, modelResult.EffectiveEffort);
         HarnessTelemetry.SetStepOutcome(telemetryActivity, "succeeded");

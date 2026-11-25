@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A thinking row shows the model's whole reasoning. The model runtime and the store
+  each kept only its last 8,000 characters and every row showed at most 4,000, so a long deliberation lost
+  its beginning on reopen and stopped mid-word while live. A step now stores up to 512 KB
+  of reasoning; a longer row's excerpt ends with "…" and names the stored text
+  (`reasoning_payload_id`), which the desktop reads when the block is opened and shows
+  20,000 characters at a time. The read passes through the same secret redaction.
+
+- **fix(gui)**: The live thinking line changes smoothly. Preview frames are coalesced into one
+  UI update, a new paragraph line fades in on the row and in the folded header, and the
+  shimmer keeps one speed whatever the line's length.
+
 - **feat(gui)**: The `Thinking` row shows a live line while the model reasons. As soon as the
   first line of a completed reasoning paragraph exists, the running row reads
   `Thinking · <first line>` — and so does the folded turn header that names the step in

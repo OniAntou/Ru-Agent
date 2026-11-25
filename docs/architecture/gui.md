@@ -340,6 +340,16 @@ The legacy replay layout uses the same disclosure. Expansion is per message and
 is not reset when more activity arrives. Existing approval/question surfaces and
 file-change summaries stay outside this disclosure.
 
+A thinking row's opened block shows its excerpt until the row names a
+`reasoning_payload_id`; then `ChatView` reads the whole reasoning once, on open, through
+the run's payload route (the row's owning run comes from replay, the live feed or the
+subagent view) and `AgentActivityItem` shows it 20,000 characters at a time behind
+"Show more", with a note while it loads or if it could not be read. The live thinking
+line keeps its paragraph rule: preview frames are coalesced into one dispatcher turn
+(the activity batch is flushed only for a row the feed has not seen), a new line fades
+in on the row and in the folded header's tail, and its shimmer is measured in pixels so
+a line of another length does not move or speed up the beam.
+
 `AgentActivitySummaryProjection` owns the process header's wording for live runs,
 replay and the subagent view alike. While a turn streams the header names the step in
 progress with its row's verb and subject (`Reading ChatView.xaml…`, `Searching for "steer"

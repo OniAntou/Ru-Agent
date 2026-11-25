@@ -26,7 +26,8 @@ public sealed record AgentActivityModel(
     string? Detail = null,
     IReadOnlyList<AgentTodoWire>? Todos = null,
     int? ExitCode = null,
-    string? RelativePath = null)
+    string? RelativePath = null,
+    string? ReasoningPayloadId = null)
 {
     public static bool TryParse(SseFrame frame, out AgentActivityModel? activity)
     {
@@ -93,7 +94,8 @@ public sealed record AgentActivityModel(
                 wire.Detail,
                 wire.Todos,
                 wire.ExitCode,
-                wire.RelativePath);
+                wire.RelativePath,
+                wire.ReasoningPayloadId);
             return true;
         }
         catch (JsonException)

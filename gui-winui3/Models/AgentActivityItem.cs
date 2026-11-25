@@ -741,6 +741,8 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         ToolDisplay = activity.ToolDisplay;
         // A settled frame may omit the code a running one never had; keep the last known.
         if (activity.ExitCode is { } exitCode) ExitCode = exitCode;
+        // Only the settled thinking frame names its stored reasoning; keep it once known.
+        if (activity.ReasoningPayloadId is { } reasoning) ReasoningPayloadId = reasoning;
         // Producer only sends the edit preview on Started; Completed carries
         // Detail=null. Keep the preview so a fast edit stays visible after settle.
         if (!string.IsNullOrWhiteSpace(activity.Detail) || !IsEditPreview)
@@ -858,6 +860,8 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         // can change its tense or wording.
         if (propertyName is nameof(State) or nameof(Kind) or nameof(ToolDisplay) or nameof(SafeCode))
             OnPropertyChanged(nameof(RowVerb));
+        // The open thinking block shows the excerpt until the whole reasoning is read.
+        if (propertyName is nameof(Detail)) OnPropertyChanged(nameof(ThinkingText));
 
         return true;
     }

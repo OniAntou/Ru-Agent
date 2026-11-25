@@ -110,7 +110,7 @@ internal sealed class SubagentTranscript
         {
             if (string.IsNullOrWhiteSpace(model.ActivityId)) continue;
             if (_items.TryGetValue(model.ActivityId, out var item)) item.UpdateFrom(model);
-            else _items[model.ActivityId] = item = new AgentActivityItem(model);
+            else _items[model.ActivityId] = item = new AgentActivityItem(model) { OwnerRunId = RunId };
             if (seen.Add(model.ActivityId)) order.Add(item);
         }
 

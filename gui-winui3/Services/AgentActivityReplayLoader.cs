@@ -54,7 +54,7 @@ internal static class AgentActivityReplayLoader
                         ? EmptyReplay(runId)
                         : new SessionRunReplay(
                             runId,
-                            replay.Activities.Select(static model => new AgentActivityItem(model)).ToArray(),
+                            replay.Activities.Select(model => new AgentActivityItem(model) { OwnerRunId = runId }).ToArray(),
                             replay.Transcript);
                 }
                 finally

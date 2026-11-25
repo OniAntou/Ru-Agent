@@ -844,6 +844,22 @@ public sealed partial class ModelStepServiceTests
     }
 
     [Fact]
+    public async Task Long_reasoning_keeps_its_beginning()
+    {
+        // Each delta is 10,000 characters; the step's reasoning is longer than the old
+        // 8,000-character tail, and its first words must survive.
+        var provider = new FakeModelProvider(
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, null, "Opening thought. " + new string('a', 10_000)),
+            new ModelDelta(null, Array.Empty<ModelToolFragment>(), false, null, null, new string('b', 10_000)),
+            new ModelDelta("done", Array.Empty<ModelToolFragment>(), true, "stop", null, " closing thought."));
+
+        var result = await new ModelStepService(provider).RunAsync(Request(), CancellationToken.None);
+
+        Assert.StartsWith("Opening thought. ", result.ReasoningText, StringComparison.Ordinal);
+        Assert.EndsWith("closing thought.", result.ReasoningText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Step_service_forwards_each_reasoning_delta_to_the_callback()
     {
         var provider = new FakeModelProvider(

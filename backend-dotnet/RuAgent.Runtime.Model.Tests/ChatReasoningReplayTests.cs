@@ -17,7 +17,8 @@ public sealed class ChatReasoningReplayTests
     {
         var service = new ModelStepService(new Provider(3));
         var result = await service.RunPreparedAsync(service.PrepareRequest(Request(enabled)), null, default);
-        Assert.True(result.ReasoningText!.Length <= 8000);
+        // The display reasoning is bounded by the stored-reasoning limit, not the provider replay.
+        Assert.True(result.ReasoningText!.Length <= RuAgent.Harness.Core.Persistence.ModelReasoningPayloadId.MaximumBytes + 1);
         if (enabled)
         {
             Assert.Equal("chat", result.ProviderContinuation!.Provider);

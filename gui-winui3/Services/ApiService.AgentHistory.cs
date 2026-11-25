@@ -410,6 +410,30 @@ namespace RuApp.Services
             }
         }
 
+        /// <summary>One stored text payload of a run (a step's whole reasoning), or null when it cannot be read.</summary>
+        internal async Task<string?> ReadPayloadTextAsync(string runId, string payloadId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/payloads/{Uri.EscapeDataString(payloadId)}",
+                    cancellationToken);
+                if (!response.IsSuccessStatusCode) return null;
+                var body = await BoundedHttpResponseReader.ReadAsync(response.Content, cancellationToken);
+                var content = ReadPayloadContent(body);
+                return string.IsNullOrEmpty(content) ? null : content;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                LogApiError("ReadPayloadTextAsync", ex);
+                return null;
+            }
+        }
+
         /// <summary>One stored image of a run as its data URL, or null when it cannot be read.</summary>
         internal async Task<string?> ReadImageDataUrlAsync(string runId, string payloadId, CancellationToken cancellationToken)
         {
@@ -563,7 +587,8 @@ namespace RuApp.Services
                         wire.Detail,
                         wire.Todos,
                         wire.ExitCode,
-                        wire.RelativePath));
+                        wire.RelativePath,
+                        wire.ReasoningPayloadId));
                 }
 
                 return new RunActivityReplay(rows, ReadTranscript(document.RootElement));

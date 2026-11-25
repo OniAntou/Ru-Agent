@@ -117,6 +117,7 @@ namespace RuApp.Models
 
                     OnPropertyChanged(nameof(Duration));
                     OnPropertyChanged(nameof(ProcessHeader));
+                    OnPropertyChanged(nameof(ProcessMeta));
                     OnPropertyChanged(nameof(ShowTypingDots));
                     OnPropertyChanged(nameof(ShowContent));
                     if (!value)
@@ -219,12 +220,14 @@ namespace RuApp.Models
                     _agentActivities.CollectionChanged += OnAgentActivitiesChanged;
                 }
 
+                ObserveProcessRows();
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasAgentActivities));
                 OnPropertyChanged(nameof(ShowLegacyActivityFeed));
                 OnPropertyChanged(nameof(HasProcess));
                 OnPropertyChanged(nameof(ShowProcessHeader));
                 OnPropertyChanged(nameof(ProcessHeader));
+                OnPropertyChanged(nameof(ProcessMeta));
                 AutoCollapseCompletedTurn();
             }
         }
@@ -260,9 +263,11 @@ namespace RuApp.Models
                     _segments.CollectionChanged += OnSegmentsChanged;
                 }
 
+                ObserveProcessRows();
                 UpdateCompactSegments();
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasSegments));
+                NotifyProcessSummaryChanged();
                 OnPropertyChanged(nameof(ShowLegacyActivityFeed));
                 OnPropertyChanged(nameof(ShowLegacyText));
             }
@@ -279,6 +284,7 @@ namespace RuApp.Models
         /// </summary>
         private void OnSegmentsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
+            ObserveProcessRows();
             UpdateCompactSegments(e);
             OnPropertyChanged(nameof(HasSegments));
             OnPropertyChanged(nameof(HasProcess));
@@ -417,6 +423,7 @@ namespace RuApp.Models
 
         private void OnAgentActivitiesChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
+            ObserveProcessRows();
             OnPropertyChanged(nameof(HasAgentActivities));
             OnPropertyChanged(nameof(ShowLegacyActivityFeed));
             OnPropertyChanged(nameof(HasProcess));

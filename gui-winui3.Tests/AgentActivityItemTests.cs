@@ -60,7 +60,7 @@ public sealed class AgentActivityItemTests
         var item = new AgentActivityItem(started);
 
         Assert.True(item.IsRunning);
-        Assert.Equal("Analyzing", item.DisplayText);
+        Assert.Equal("Reading ChatView.xaml.cs", item.DisplayText);
         Assert.Equal("ChatView.xaml.cs · L150–200", item.MetadataText);
 
         item.UpdateFrom(Activity(
@@ -71,7 +71,7 @@ public sealed class AgentActivityItemTests
             durationMs: 1200));
 
         Assert.True(item.IsCompleted);
-        Assert.Equal("Analyzed", item.DisplayText);
+        Assert.Equal("Read ChatView.xaml.cs", item.DisplayText);
         Assert.Equal("\uE73E", item.StatusGlyph);
     }
 

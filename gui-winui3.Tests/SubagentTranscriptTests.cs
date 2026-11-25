@@ -41,7 +41,8 @@ public sealed class SubagentTranscriptTests
         // Thinking rows are kept, as in the main chat, and tool rows keep their headline.
         Assert.Equal(AgentActivityKind.Thinking, Assert.IsType<ActivitySegment>(segments[1]).Item.Kind);
         Assert.Equal("Read the docs", Assert.IsType<ActivitySegment>(segments[2]).Item.RowVerb);
-        Assert.Equal("2 steps", reply.ProcessMeta);
+        // Thinking is shown but not counted: a step is a tool action.
+        Assert.Equal(1, AgentActivitySummaryProjection.ForSteps(reply.AgentActivities!, live: true).Count);
         // Every row is done but the attempt still runs: the reply stays open, not folded.
         Assert.False(reply.AutoCollapseCompleted);
     }

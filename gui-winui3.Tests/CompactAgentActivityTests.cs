@@ -220,9 +220,8 @@ public sealed class CompactAgentActivityTests
     [Fact]
     public void A_live_title_does_not_split_an_astral_character_at_the_cut()
     {
-        // "Exploring " (10) + 148 'a' + pair + 'b' is 161 units; the 159-unit cut would
-        // land between the pair's halves.
-        string fileName = new string('a', 148) + "\U0001F600" + "b";
+        // 58 'a' + pair + 'b' is 61 units; the 59-unit cut would land between the pair's halves.
+        string fileName = new string('a', 58) + "\U0001F600" + "b";
         var activity = new AgentActivityItem(new AgentActivityModel(
             "explore", AgentActivityKind.Explore, AgentActivityState.Started,
             fileName, null, null, null, null, null, null, null, "succeeded", null, null, null));
@@ -233,27 +232,52 @@ public sealed class CompactAgentActivityTests
 
         var summary = AgentActivitySummaryProjection.ForMessage(message);
 
-        Assert.Equal("Exploring " + new string('a', 148) + "…", summary.Title);
+        Assert.Equal("Exploring " + new string('a', 58) + "…", summary.Title);
     }
 
     [Fact]
-    public void Summary_reports_failures_and_waiting_without_counting_duplicate_narration()
+    public void A_live_title_names_the_step_in_progress_with_its_row_wording()
     {
+        static AgentActivityItem Row(AgentActivityKind kind, string? file = null, string? symbol = null,
+            string? tool = null, string? detail = null) => new(new AgentActivityModel(
+            "row", kind, AgentActivityState.Started, file, null, null, symbol, null, null, null, null,
+            "in_progress", tool, null, null, detail));
+
+        Assert.Equal("Reading ChatView.xaml…",
+            AgentActivitySummaryProjection.LiveTitle(Row(AgentActivityKind.Analyze, file: "ChatView.xaml", tool: "View")));
+        Assert.Equal("Searching for \"steer\" in gui-winui3/Views…",
+            AgentActivitySummaryProjection.LiveTitle(Row(AgentActivityKind.Search, symbol: "steer", detail: "gui-winui3/Views")));
+        Assert.Equal("Searching in src…", AgentActivitySummaryProjection.LiveTitle(Row(AgentActivityKind.Search, detail: "src")));
+        Assert.Equal("Running dotnet test…", AgentActivitySummaryProjection.LiveTitle(Row(AgentActivityKind.Terminal, detail: "dotnet test")));
+        Assert.Equal("Opening github.com…",
+            AgentActivitySummaryProjection.LiveTitle(Row(AgentActivityKind.Web, tool: "Browser", detail: "open github.com")));
+        Assert.Equal("Waiting for 2 subagents…", AgentActivitySummaryProjection.LiveTitle(new AgentActivityItem(new AgentActivityModel(
+            "wait", AgentActivityKind.Status, AgentActivityState.Started, null, null, null, null, 2, null, null, null,
+            "waiting_subagents", "Wait for subagent", null, null))));
+        Assert.Equal("Thinking…", AgentActivitySummaryProjection.LiveTitle(Row(AgentActivityKind.Thinking)));
+        Assert.Equal(AgentActivitySummaryProjection.WorkingTitle, AgentActivitySummaryProjection.LiveTitle(null));
+    }
+
+    [Fact]
+    public void Summary_reports_failures_and_waiting_without_counting_thinking_or_narration()
+    {
+        var approval = Activity("approval", AgentActivityKind.Terminal, AgentActivityState.Waiting);
         var message = new ChatMessageItem
         {
             Role = "assistant", IsStreaming = true, AgentActivities = new()
             {
                 Activity("thinking", AgentActivityKind.Thinking, AgentActivityState.Completed),
                 Activity("failure", AgentActivityKind.Terminal, AgentActivityState.Failed),
-                Activity("approval", AgentActivityKind.Terminal, AgentActivityState.Waiting),
+                approval,
                 Activity("narration", AgentActivityKind.Narration, AgentActivityState.Completed)
             }
         };
         var summary = AgentActivitySummaryProjection.ForMessage(message);
-        Assert.Equal(3, summary.Count);
+        // Steps are tool actions: thinking and narration describe the run, not work in it.
+        Assert.Equal(2, summary.Count);
         Assert.Equal(1, summary.Failed);
         Assert.Equal(1, summary.Waiting);
-        Assert.Equal("Ran commands", summary.Title);
+        Assert.Equal(approval.RowVerb, summary.Title);
         Assert.Equal("waiting for you · 1 failed", summary.Meta);
         Assert.Equal(AgentActivitySummaryTone.Failed, summary.Tone);
         Assert.Equal(AgentActivitySummaryProjection.FailedGlyph, summary.Glyph);
@@ -261,7 +285,7 @@ public sealed class CompactAgentActivityTests
     }
 
     [Fact]
-    public void A_finished_turn_reads_as_its_three_most_frequent_kinds_of_work()
+    public void A_finished_turn_reads_as_a_counted_recap_of_its_three_most_frequent_kinds_of_work()
     {
         var message = new ChatMessageItem
         {
@@ -278,23 +302,40 @@ public sealed class CompactAgentActivityTests
         };
         var summary = AgentActivitySummaryProjection.ForMessage(message);
         // Ties keep first appearance; thinking describes the run, not work done.
-        Assert.Equal("Edited files, ran commands, read files and more", summary.Title);
+        Assert.Equal("Edited 2 files, ran 2 commands, listed files and more", summary.Title);
+        Assert.Equal(summary.Title, summary.Recap);
         Assert.Equal(string.Empty, summary.Meta);
         Assert.Equal(AgentActivitySummaryTone.Quiet, summary.Tone);
         Assert.Equal(AgentActivitySummaryProjection.KindGlyph(AgentActivityKind.Edit), summary.Glyph);
-        Assert.Equal(7, summary.Count);
+        Assert.Equal(6, summary.Count);
 
         message.AgentActivities.Remove(message.AgentActivities.Single(item => item.ActivityId == "s1"));
-        Assert.Equal("Edited files, ran commands and read files", AgentActivitySummaryProjection.ForMessage(message).Title);
+        Assert.Equal("Edited 2 files, ran 2 commands and listed files", AgentActivitySummaryProjection.ForMessage(message).Title);
+    }
+
+    [Fact]
+    public void A_recap_counts_files_once_however_often_they_were_opened()
+    {
+        static AgentActivityItem Read(string id, string file) => new(new AgentActivityModel(
+            id, AgentActivityKind.Analyze, AgentActivityState.Completed, file, null, null, null, null, null, null, null,
+            "succeeded", "View", null, null));
+        var summary = AgentActivitySummaryProjection.ForSteps(
+            [Read("a", "App.cs"), Read("b", "App.cs"), Read("c", "Chat.cs"),
+             Activity("s1", AgentActivityKind.Search, AgentActivityState.Completed),
+             Activity("s2", AgentActivityKind.Search, AgentActivityState.Completed)], live: false);
+
+        Assert.Equal("Read 2 files and searched twice", summary.Recap);
+        Assert.Equal("5 steps", summary.StepsText);
     }
 
     [Theory]
-    [InlineData(new[] { AgentActivityKind.Search }, "Searched code")]
-    [InlineData(new[] { AgentActivityKind.Explore, AgentActivityKind.Search }, "Read files and searched code")]
-    [InlineData(new AgentActivityKind[0], "Thought it through")]
-    public void Done_titles_join_like_a_sentence(AgentActivityKind[] order, string expected)
+    [InlineData(new[] { "searched" }, "Searched")]
+    [InlineData(new[] { "read 2 files", "searched twice" }, "Read 2 files and searched twice")]
+    [InlineData(new[] { "a", "b", "c", "d" }, "A, b, c and more")]
+    [InlineData(new string[0], "")]
+    public void Recaps_join_like_a_sentence(string[] phrases, string expected)
     {
-        Assert.Equal(expected, AgentActivitySummaryProjection.DoneTitle(order));
+        Assert.Equal(expected, AgentActivitySummaryProjection.Recap(phrases));
     }
 
     [Theory]
@@ -314,14 +355,14 @@ public sealed class CompactAgentActivityTests
         var message = new ChatMessageItem { Role = "assistant", IsStreaming = true, AgentActivities = new() { item } };
         var live = AgentActivitySummaryProjection.ForMessage(message);
         Assert.True(live.IsLive);
-        Assert.Equal(item.DisplayText, live.Title);
+        Assert.Equal("Running…", live.Title);
         Assert.Equal(AgentActivitySummaryProjection.KindGlyph(AgentActivityKind.Terminal), live.Glyph);
         item.UpdateFrom(frame with { State = AgentActivityState.Failed });
         message.IsStreaming = false;
         var summary = AgentActivitySummaryProjection.ForMessage(message);
         Assert.Equal(1, summary.Failed);
         Assert.False(summary.IsLive);
-        Assert.Equal("Ran commands", summary.Title);
+        Assert.Equal("Ran 1 command", summary.Title);
         message.AgentActivities.Clear();
         Assert.Equal(AgentActivitySummary.Empty, AgentActivitySummaryProjection.ForMessage(message));
     }
@@ -363,14 +404,13 @@ public sealed class CompactAgentActivityTests
     [Fact]
     public void The_line_is_quiet_and_its_glyph_gives_way_to_the_chevron()
     {
-        var control = GuiSource.Xml("Controls", "AgentActivitySummaryControl.xaml");
+        // The turn's process header is the summary line; its recap tail trims in a narrow column.
+        var control = GuiSource.Xml("Controls", "TurnProcessDisclosure.xaml");
         GuiSource.Require(control, "LeadingIcon");
         Assert.Equal("0", GuiSource.Require(control, "ChevronIcon").Attribute("Opacity")?.Value);
-        Assert.Equal("Transparent", GuiSource.Require(control, "SummaryButton").Attribute("Background")?.Value);
-        Assert.Contains("RuMonoFontFamily", GuiSource.Text("Controls", "AgentActivitySummaryControl.xaml.cs"));
-        var code = GuiSource.Text("Controls", "AgentActivitySummaryControl.xaml.cs");
-        Assert.Contains("UiTiming.AnimationsEnabled", code);
-        Assert.Contains("TitleMinimumMs", code);
+        Assert.Equal("Transparent", GuiSource.Require(control, "HeaderButton").Attribute("Background")?.Value);
+        Assert.Equal("CharacterEllipsis", GuiSource.Require(control, "MetaText").Attribute("TextTrimming")?.Value);
+        Assert.Contains("AnimationsEnabled", GuiSource.Text("Controls", "TurnProcessDisclosure.xaml.cs"));
     }
 
     [Fact]

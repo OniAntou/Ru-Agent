@@ -59,6 +59,14 @@ public static class TuiToolVerbs
         ["analyze"] = ("analyzing", "analyzed"),
         ["analyse"] = ("analyzing", "analyzed"),
         ["think"] = ("thinking", "thought"),
+        // Names the Host gives tools that have no activity kind of their own.
+        ["browser"] = ("using the browser", "used the browser"),
+        ["question"] = ("asking a question", "asked a question"),
+        ["spawn subagent"] = ("starting a subagent", "started a subagent"),
+        ["message subagent"] = ("messaging a subagent", "messaged a subagent"),
+        ["wait for subagent"] = ("waiting for subagents", "waited for subagents"),
+        ["cancel subagent"] = ("cancelling a subagent", "cancelled a subagent"),
+        ["apply subagent"] = ("applying subagent changes", "applied subagent changes"),
     };
 
     private static readonly Dictionary<AgentActivityKind, (string Present, string Past)> ByKind = new()

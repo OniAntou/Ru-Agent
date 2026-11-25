@@ -30,7 +30,8 @@
                 <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="Transparent" />
                 <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="Transparent" />
             </Button.Resources>
-            <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="8">
+            <!-- The recap tail can outgrow a narrow column (the side panel); it trims, the title stays. -->
+            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8">
                 <Grid Width="16" Height="16" VerticalAlignment="Center">
                     <FontIcon x:Name="LeadingIcon" FontSize="13"
                               Foreground="{StaticResource RuMutedBrush}"
@@ -48,7 +49,8 @@
                 <TextBlock x:Name="MetaText" Grid.Column="2"
                            FontFamily="{StaticResource RuUiFontFamily}"
                            Foreground="{StaticResource RuMutedBrush}"
-                           TextWrapping="NoWrap" VerticalAlignment="Center" Visibility="Collapsed" />
+                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxLines="1"
+                           VerticalAlignment="Center" Visibility="Collapsed" />
             </Grid>
         </Button>
         <Grid x:Name="BodyHost" VerticalAlignment="Top" SizeChanged="OnBodySizeChanged">

@@ -906,13 +906,22 @@ History replay re-derives it from the recorded proposal, so older sessions show 
 cursor, append to the Harness event store, or enter session history.
 
 The feed projects fifteen kinds: `thinking`, `explore`, `search`, `analyze`, `edit`,
-`terminal`, `compaction`, `retry`, `todo`, `web` (`web_search` query or `web_fetch`
-host), `mcp` ("server › tool"), `computer` (the action, never typed text), `skill`
+`terminal`, `compaction`, `retry`, `todo`, `web` (`web_search` query, `web_fetch`
+host, or a `browser` action as `action subject`: the host it opened, the element ref it
+clicked, the key it pressed, how many characters it typed; never typed text, `eval`
+source, a query or a URL's path), `mcp` ("server › tool"), `computer` (the action, never typed text), `skill`
 (a loaded skill's name or a catalog search), `program` (`run_code`, never its source),
 `advisor` (a consultation, naming only a model or effort the user's request asked for;
 the transcript and the advice never cross), and a generic `status` fallback for unknown tools. `tool_display` tells apart
-listing from globbing (`List`, `Glob`), tool docs (`Docs`) and terminal follow-ups
-(`Output` for `terminal_read`, `Stop` for `terminal_stop`). `compaction`
+listing from globbing (`List`, `Glob`), tool docs (`Docs`), terminal follow-ups
+(`Output` for `terminal_read`, `Stop` for `terminal_stop`), the `Browser` among web rows,
+and names the tools that keep the `status` kind (`Question` for `ask_user`, `Spawn subagent`,
+`Message subagent`, `Wait for subagent`, `Cancel subagent`, `Apply subagent`). A `grep` row's
+`detail` is the workspace-relative scope it searched and a `glob` row's is its pattern, each
+only when it is plain path text; a subagent wait's `count` is how many subagents it covers.
+Replay re-projects rows from recorded proposals (stored already redacted) and passes every
+`detail` through the live frame's known-secret redaction again, so a secret configured after
+the run was stored is hidden as well. `compaction`
 reports the bounded number of covered context entries and the elapsed time of a
 context compaction (the summary text never crosses the sink boundary); `retry`
 reports a bounded tool transport retry attempt (any access kind, at most once

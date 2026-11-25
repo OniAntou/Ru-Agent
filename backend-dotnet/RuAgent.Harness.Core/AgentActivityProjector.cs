@@ -99,6 +99,9 @@ public static class AgentActivityProjector
             ("read", _) or ("help", _) => AgentActivityKind.Analyze,
             // Each of these used to fall to Status, which strips the row to a bare code.
             ("web_search", _) or ("web_fetch", _) => AgentActivityKind.Web,
+            // The browser is web work the user can follow; as a status row it read
+            // "Status: succeeded" and named neither the page nor the action.
+            ("browser", _) => AgentActivityKind.Web,
             ("mcp", _) => AgentActivityKind.Mcp,
             ("computer", _) => AgentActivityKind.Computer,
             ("skill", _) => AgentActivityKind.Skill,
@@ -115,7 +118,10 @@ public static class AgentActivityProjector
 
         if (kind == AgentActivityKind.Status)
         {
-            metadata = ToolActivityMetadata.Empty;
+            // How many subagents a wait covers is the one number its row can state.
+            metadata = proposal.ToolId == "agent_wait"
+                ? ToolActivityMetadata.Empty with { Count = ClampCount(CountArray(proposal.Arguments, "agent_ids")) }
+                : ToolActivityMetadata.Empty;
         }
 
         var toolDisplay = ToolDisplayFor(proposal);
@@ -128,6 +134,12 @@ public static class AgentActivityProjector
             ? ExtractTerminalCommand(proposal)
             : proposal.ToolId is "web_search" or "web_fetch"
                 ? ExtractWebTarget(proposal)
+            : proposal.ToolId == "browser"
+                ? ExtractBrowserTarget(proposal)
+            : proposal.ToolId == "grep"
+                ? ToolActivityMetadataExtractor.ReadSafeScope(proposal.Arguments, "path")
+            : proposal.ToolId == "glob"
+                ? ExtractGlobPattern(proposal)
             : proposal.ToolId == "mcp"
                 ? ExtractMcpTarget(proposal)
             : proposal.ToolId == "computer"
@@ -223,6 +235,54 @@ public static class AgentActivityProjector
         };
         return detail is { Length: > 160 } ? detail[..160] : detail;
     }
+
+    /// <summary>
+    /// The browser action and what it acted on, as "action subject": the host of a page
+    /// it opened, the element ref it clicked, the key it pressed, how many characters it
+    /// typed. Typed text, script source, queries and the path or query of a URL never
+    /// enter the row.
+    /// </summary>
+    private static string? ExtractBrowserTarget(ToolProposal proposal)
+    {
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object
+            || !proposal.Arguments.TryGetProperty("action", out var actionValue)
+            || actionValue.ValueKind != JsonValueKind.String) return null;
+        var action = actionValue.GetString() ?? "";
+        if (action.Length is < 1 or > 24 || !action.All(c => c is (>= 'a' and <= 'z') or '_')) return null;
+        string? Text(string name) => proposal.Arguments.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+        string? Host() => Text("url") is { } url && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && uri.Scheme is "https" or "http" ? uri.IdnHost : null;
+        string? Ref() => Text("ref") is { Length: > 0 and <= 16 } element && element.All(char.IsAsciiLetterOrDigit) ? element : null;
+        string? Subject() => action switch
+        {
+            "open" or "navigate" => Host(),
+            "click" or "hover" or "select" or "upload" => Ref(),
+            "type" or "fill" => (Text("text") ?? Text("value")) is { } typed ? $"{typed.Length} characters" : null,
+            "press" => Text("key") is { Length: > 0 and <= 24 } key && key.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '_') ? key : null,
+            "batch" => proposal.Arguments.TryGetProperty("steps", out var steps) && steps.ValueKind == JsonValueKind.Array
+                ? $"{steps.GetArrayLength()} steps" : null,
+            _ => null,
+        };
+        return Subject() is { Length: > 0 } subject ? $"{action} {subject}" : action;
+    }
+
+    /// <summary>The glob a file search used, when it is plain path-pattern text.</summary>
+    private static string? ExtractGlobPattern(ToolProposal proposal)
+    {
+        if (proposal.Arguments.ValueKind != JsonValueKind.Object
+            || !proposal.Arguments.TryGetProperty("pattern", out var value)
+            || value.ValueKind != JsonValueKind.String) return null;
+        var pattern = value.GetString() ?? "";
+        return pattern.Length is >= 1 and <= 80
+            && pattern.All(c => char.IsAsciiLetterOrDigit(c) || c is '*' or '?' or '.' or '/' or '\\' or '-' or '_' or '{' or '}' or ',' or '[' or ']' or '!')
+            ? pattern.Replace('\\', '/')
+            : null;
+    }
+
+    private static int? CountArray(JsonElement arguments, string name) =>
+        arguments.ValueKind == JsonValueKind.Object && arguments.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.Array ? value.GetArrayLength() : null;
 
     /// <summary>"server › tool" for an MCP row; arguments stay out of the row.</summary>
     private static string? ExtractMcpTarget(ToolProposal proposal)
@@ -654,6 +714,9 @@ public static class AgentActivityProjector
             ("skill", _) => "Skill",
             ("run_code", _) => "Program",
             ("advisor", _) => "Advisor",
+            ("browser", _) => "Browser",
+            // Host-intercepted, but its proposal is durable and replays as a row.
+            ("ask_user", _) => "Question",
             _ => null,
         };
 
@@ -830,6 +893,26 @@ public static class AgentActivityProjector
         /// name. Rooted, drive, UNC and parent-traversing paths give null: the projector
         /// has no workspace root, so it never guesses where an absolute path lands.
         /// </summary>
+        /// <summary>
+        /// The workspace-relative folder or file a search was limited to, by the same
+        /// rules as <see cref="ReadSafeRelativePath"/>: rooted, drive, UNC and
+        /// parent-traversing paths give null rather than a guess.
+        /// </summary>
+        internal static string? ReadSafeScope(JsonElement arguments, string propertyName)
+        {
+            if (arguments.ValueKind != JsonValueKind.Object
+                || !TryGetString(arguments, propertyName, out var path)
+                || string.IsNullOrWhiteSpace(path)) return null;
+            var normalized = path.Replace('\\', '/').TrimEnd('/');
+            while (normalized.StartsWith("./", StringComparison.Ordinal)) normalized = normalized[2..];
+            if (normalized is "" or ".") return null;
+            if (normalized.Length > MaximumRelativePathLength || normalized.StartsWith('/')
+                || normalized.Contains(':', StringComparison.Ordinal)) return null;
+            var segments = normalized.Split('/');
+            return segments.Length <= MaximumRelativePathSegments && segments.All(IsSafeLeaf)
+                ? string.Join('/', segments) : null;
+        }
+
         internal static string? ReadSafeRelativePath(JsonElement arguments, string propertyName, string? fileName)
         {
             if (fileName is null

@@ -340,9 +340,16 @@ The legacy replay layout uses the same disclosure. Expansion is per message and
 is not reset when more activity arrives. Existing approval/question surfaces and
 file-change summaries stay outside this disclosure.
 
-`AgentActivitySummaryProjection` owns counts/status wording; the native summary
-control coalesces updates, follows item changes, stops its timer and releases
-subscriptions on unload. `ChatMessageItem.ActivityDisplay` keeps the text-only projection,
+`AgentActivitySummaryProjection` owns the process header's wording for live runs,
+replay and the subagent view alike. While a turn streams the header names the step in
+progress with its row's verb and subject (`Reading ChatView.xaml…`, `Searching for "steer"
+in src…`, `Running dotnet test…`, `Waiting for 2 subagents…`, `Thinking…`), subjects cut to
+60 characters; `ChatMessageItem` follows each row's `PropertyChanged`, so a row that settles
+in place moves the header too. A finished turn keeps `Worked for …` and puts a counted recap
+of its three most frequent kinds of work before the step count (`Read 5 files, searched 3
+times and edited 2 files · 12 steps`); files count once however often they were opened.
+Steps are tool actions: thinking, narration, steers, retries, compaction and status rows
+that name no tool are not counted. `ChatMessageItem.ActivityDisplay` keeps the text-only projection,
 using incremental appends for live segments. The disclosure uses a keyboard-operable
 button with an accessible action and expanded/collapsed status; it adds no motion.
 The stored preference is bounded and written atomically; absent/invalid preferences
@@ -758,10 +765,11 @@ to 720 px. The user bubble, attachments and assistant column all bind to the
 same width; the composer, the prompt cards above it and the welcome hero follow it with a
 16 px gutter on each side.
 `TurnProcessDisclosure` replaces the plain activity summary for segmented turns:
-its header reads `Working…`, `Worked for 1m 5s`, `Took 1m 5s · failed` or
-`Worked`, and its body animates between the compact answer and the full process.
-The header uses the compact activity row's visual language — kind glyph, activity
-type size and a `· N steps` meta tail — with the glyph turning into the chevron
+its header reads the step in progress (see the summary projection above),
+`Worked for 1m 5s`, `Took 1m 5s · failed` or `Worked`, and its body animates between the
+compact answer and the full process. The header uses the compact activity row's visual
+language — kind glyph, activity type size and a `· recap · N steps` meta tail that trims in
+a narrow column — with the glyph turning into the chevron
 on hover, focus or while open. A closed turn auto-collapses, a click reopens it,
 and lost content height is re-measured after the binding changes so the fold
 never flashes an empty frame.

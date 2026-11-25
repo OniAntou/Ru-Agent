@@ -180,9 +180,11 @@ public sealed partial class TurnProcessDisclosure : UserControl
         ApplyLeadingState();
         ApplyTone();
         var action = IsExpanded ? "Hide turn process" : "Show turn process";
-        AutomationProperties.SetName(HeaderButton, $"{HeaderText}. {action}");
+        // The recap tail can be trimmed in a narrow column; the tooltip and name keep it whole.
+        var line = string.IsNullOrEmpty(HeaderMeta) ? HeaderText : $"{HeaderText} · {HeaderMeta}";
+        AutomationProperties.SetName(HeaderButton, $"{line}. {action}");
         AutomationProperties.SetItemStatus(HeaderButton, IsExpanded ? "Expanded" : "Collapsed");
-        ToolTipService.SetToolTip(HeaderButton, $"{HeaderText}\n{action}");
+        ToolTipService.SetToolTip(HeaderButton, $"{line}\n{action}");
     }
 
     /// <summary>The kind glyph gives way to the chevron on hover, focus or while open.</summary>

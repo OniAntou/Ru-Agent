@@ -23,14 +23,20 @@ public sealed class AgentActivitiesService
     private readonly IHarnessEventStore _store;
     private readonly HarnessPayloadStore _payloadStore;
     private readonly IMetadataPolicy _metadataPolicy;
+    private readonly RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor _secrets;
 
     public AgentActivitiesService(IHarnessEventStore store, HarnessPayloadStore payloadStore,
-        IMetadataPolicy metadataPolicy)
+        IMetadataPolicy metadataPolicy, RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor? secrets = null)
     {
+        // Replay re-projects rows from stored proposals; their details get the live feed's redaction.
+        _secrets = secrets ?? RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor.Empty;
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _payloadStore = payloadStore ?? throw new ArgumentNullException(nameof(payloadStore));
         _metadataPolicy = metadataPolicy ?? throw new ArgumentNullException(nameof(metadataPolicy));
     }
+
+    /// <summary>The redactor replayed details pass through; the Host's own known-secret set.</summary>
+    internal RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor Secrets => _secrets;
 
     /// <summary>
     /// How many activity rows one replay carries. A long run has far more; the replay keeps the
@@ -295,7 +301,7 @@ public sealed class AgentActivitiesService
             JsonElement wire;
             try
             {
-                wire = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(row.Activity, row.Sequence))).RootElement.Clone();
+                wire = JsonDocument.Parse(AgentActivityWireCodec.Serialize(MapActivity(row.Activity with { Detail = AgentActivityDetailRedaction.Redact(row.Activity.Detail, _secrets) }, row.Sequence))).RootElement.Clone();
             }
             catch (JsonException)
             {

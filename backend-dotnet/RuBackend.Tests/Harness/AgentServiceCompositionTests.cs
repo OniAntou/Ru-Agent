@@ -27,6 +27,10 @@ public sealed class AgentServiceCompositionTests
             factory.Services.GetRequiredService<IWorkspaceJournalProtector>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentWorkspaceTrustService>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentActivitiesService>());
+        // Replay redacts row details with the same known secrets as the live feed.
+        Assert.Same(
+            factory.Services.GetRequiredService<RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor>(),
+            factory.Services.GetRequiredService<AgentActivitiesService>().Secrets);
         Assert.NotNull(factory.Services.GetRequiredService<AgentCommandsService>());
         Assert.NotNull(factory.Services.GetRequiredService<AgentInputsService>());
         Assert.IsType<AgentRuntimeCoordinatorFactory>(factory.Services.GetRequiredService<IAgentRuntimeCoordinatorFactory>());

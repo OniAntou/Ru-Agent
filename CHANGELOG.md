@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: The activity header says what the run is doing and what it did. While a turn
+  works, the folded header names the step in progress instead of a fixed "Working…" ("Reading
+  ChatView.xaml…", "Searching for "steer" in src…", "Running dotnet test…", "Waiting for 2
+  subagents…") and changes as each step starts and settles. A finished turn recaps its work
+  before the step count ("Read 5 files, searched 3 times and edited 2 files · 12 steps"), and the
+  count now covers tool actions only, not thinking. Rows say more: browser steps name their
+  action and target ("Opened github.com", "Clicked e12", "Took a screenshot"), questions and
+  subagent calls read "Asked a question", "Messaged a subagent" instead of "Status: succeeded",
+  searches name their scope and globs their pattern, empty results read "Found no files" or
+  "no results", and file reads say "Read <file>" everywhere, including tooltips. Live runs,
+  reopened chats and the subagent view share one projection.
+
+- **fix(host)**: Replayed activity rows pass their detail through the same known-secret
+  redaction as the live feed. Stored arguments were already redacted with the secrets known
+  when they were written; replay now also hides a secret configured after the run was stored.
+
 - **feat(gui)**: A subagent's detail view in the Subagents panel reads like the main chat. The
   brief the main agent delegated appears as the user's message, and the child's work uses the
   main transcript's rows: the Working header with its step count, Thinking rows with durations,

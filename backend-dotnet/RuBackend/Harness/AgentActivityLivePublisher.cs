@@ -29,11 +29,7 @@ public sealed class AgentActivityLivePublisher : IAgentActivitySink
         // quote a credential (an Authorization header, an API key in argv). This
         // transient surface is client-visible, so it gets the same secret
         // redaction as streamed assistant text.
-        var detail = activity.Detail is { Length: > 0 } raw ? _secrets.Redact(raw) : activity.Detail;
-        if (AgentEditPreviewCodec.TryDecode(activity.Detail, out var before, out var after))
-        {
-            detail = AgentEditPreviewCodec.Encode(_secrets.Redact(before), _secrets.Redact(after));
-        }
+        var detail = AgentActivityDetailRedaction.Redact(activity.Detail, _secrets);
         var wire = new ProtocolActivityWire(
             activity.ActivityId,
             activity.Kind,

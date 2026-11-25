@@ -300,8 +300,36 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
     }
 
     /// <summary>Whether this row's only content is the word for success.</summary>
+    /// <remarks>A named tool on a status row (a subagent call, a question) says what it did.</remarks>
     private bool IsSilentStatus =>
-        Kind == AgentActivityKind.Status && SafeCode is "ok" or "succeeded";
+        Kind == AgentActivityKind.Status && SafeCode is "ok" or "succeeded" && NamedStatusVerb(live: false) is null;
+
+    /// <summary>
+    /// Whether the row is a step of the run's work for the process header's count: a tool
+    /// action, not thinking, narration, a steer or a status that says only "ok".
+    /// </summary>
+    internal bool CountsAsStep =>
+        Kind is not (AgentActivityKind.Thinking or AgentActivityKind.Narration or AgentActivityKind.Steer
+            or AgentActivityKind.Retry or AgentActivityKind.Compaction)
+        // A status row is a step only when it names the tool that ran (a subagent call, a question).
+        && (Kind != AgentActivityKind.Status || ToolDisplay is { Length: > 0 } && !IsSilentStatus);
+
+    /// <summary>
+    /// The verb for a status row the Host named after its tool. These tools have no kind of
+    /// their own, and without a name the row read "Status: succeeded".
+    /// </summary>
+    internal string? NamedStatusVerb(bool live) => Kind != AgentActivityKind.Status ? null : ToolDisplay switch
+    {
+        "Spawn subagent" => live ? "Starting a subagent" : "Started a subagent",
+        "Message subagent" => live ? "Messaging a subagent" : "Messaged a subagent",
+        "Wait for subagent" => live
+            ? Count is > 1 and var waiting ? $"Waiting for {waiting} subagents" : "Waiting for subagents"
+            : null,
+        "Cancel subagent" => live ? "Cancelling a subagent" : "Cancelled a subagent",
+        "Apply subagent" => live ? "Applying subagent changes" : "Applied subagent changes",
+        "Question" => live ? "Asking a question" : "Asked a question",
+        _ => null,
+    };
 
     private int _collapsedDurationMs;
 
@@ -375,9 +403,11 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         AgentActivityKind.Todo => "Updating the plan",
         AgentActivityKind.Explore => FileName is { Length: > 0 } file
             ? $"Exploring {file}"
-            : Count is { } count ? (count == 1 ? "Exploring 1 item" : $"Exploring {count} items") : "Exploring",
+            : Count is { } count ? $"Exploring {Items(count)}" : "Exploring",
         AgentActivityKind.Search => Symbol is { Length: > 0 } symbol ? $"Searching for {symbol}" : "Searching",
-        AgentActivityKind.Analyze => "Analyzing",
+        AgentActivityKind.Analyze => WithSubject(RowVerb),
+        AgentActivityKind.Web or AgentActivityKind.Mcp or AgentActivityKind.Computer
+            or AgentActivityKind.Skill or AgentActivityKind.Program => WithSubject(RowVerb),
         AgentActivityKind.Edit => ToolDisplay switch
         {
             "Delete" => "Deleting",
@@ -391,6 +421,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
             : "Compacting context",
         AgentActivityKind.Retry => AgentRetryCopy.Started(SafeCode, Count),
         AgentActivityKind.Status when SafeCode == "frames_dropped" => "Some steps were temporarily skipped",
+        AgentActivityKind.Status when NamedStatusVerb(live: true) is { } named => named,
         AgentActivityKind.Status => StatusWaitingText(SafeCode),
         AgentActivityKind.Advisor => "Consulting the advisor",
         _ => "Working…",
@@ -419,9 +450,11 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
             : "Plan updated",
         AgentActivityKind.Explore => FileName is { Length: > 0 } file
             ? $"Explored {file}"
-            : Count is { } count ? (count == 1 ? "Explored 1 item" : $"Explored {count} items") : "Explored",
+            : Count is { } count ? $"Explored {Items(count)}" : "Explored",
         AgentActivityKind.Search => FormatSearch("Searched"),
-        AgentActivityKind.Analyze => "Analyzed",
+        AgentActivityKind.Analyze => WithSubject(RowVerb),
+        AgentActivityKind.Web or AgentActivityKind.Mcp or AgentActivityKind.Computer
+            or AgentActivityKind.Skill or AgentActivityKind.Program => WithSubject(RowVerb),
         AgentActivityKind.Edit => ToolDisplay switch
         {
             "Delete" => "Deleted",
@@ -434,6 +467,7 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
             ? (compacted == 1 ? "Compacted 1 context item" : $"Compacted {compacted} context items")
             : "Compacted context",
         AgentActivityKind.Retry => AgentRetryCopy.Completed(SafeCode),
+        AgentActivityKind.Status when SafeCode is "ok" or "succeeded" && NamedStatusVerb(live: false) is { } named => named,
         AgentActivityKind.Status => StatusText(SafeCode),
         AgentActivityKind.Advisor => "Consulted the advisor",
         _ => "Completed",
@@ -760,11 +794,21 @@ public sealed partial class AgentActivityItem : INotifyPropertyChanged
         NotifyTerminalPresentation();
     }
 
+    /// <summary>"no items" rather than "0 items": an empty listing is a finding, not a count.</summary>
+    private static string Items(int count) => count switch
+    {
+        0 => "no items",
+        1 => "1 item",
+        _ => $"{count} items",
+    };
+
+    private string WithSubject(string verb) => RowSubject is { Length: > 0 } subject ? $"{verb} {subject}" : verb;
+
     private string FormatSearch(string prefix)
     {
         if (Symbol is { Length: > 0 } symbol && Count is { } count)
         {
-            var resultSuffix = count == 1 ? "1 result" : $"{count} results";
+            var resultSuffix = count switch { 0 => "no matches", 1 => "1 result", _ => $"{count} results" };
             return $"{prefix} for {symbol} · {resultSuffix}";
         }
 

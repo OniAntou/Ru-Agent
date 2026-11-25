@@ -65,17 +65,22 @@ public partial class ChatMessageItem
 
     public bool ProcessIsWaiting => ProcessSteps.Any(item => item.IsWaiting);
 
+    /// <summary>The process header's projection over the rows it folds; live while the turn streams.</summary>
+    private RuApp.Services.AgentActivitySummary ProcessSummary =>
+        RuApp.Services.AgentActivitySummaryProjection.ForSteps(ProcessSteps, IsStreaming);
+
+    /// <summary>
+    /// The step count while the turn works; once it ends, the counted recap before it
+    /// ("Read 5 files, searched 3 times and edited 2 files · 12 steps").
+    /// </summary>
     public string ProcessMeta
     {
         get
         {
-            var count = ProcessSteps.Count(item => item.Kind != AgentActivityKind.Narration);
-            return count switch
-            {
-                0 => string.Empty,
-                1 => "1 step",
-                _ => $"{count} steps",
-            };
+            if (!ShowProcessHeader) return string.Empty;
+            var summary = ProcessSummary;
+            if (summary.Count == 0) return IsStreaming || summary.Recap.Length == 0 ? string.Empty : summary.Recap;
+            return IsStreaming || summary.Recap.Length == 0 ? summary.StepsText : $"{summary.Recap} · {summary.StepsText}";
         }
     }
 
@@ -101,7 +106,8 @@ public partial class ChatMessageItem
         get
         {
             if (!ShowProcessHeader) return string.Empty;
-            if (IsStreaming) return "Working…";
+            // Live: the step in progress as its row says it, so the line moves with the run.
+            if (IsStreaming) return ProcessSummary.Title;
             var duration = Duration;
             if (IsError)
             {

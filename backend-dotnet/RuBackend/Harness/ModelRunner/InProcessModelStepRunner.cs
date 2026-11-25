@@ -100,6 +100,9 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
         // otherwise make the client silently drop every retry frame as a
         // duplicate. The next attempt continues past what was already published.
         long publishedSequences = 0;
+        // Reasoning has its own stream and its own sequence: a consumer appends text
+        // deltas in order, so reasoning frames must not consume the text sequence.
+        long reasoningSequences = 0;
         string effectiveEffort = "unknown";
         string selectedEffort = "unknown";
         string? lastProviderRetryCode = null;
@@ -142,6 +145,19 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                         .ConfigureAwait(false);
                 }
 
+                // The failed attempt's thinking line is superseded the same way: the
+                // retry starts from an empty line instead of appending to it.
+                if (reasoningSequences > 0)
+                {
+                    await publishDelta(new AssistantDelta(
+                            request.ModelStepId,
+                            checked(++reasoningSequences),
+                            string.Empty,
+                            isReset: true,
+                            kind: AssistantDeltaKind.Reasoning))
+                        .ConfigureAwait(false);
+                }
+
                 // The service numbers this attempt's deltas from 1; re-base them
                 // onto the client-facing sequence already published.
                 var result = await _stepService.RunPreparedAsync(
@@ -153,7 +169,16 @@ public sealed partial class InProcessModelStepRunner : IProviderBackedModelStepR
                                 .ConfigureAwait(false);
                         },
                         cancellationToken,
-                        request.ModelStepId.Value)
+                        request.ModelStepId.Value,
+                        async reasoning =>
+                        {
+                            await publishDelta(new AssistantDelta(
+                                    request.ModelStepId,
+                                    checked(++reasoningSequences),
+                                    reasoning,
+                                    kind: AssistantDeltaKind.Reasoning))
+                                .ConfigureAwait(false);
+                        })
                     .ConfigureAwait(false);
 
                 if (cancellationToken.IsCancellationRequested)

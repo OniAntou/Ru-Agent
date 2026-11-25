@@ -38,7 +38,7 @@ Two constraints decided the design:
    - **Web view settings.** Dev tools, context menus, host objects, script dialogs,
      autofill, accelerator keys and zoom are off.
    - **Web view events.** A `WebResourceRequested` filter on `*` answers 403 to anything
-     outside the renderer host. Navigation outside `render.html` is cancelled, and every
+     outside the renderer host and the in-memory `data:` images the page draws through. Navigation outside `render.html` is cancelled, and every
      frame navigation is cancelled. New windows are handled and never open, downloads are
      cancelled, and permissions are denied.
 4. **Content stays data.** The host sends `{id, kind, source, dark, ink, fontSize, display}`
@@ -63,10 +63,11 @@ Two constraints decided the design:
 7. **When it draws.** In chat:
    - **Mermaid:** a closed ```` ```mermaid ```` fence.
    - **Display math:** a closed `$$` block.
-   - **Inline math:** `$…$`, drawn on the text baseline.
+   - **Inline math:** `$…$`, drawn on the text baseline, except inside table cells,
+     which cannot host a picture.
 
-   The block a reply is still streaming into keeps showing its source until the reply
-   ends. A theme change redraws the pictures. In Preview, a `.svg` (still read under the
+   The block a reply is still streaming into keeps showing its source. It is rebuilt
+   once a later block arrives or the reply ends. A theme change redraws the pictures. In Preview, a `.svg` (still read under the
    text cap and checks) shows as a picture, with a Source/Picture toggle. HTML stays
    source text.
 

@@ -166,6 +166,20 @@ namespace RuApp.Controls
 
             private void AddCellInlines(InlineCollection target, TableCell cell, bool header)
             {
+                // A cell is a TextBlock, which cannot host a picture: its math stays text.
+                _inlinePictures = false;
+                try
+                {
+                    AddCellParagraphs(target, cell, header);
+                }
+                finally
+                {
+                    _inlinePictures = true;
+                }
+            }
+
+            private void AddCellParagraphs(InlineCollection target, TableCell cell, bool header)
+            {
                 var paragraphs = cell.Descendants().OfType<ParagraphBlock>().ToArray();
                 if (paragraphs.Length == 0)
                 {

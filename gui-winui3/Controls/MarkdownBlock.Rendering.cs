@@ -7,7 +7,7 @@ namespace RuApp.Controls;
 public sealed partial class MarkdownBlock
 {
     private sealed record RenderedBlock(MarkdownRenderKey Key, Paragraph[] Paragraphs,
-        List<(FrameworkElement Element, double Inset)> Embedded);
+        List<(FrameworkElement Element, double Inset)> Embedded, bool Settled);
 
     private readonly List<RenderedBlock> _renderedBlocks = [];
 
@@ -17,6 +17,9 @@ public sealed partial class MarkdownBlock
         var keys = MarkdownRenderPlan.Keys(document, source);
         int retained = Math.Abs(bodySize - _lastRenderedSize) < 0.01
             ? MarkdownRenderPlan.RetainedPrefix(_renderedBlocks.Select(row => row.Key).ToArray(), keys) : 0;
+        retained = MarkdownPictures.Retained(retained,
+            _renderedBlocks.Select(row => (row.Settled, row.Key.Source)).ToArray(),
+            index => MarkdownPictures.IsSettled(index, document.Count, IsStreaming));
         var staged = new List<RenderedBlock>();
         // Construct the changed suffix before touching the visible tree. Each
         // paragraph/InlineUIContainer keeps exactly one native parent.
@@ -24,12 +27,12 @@ public sealed partial class MarkdownBlock
         for (int index = retained; index < document.Count; index++)
         {
             var embedded = new List<(FrameworkElement Element, double Inset)>();
-            var pictures = new MarkdownPictureContext(
-                MarkdownPictures.IsSettled(index, document.Count, IsStreaming), style);
+            bool settled = MarkdownPictures.IsSettled(index, document.Count, IsStreaming);
+            var pictures = new MarkdownPictureContext(settled, style);
             var renderer = new BlockRenderer(bodySize, Foreground,
                 (element, inset) => FitEmbeddedBlock(element, inset, embedded), OpenLocalLink, pictures);
             var paragraphs = renderer.BuildBlocks(document[index], 0).ToArray();
-            staged.Add(new(keys[index], paragraphs, embedded));
+            staged.Add(new(keys[index], paragraphs, embedded, settled));
         }
 
         int paragraphCount = _renderedBlocks.Take(retained).Sum(row => row.Paragraphs.Length);
@@ -56,13 +59,13 @@ public sealed partial class MarkdownBlock
     }
 
     /// <summary>
-    /// Rebuilds the last block once a reply stops streaming, so the diagram or formula
-    /// that was still arriving is drawn; settled blocks above it are kept as they are.
+    /// Renders again once a reply stops streaming: the tail is settled now, so the
+    /// diagram or formula that was still arriving is drawn (see
+    /// <see cref="MarkdownPictures.Retained"/>); every other block is kept.
     /// </summary>
     private void SettleStreamingTail()
     {
-        if (_renderedBlocks.Count == 0 || _lastRenderedText is not { } source || !MarkdownPictures.MayHold(source)) return;
-        _renderedBlocks.RemoveAt(_renderedBlocks.Count - 1);
+        if (_lastRenderedText is not { } source || !MarkdownPictures.MayHold(source)) return;
         _lastRenderedText = null;
         RenderMarkdown();
     }

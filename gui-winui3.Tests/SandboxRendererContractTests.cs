@@ -62,7 +62,7 @@ public sealed class SandboxRendererContractTests
                      "AreDefaultScriptDialogsEnabled = false", "IsGeneralAutofillEnabled = false", "IsPasswordAutosaveEnabled = false",
                      "controller.IsVisible = false", "CoreWebView2HostResourceAccessKind.DenyCors",
                      "AddWebResourceRequestedFilter(\"*\", CoreWebView2WebResourceContext.All)",
-                     "SandboxRenderPolicy.IsRendererResource(args.Request.Uri)",
+                     "SandboxRenderPolicy.MayLoad(args.Request.Uri)",
                      "SandboxRenderPolicy.IsRendererPage(args.Uri)",
                      "SandboxRenderPolicy.IsRendererPage(args.Source)",
                      "NewWindowRequested += (_, args) => args.Handled = true",

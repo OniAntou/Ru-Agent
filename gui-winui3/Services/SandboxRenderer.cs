@@ -179,7 +179,7 @@ public sealed class SandboxRenderer
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += (_, args) =>
         {
-            if (!SandboxRenderPolicy.IsRendererResource(args.Request.Uri))
+            if (!SandboxRenderPolicy.MayLoad(args.Request.Uri))
             {
                 args.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", string.Empty);
             }

@@ -24,6 +24,22 @@ public static class MarkdownPictures
     public static bool IsSettled(int blockIndex, int blockCount, bool streaming) =>
         !streaming || blockIndex < blockCount - 1;
 
+    /// <summary>
+    /// How many rendered blocks can be kept. The key prefix says which blocks are
+    /// unchanged; a block that was built while it was the streaming tail and is settled
+    /// now must still be rebuilt when it may hold a picture, or a diagram written in the
+    /// middle of a reply would stay source after the next block arrived.
+    /// </summary>
+    public static int Retained(int keyPrefix, IReadOnlyList<(bool Settled, string Source)> built, Func<int, bool> settledNow)
+    {
+        for (int index = 0; index < keyPrefix && index < built.Count; index++)
+        {
+            if (!built[index].Settled && settledNow(index) && MayHold(built[index].Source)) return index;
+        }
+
+        return keyPrefix;
+    }
+
     /// <summary>"#rrggbb" for an opaque text color; pictures take the reader's ink.</summary>
     public static string Ink(byte red, byte green, byte blue) => $"#{red:x2}{green:x2}{blue:x2}";
 

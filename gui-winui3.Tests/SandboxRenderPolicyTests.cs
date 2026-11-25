@@ -42,6 +42,15 @@ public sealed class SandboxRenderPolicyTests
         Assert.Equal(allowed, SandboxRenderPolicy.IsRendererResource(uri));
 
     [Theory]
+    [InlineData("data:image/svg+xml;charset=utf-8,%3Csvg%3E", true)]
+    [InlineData("https://ru-render.local/tex-svg.js", true)]
+    [InlineData("https://example.com/pixel.png", false)]
+    [InlineData("blob:https://ru-render.local/1", false)]
+    [InlineData("file:///C:/secret.txt", false)]
+    public void The_web_view_loads_its_host_and_in_memory_images_only(string uri, bool allowed) =>
+        Assert.Equal(allowed, SandboxRenderPolicy.MayLoad(uri));
+
+    [Theory]
     [InlineData("https://ru-render.local/render.html", true)]
     [InlineData("https://ru-render.local/mermaid.min.js", false)]
     [InlineData("https://example.com/render.html", false)]
@@ -163,6 +172,33 @@ public sealed class SandboxRenderPolicyTests
     [InlineData(2, 3, false, true)]
     public void The_streaming_tail_waits_until_the_reply_ends(int index, int count, bool streaming, bool settled) =>
         Assert.Equal(settled, MarkdownPictures.IsSettled(index, count, streaming));
+
+    [Fact]
+    public void A_formula_written_mid_reply_is_drawn_once_the_next_block_arrives()
+    {
+        // "$x$" was the streaming tail when built; a second block arrived and kept its key.
+        var built = new[] { (Settled: false, Source: "Area is $x^2$.") };
+
+        int retained = MarkdownPictures.Retained(1, built, index => MarkdownPictures.IsSettled(index, 2, streaming: true));
+
+        Assert.Equal(0, retained);
+    }
+
+    [Fact]
+    public void Settled_blocks_and_plain_text_are_kept()
+    {
+        var built = new[] { (Settled: true, Source: "$x$"), (Settled: false, Source: "plain prose") };
+
+        Assert.Equal(2, MarkdownPictures.Retained(2, built, _ => true));
+    }
+
+    [Fact]
+    public void The_streaming_tail_itself_is_not_rebuilt_while_it_streams()
+    {
+        var built = new[] { (Settled: true, Source: "intro"), (Settled: false, Source: "```mermaid\ngraph TD\n```") };
+
+        Assert.Equal(2, MarkdownPictures.Retained(2, built, index => MarkdownPictures.IsSettled(index, 2, streaming: true)));
+    }
 
     [Fact]
     public void Ink_comes_from_the_reader_color() =>

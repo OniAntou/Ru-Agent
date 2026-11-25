@@ -65,6 +65,13 @@ public static class SandboxRenderPolicy
         && parsed.IsDefaultPort
         && string.IsNullOrEmpty(parsed.UserInfo);
 
+    /// <summary>
+    /// What the web view may load: its own host, plus the in-memory <c>data:</c> images
+    /// the page draws through. A data URL reaches no network and names no file.
+    /// </summary>
+    public static bool MayLoad(string? uri) =>
+        IsRendererResource(uri) || (uri is not null && uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase));
+
     /// <summary>The page itself, not another file on the host: the only navigation allowed.</summary>
     public static bool IsRendererPage(string? uri) =>
         IsRendererResource(uri)

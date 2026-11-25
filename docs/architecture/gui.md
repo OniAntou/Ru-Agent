@@ -835,9 +835,12 @@ to it only as a JSON string; the reply is untrusted data read by
 `SandboxRenderPolicy` (request id, PNG signature, size bounds). A closed
 ```` ```mermaid ```` fence and a closed `$$` block become a picture card with a
 Source toggle and Copy (which copies the source); inline `$…$` becomes a picture on
-the text baseline. The block a reply is still streaming into keeps its source until
-the reply ends (`MarkdownPictures.IsSettled`), then that block alone is rebuilt;
-a theme change redraws the pictures. A render that fails, times out or has no
+the text baseline; inside a table cell (a TextBlock, which cannot host a picture)
+math stays text. The block a reply is still streaming into keeps its source
+(`MarkdownPictures.IsSettled`); a block built that way is rebuilt once a later block
+arrives or the reply ends (`MarkdownPictures.Retained`), and settled blocks are kept.
+A theme change redraws the pictures. The web view may load only its own host and the
+in-memory `data:` images the page draws through (`SandboxRenderPolicy.MayLoad`). A render that fails, times out or has no
 WebView2 runtime leaves the source showing: a picture card turns into the ordinary
 code card, and inline math keeps its `$…$` text. Plain table-cell extraction
 walks nested inline containers so emphasis and link labels survive display and

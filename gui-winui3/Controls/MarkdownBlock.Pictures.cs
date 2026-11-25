@@ -13,6 +13,9 @@ namespace RuApp.Controls
     {
         private sealed partial class BlockRenderer
         {
+            /// <summary>False while building a table cell: a TextBlock cannot host a picture.</summary>
+            private bool _inlinePictures = true;
+
             private bool CanDraw(SandboxRenderKind kind, string source) =>
                 pictures is { Settled: true } && SandboxRenderPolicy.Accepts(kind, source.Trim());
 
@@ -155,7 +158,7 @@ namespace RuApp.Controls
             {
                 target.Add(fallback);
                 string source = math.Content.ToString().Trim();
-                if (!CanDraw(SandboxRenderKind.Math, source)) return;
+                if (!_inlinePictures || !CanDraw(SandboxRenderKind.Math, source)) return;
                 _ = DrawAsync();
 
                 async Task DrawAsync()
@@ -188,8 +191,9 @@ namespace RuApp.Controls
                         RenderTransform = new TranslateTransform { Y = picture.Depth },
                     };
                     view.SetValue(AutomationProperties.NameProperty, "Formula: " + source);
-                    target.RemoveAt(index);
+                    // Insert first: if the picture cannot be placed, the source run stays.
                     target.Insert(index, new InlineUIContainer { Child = view });
+                    target.Remove(fallback);
                 }
             }
 

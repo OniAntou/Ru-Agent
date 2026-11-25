@@ -22,6 +22,19 @@ public sealed class AgentRuntimeLoopFailureCodeTests
     }
 
     [Fact]
+    public void A_wrapper_holding_one_failure_keeps_that_failures_code()
+    {
+        Assert.Equal(
+            "harness_store_unavailable",
+            AgentRuntimeLoopService.NormalizeDriveFailureCode(
+                new AggregateException(new HarnessStoreException("harness_store_unavailable"))));
+        Assert.Equal(
+            "runtime_drive_failed",
+            AgentRuntimeLoopService.NormalizeDriveFailureCode(
+                new AggregateException(new HarnessStoreException("a_code"), new HarnessStoreException("b_code"))));
+    }
+
+    [Fact]
     public void An_untyped_database_failure_names_the_store()
     {
         Assert.Equal(

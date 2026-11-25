@@ -79,14 +79,18 @@ not a reparse point and either witness proves ownership, then repairs whichever
 witness was lost: a marker damaged inside the workspace is rewritten from the
 record, and a workspace allocated before records existed gains its record on the
 next allocation. A folder neither witness claims is still never adopted. A
-readable marker naming another session is a conflict: it is neither relabelled nor
-deleted, even when a record exists.
+readable marker naming another session is a conflict that the record settles for
+allocation only (amended 2026-11-25): the folder is named after its own session and
+the record proves Ru allocated it there, so allocation rewrites the marker and keeps
+the data. Without a record such a folder is still refused, and deletion still
+refuses it either way, because a delete cannot be undone.
 
 Deletion uses the same proof, so a deleted session's folder is no longer stranded
 by a damaged marker, and the orphan sweep drops records whose session and folder
 are both gone. A client that echoes the Host-owned scratch path back is resolved
-through the session's own recorded allocation, so a repair happens before the
-path is classified. The failure copy names the cause (a link, a marker changed
+through the session's own allocation (its record, or for a folder allocated before
+records existed its plain-folder marker), so a repair or the missing record happens
+before the path is classified. The failure copy names the cause (a link, a marker changed
 outside Ru, or a permission/free-space problem) and says to rename or delete the
 folder, instead of repeating a raw response body.
 

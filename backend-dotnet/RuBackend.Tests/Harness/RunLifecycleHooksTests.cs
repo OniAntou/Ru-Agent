@@ -78,6 +78,9 @@ public sealed class RunLifecycleHooksTests : IDisposable
 
         var call = Assert.Single(runner.Calls);
         Assert.Equal("user-hook", call.Command);
+        // cmd.exe resolves a bare program name in its working folder first, so the user's
+        // hook starts outside the workspace a plan run must not execute from.
+        Assert.Equal(_home, call.WorkingDirectory);
         using var input = JsonDocument.Parse(call.Input);
         Assert.True(input.RootElement.GetProperty("workspace_trusted").GetBoolean());
     }
@@ -91,9 +94,10 @@ public sealed class RunLifecycleHooksTests : IDisposable
 
         Hooks(runner).RunFinished(Run(HarnessRunState.Completed, null, AgentPermissionPreset.Plan), "completed", _workspace);
 
-        await runner.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var call = await runner.FirstCall.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await Task.Delay(200);
         Assert.Equal("user-hook", Assert.Single(runner.Calls).Command);
+        Assert.Equal(_home, call.WorkingDirectory);
     }
 
     [Fact]

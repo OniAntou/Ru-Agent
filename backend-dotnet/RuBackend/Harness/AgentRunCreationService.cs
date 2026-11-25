@@ -109,10 +109,11 @@ public sealed class AgentRunCreationService
         // A client echoes the Host-owned scratch path it was given, either from the
         // previous run or from the pre-run scratch endpoint. Resolve that path
         // through this session's own allocation: a marker the agent's tools damaged
-        // is repaired there instead of the folder looking like a user project.
+        // is repaired there instead of the folder looking like a user project, and a
+        // folder allocated before ownership records existed gains its record there.
         if (!allocateScratchWorkspace
             && _scratchWorkspaces is not null
-            && _scratchWorkspaces.IsRecordedScratchPathFor(workspacePath, sessionIdRaw))
+            && _scratchWorkspaces.IsOwnedScratchPathFor(workspacePath, sessionIdRaw))
         {
             allocateScratchWorkspace = true;
         }

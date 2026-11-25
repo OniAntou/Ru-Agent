@@ -85,15 +85,18 @@ code it parked on (`continue_removed` when none was recorded).
 A run that stops on an exception keeps the name that exception carries: a store
 fault ends it with the store's own code (`harness_store_unavailable`, or
 `agent_store_unavailable` for a raw database failure), a protocol fault with its
-protocol code, and a tool-transport fault with the code it carries.
+protocol code, and a tool-transport fault with the code it carries. A wrapper
+holding one fault (`AggregateException`, `TargetInvocationException`) is classified
+by the fault it wraps.
 `runtime_drive_failed` is only the fallback for a genuinely unclassified fault, so
 an operator can tell the family apart from the run's terminal code without the
 host log; the host still records the throwing type and method for that fallback.
 
 That fallback now names its site too. The run's terminal state carries a bounded
 fingerprint — `failure_kind` (a lower-case token such as `store`, `protocol`,
-`transport` or `invalid_operation`) and `failure_site` (the throwing type and
-method) — validated so it can never hold a message, a path or a secret, and absent
+`transport` or `invalid_operation`) and `failure_site` (the innermost Ru type and
+method on the stack, so a fault raised by a framework helper still names Ru's code,
+with an async method named as written) — validated so it can never hold a message, a path or a secret, and absent
 for a run the runtime failed by name. It is stored in the `agent_run_failures` side
 table (one row per failed run, written in the same transaction as the terminal
 state) rather than as run columns, because fixture databases replay the migration

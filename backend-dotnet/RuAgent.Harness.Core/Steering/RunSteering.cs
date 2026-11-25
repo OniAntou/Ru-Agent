@@ -42,6 +42,20 @@ public static class RunSteerContract
     public static PayloadId DeliveredPayloadId(string steerId) =>
         new(AgentSteerLimits.DeliveredPayloadId(steerId));
 
+    private const string DeliveredImageDomain = "ru.steer_image.v1\n";
+
+    /// <summary>
+    /// The <c>UserImage</c> payload a waiting <c>SteerImage</c> becomes when the run reads its
+    /// steer. Derived, so the steer's image rows still name the delivered image after the
+    /// waiting copy is deleted, and each image is stored once.
+    /// </summary>
+    public static PayloadId DeliveredImagePayloadId(PayloadId steerImagePayloadId)
+    {
+        var digest = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(DeliveredImageDomain + steerImagePayloadId.Value));
+        return new PayloadId("payload_" + Convert.ToHexString(digest, 0, 16).ToLowerInvariant());
+    }
+
     /// <summary>
     /// States that still reach another model step. A run waiting on trust or history has not
     /// started stepping, and a terminal run never will.
@@ -56,8 +70,14 @@ public static class RunSteerContract
 /// <summary>
 /// A steer the run reads now: its text and the image data URLs it carried. The model reads
 /// <see cref="DeliveredText"/>, which tells it how many images came with the message.
+/// <see cref="ImageSources"/>, when given, names the waiting <c>SteerImage</c> payload of each
+/// image, in the same order, so delivery can derive the run's image ids from them.
 /// </summary>
-public sealed record DeliveredSteer(string SteerId, string Text, IReadOnlyList<string>? Images = null)
+public sealed record DeliveredSteer(
+    string SteerId,
+    string Text,
+    IReadOnlyList<string>? Images = null,
+    IReadOnlyList<PayloadId>? ImageSources = null)
 {
     public IReadOnlyList<string> ImageDataUrls => Images ?? [];
 
@@ -100,10 +120,14 @@ public static class RunSteerDelivery
                 HarnessPayloadEncoding.Utf8Text, Math.Max(bytes.Length, 1), bytes));
             events.Add(new HarnessEventIntent(new EventId("evt_" + Guid.NewGuid().ToString("N")),
                 HarnessEventKind.RunNoteAdded, payloadId: payloadId, safeCode: RunSteerContract.DeliveredSafeCode));
-            foreach (var image in steer.ImageDataUrls)
+            var sources = steer.ImageSources is { } named && named.Count == steer.ImageDataUrls.Count ? named : null;
+            for (var index = 0; index < steer.ImageDataUrls.Count; index++)
             {
-                var imageBytes = System.Text.Encoding.UTF8.GetBytes(image);
-                payloads.Add(new HarnessPayloadIntent(new PayloadId("payload_" + Guid.NewGuid().ToString("N")),
+                var imageBytes = System.Text.Encoding.UTF8.GetBytes(steer.ImageDataUrls[index]);
+                var imagePayloadId = sources is null
+                    ? new PayloadId("payload_" + Guid.NewGuid().ToString("N"))
+                    : RunSteerContract.DeliveredImagePayloadId(sources[index]);
+                payloads.Add(new HarnessPayloadIntent(imagePayloadId,
                     HarnessPayloadKind.UserImage,
                     HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
                     HarnessPayloadEncoding.Utf8Text, Math.Max(imageBytes.Length, 1), imageBytes));

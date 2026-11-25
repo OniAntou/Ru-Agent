@@ -21,14 +21,21 @@ public sealed class HookToolGateway : IToolGateway, IToolRunCancellation, IAppro
     private readonly HookConfiguration _hooks;
     private readonly IHookRunner _runner;
     private readonly string _workspaceRoot;
+    private readonly string _workingDirectory;
     private readonly ConcurrentDictionary<string, ToolProposal> _evaluated = new(StringComparer.Ordinal);
 
-    public HookToolGateway(IToolGateway inner, HookConfiguration hooks, IHookRunner runner, string workspaceRoot)
+    /// <param name="workingDirectory">
+    /// Where hook commands start. Defaults to the workspace; a run that loads no workspace
+    /// hooks passes the user's profile instead, because <c>cmd.exe</c> resolves a bare
+    /// program name against its working folder before PATH.
+    /// </param>
+    public HookToolGateway(IToolGateway inner, HookConfiguration hooks, IHookRunner runner, string workspaceRoot, string? workingDirectory = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _hooks = hooks ?? throw new ArgumentNullException(nameof(hooks));
         _runner = runner ?? throw new ArgumentNullException(nameof(runner));
         _workspaceRoot = workspaceRoot ?? throw new ArgumentNullException(nameof(workspaceRoot));
+        _workingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? workspaceRoot : workingDirectory;
     }
 
     public async Task<ToolProposalDecision> EvaluateAsync(ToolProposal proposal, CancellationToken cancellationToken)
@@ -86,7 +93,7 @@ public sealed class HookToolGateway : IToolGateway, IToolRunCancellation, IAppro
     {
         try
         {
-            return await _runner.RunAsync(hook, json, _workspaceRoot, cancellationToken).ConfigureAwait(false);
+            return await _runner.RunAsync(hook, json, _workingDirectory, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {

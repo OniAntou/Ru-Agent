@@ -59,6 +59,16 @@ public sealed class HookConfiguration
     public static bool RunsWorkspaceHooks(bool workspaceTrusted, RuAgent.Protocol.Harness.AgentPermissionPreset preset) =>
         workspaceTrusted && preset != RuAgent.Protocol.Harness.AgentPermissionPreset.Plan;
 
+    /// <summary>
+    /// Where a run's hooks start. Only a run that loads the workspace's hooks starts in the
+    /// workspace: <c>cmd.exe</c> resolves a bare program name against its working folder
+    /// before PATH, so a user hook started in an untrusted or <c>plan</c> workspace could run
+    /// a program the workspace supplies. The workspace stays the fallback only when no
+    /// profile folder is known.
+    /// </summary>
+    public static string HookWorkingDirectory(bool workspaceHooks, string workspaceRoot, string? userHome) =>
+        workspaceHooks || string.IsNullOrWhiteSpace(userHome) ? workspaceRoot : userHome;
+
     private readonly IReadOnlyList<HookDefinition> _hooks;
 
     public HookConfiguration(IReadOnlyList<HookDefinition> hooks) => _hooks = hooks;

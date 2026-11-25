@@ -78,24 +78,37 @@ public sealed class ScratchWorkspaceStore
                 throw new IOException("scratch_workspace_reparse");
             }
 
+            var recorded = RecordMatches(path, sessionId);
             if (MarkerMatches(path, sessionId))
             {
                 // Upgrade path: a workspace allocated before records existed, or a
-                // data root that moved, gains its record on the next allocation.
-                TryWriteRecord(path, sessionId);
+                // data root that moved, gains its record on the next allocation. A
+                // record that already matches is left alone, so a turn writes nothing.
+                if (!recorded)
+                {
+                    TryWriteRecord(path, sessionId);
+                }
+
                 return path;
             }
 
-            if (MarkerNamesAnotherSession(path, sessionId) || !RecordMatches(path, sessionId))
+            if (!recorded)
             {
-                // Existing user data is not ours to claim. In particular, never
-                // replace or relabel a marker that names another session.
+                // Existing user data is not ours to claim. Without the Host's record,
+                // never replace a missing, malformed or foreign ownership marker.
                 throw new IOException("scratch_workspace_unowned");
             }
 
             // The agent's own tools can rewrite anything inside its workspace,
-            // including the marker. The record still proves this exact folder was
-            // allocated to this session, so repair the marker and keep the data.
+            // including the marker, even into one naming another session. The folder
+            // is named after this session and the record proves Ru allocated it here,
+            // so no other session can own it: repair the marker and keep the data.
+            // Deletion stays stricter (TryDelete) because it cannot be undone.
+            if (MarkerNamesAnotherSession(path, sessionId))
+            {
+                _logger?.LogWarning("scratch workspace {SessionId} marker named another session; repairing it from the Host record", sessionId);
+            }
+
             TryWriteMarker(path, sessionId);
             return path;
         }
@@ -245,17 +258,45 @@ public sealed class ScratchWorkspaceStore
     }
 
     /// <summary>
-    /// True only for a scratch path the Host's own record proves it allocated to
-    /// this session. A path-shaped child without that record could be a user's
-    /// folder, so the Host keeps treating it as an explicit project instead.
+    /// True only for a scratch path this session owns: the Host's own record or the
+    /// marker proves it allocated the folder. A marker-only folder predates records,
+    /// and routing it through <see cref="Ensure"/> is what writes its record, so a
+    /// later damaged marker can still be repaired. A path-shaped child neither
+    /// witness claims could be a user's folder, so the Host keeps treating it as an
+    /// explicit project instead.
     /// </summary>
-    public bool IsRecordedScratchPathFor(string? path, string sessionId) =>
-        IsScratchPathFor(path, sessionId)
-        && RecordMatches(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path!)), sessionId);
+    public bool IsOwnedScratchPathFor(string? path, string sessionId)
+    {
+        if (!IsScratchPathFor(path, sessionId))
+        {
+            return false;
+        }
+
+        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path!));
+        return RecordMatches(full, sessionId)
+            || (IsPlainDirectory(full) && MarkerMatches(full, sessionId));
+    }
+
+    /// <summary>
+    /// A marker read through a link or junction belongs to the link's target, not to
+    /// Ru, so only a plain directory's marker can stand in for a missing record.
+    /// </summary>
+    private static bool IsPlainDirectory(string path)
+    {
+        try
+        {
+            var info = new DirectoryInfo(path);
+            return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) == 0;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Path shape only: a direct child of <see cref="Root"/> named after this
-    /// session. Ownership needs <see cref="IsRecordedScratchPathFor"/>.
+    /// session. Ownership needs <see cref="IsOwnedScratchPathFor"/>.
     /// </summary>
     private bool IsScratchPathFor(string? path, string sessionId) =>
         IsValidSessionId(sessionId)
@@ -533,9 +574,11 @@ public sealed class ScratchWorkspaceStore
         Path.Combine(Root, OwnersDirectoryName, sessionId + ".json");
 
     /// <summary>
-    /// Proves from the Host's own record that this exact folder was allocated to
-    /// this session. The recorded path is compared, not just the session id, so a
-    /// folder swapped in at the same name is not adopted from the record alone.
+    /// Proves from the Host's own record that this folder path was allocated to this
+    /// session. The recorded path is compared, not just the session id, so a record
+    /// left behind by a data root that moved does not claim the new location. It does
+    /// not tell two folders at the same path apart; a link or junction swapped in there
+    /// is refused by the reparse-point checks instead.
     /// </summary>
     private bool RecordMatches(string path, string sessionId)
     {
@@ -685,7 +728,7 @@ public sealed class ScratchWorkspaceStore
 
     /// <summary>
     /// The Host's own ownership record. <see cref="Path"/> binds the record to the
-    /// exact folder, so replacing the folder at the same name does not inherit it.
+    /// folder's location under this data root.
     /// </summary>
     private sealed record OwnershipRecord(int Version, string SessionId, string Path);
 }

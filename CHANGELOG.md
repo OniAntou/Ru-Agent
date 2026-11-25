@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A `plan` run's user hooks start in the user's profile folder, not the
+  workspace. `cmd.exe` resolves a bare program name in its working folder first, so a user hook
+  such as `git status` could run a `git.cmd` a cloned repository supplied, in a preset that must
+  not run the workspace's commands. Runs that load the workspace's own hooks are unchanged.
+
+- **fix(host)**: A scratch workspace whose marker the agent rewrote to name another chat is
+  repaired when the Host's ownership record proves the allocation (ADR 0041 amendment); without
+  a record it is still refused, and deletion still refuses it. A turn no longer rewrites a
+  record that already matches.
+
+- **fix(harness)**: A failed run's `failure_site` names the innermost Ru method instead of a
+  framework throw helper, and an async method by its own name. A wrapper holding one fault is
+  classified by that fault, for the terminal code and the fingerprint alike.
+
+- **perf(harness)**: A steer's images are stored once. Delivery used to copy each waiting
+  `SteerImage` into a new `UserImage` and keep both; the delivered image now takes an id derived
+  from the waiting one, which is deleted. Reopened chats still attribute each image to its
+  steer, including steers delivered before this change. A run that ends also drops the waiting
+  images of steers it never read; the returned steer keeps its text and image count.
+
+- **fix(host)**: A steer whose images add up to more than about 6 MiB is no longer refused with
+  413 `Request body too large`. The steers route kept the generic 8 MiB body cap although the
+  route and its image checks accept what a run's prompt does (ten images, 16 MiB decoded); it now
+  shares the run-creation bound.
+
+- **fix(host)**: A folderless chat created before scratch ownership records existed gains its
+  record on its next turn. Its echoed scratch path used to skip allocation, so the record was
+  never written and a marker the agent later damaged still stranded the chat.
+
 - **fix(broker)**: A visible built-in browser (`headless: false`) no longer leaves blank windows
   that stay until Ru exits. The tab the browser opened at launch is closed once a session page
   exists, the browser shuts down when its last page closes, and Chromium keeps painting windows

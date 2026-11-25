@@ -13,7 +13,7 @@ namespace RuBackend.Harness.Hooks;
 /// A prompt hook that exits with <see cref="HookResult.BlockExitCode"/> refuses the prompt
 /// before any run is written; a timeout, another exit code or a start failure never blocks.
 /// A workspace's own hooks run only once the workspace is trusted, and never in
-/// <c>plan</c>. Until trust only the user's hooks run, and they start in the user's profile folder rather than the
+/// <c>plan</c>. Without them only the user's hooks run, and they start in the user's profile folder rather than the
 /// workspace, where <c>cmd.exe</c> would resolve a bare program name against workspace
 /// files first. Stop hooks observe the finished run and cannot change it.
 /// </remarks>
@@ -86,7 +86,7 @@ public sealed class RunLifecycleHooks
             ["prompt"] = includePrompt ? prompt : null,
             ["prompt_omitted"] = !includePrompt,
         });
-        var workingDirectory = workspaceTrusted ? workspaceRoot : _userHome ?? workspaceRoot;
+        var workingDirectory = HookConfiguration.HookWorkingDirectory(workspaceHooks, workspaceRoot, _userHome);
         foreach (var hook in hooks)
         {
             HookResult result;
@@ -138,7 +138,7 @@ public sealed class RunLifecycleHooks
             var workspaceHooks = HookConfiguration.RunsWorkspaceHooks(trusted, run.Preset);
             var hooks = HookConfiguration.Load(workspaceHooks ? workspaceRoot : null, _userHome).ForEvent(HookEvent.Stop);
             if (hooks.Count == 0) return;
-            var workingDirectory = trusted ? workspaceRoot : _userHome ?? workspaceRoot;
+            var workingDirectory = HookConfiguration.HookWorkingDirectory(workspaceHooks, workspaceRoot, _userHome);
             var input = JsonSerializer.Serialize(new Dictionary<string, object?>
             {
                 ["event"] = nameof(HookEvent.Stop),

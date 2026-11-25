@@ -21,8 +21,9 @@ public sealed class RequestSizeMiddleware
         var maxBytes = _options.Value.MaxRequestBodyBytes;
         // Both create routes carry the same optional provider/image payload and share
         // one endpoint reader; a path-only check here used to cap /runs/selected at the
-        // general 8 MiB limit while /runs was allowed the larger bound.
-        if (IsAgentRunCreatePath(context.Request.Path))
+        // general 8 MiB limit while /runs was allowed the larger bound. A steer carries
+        // what a run's prompt can (ADR 0056), so its route shares that bound too.
+        if (IsAgentRunCreatePath(context.Request.Path) || IsRunSteerPath(context.Request.Path))
         {
             maxBytes = Math.Max(maxBytes, _options.Value.AgentRunMaxRequestBodyBytes);
         }
@@ -89,6 +90,28 @@ public sealed class RequestSizeMiddleware
         value = value.TrimEnd('/');
         return value.Equals("/agent/v1/runs", StringComparison.OrdinalIgnoreCase)
             || value.Equals("/agent/v1/runs/selected", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// "/agent/v1/runs/{runId}/steers", segment-exact like the create routes: one
+    /// non-empty run segment, so a deeper or lookalike path keeps the generic cap.
+    /// The endpoint validates the run id itself.
+    /// </summary>
+    private static bool IsRunSteerPath(PathString path)
+    {
+        const string prefix = "/agent/v1/runs/";
+        const string suffix = "/steers";
+        var value = path.Value?.TrimEnd('/');
+        if (value is null
+            || value.Length <= prefix.Length + suffix.Length
+            || !value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            || !value.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var runSegment = value.AsSpan(prefix.Length, value.Length - prefix.Length - suffix.Length);
+        return runSegment.IndexOf('/') < 0;
     }
 
     private static async Task RejectAsync(HttpContext context)

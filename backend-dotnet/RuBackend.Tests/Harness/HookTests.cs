@@ -55,6 +55,17 @@ public sealed class HookConfigurationTests
             Directory.Delete(workspace, recursive: true);
         }
     }
+
+    [Theory]
+    [InlineData(true, "ws")]
+    [InlineData(false, "home")]
+    public void Hooks_start_in_the_workspace_only_when_its_own_hooks_run(bool workspaceHooks, string expected)
+    {
+        var directory = HookConfiguration.HookWorkingDirectory(workspaceHooks, "ws", "home");
+
+        Assert.Equal(expected, directory);
+        Assert.Equal("ws", HookConfiguration.HookWorkingDirectory(false, "ws", null));
+    }
 }
 
 public sealed class HookProcessRunnerTests
@@ -204,6 +215,21 @@ public sealed class HookToolGatewayTests
     }
 
     [Fact]
+    public async Task Hooks_start_in_the_given_working_directory()
+    {
+        var root = WriteWorkspace("""{"hooks":{"PreToolUse":[{"command":"x"}]}}""");
+        var runner = new FakeRunner(new HookResult(0, string.Empty, false));
+        var home = Directory.CreateTempSubdirectory("ru-hook-home").FullName;
+        var gateway = new HookToolGateway(new FakeGateway(), HookConfiguration.Load(root, null), runner, root, home);
+
+        await gateway.EvaluateAsync(Proposal("read"), CancellationToken.None);
+
+        Assert.Equal(home, Assert.Single(runner.WorkingDirectories));
+        using var document = JsonDocument.Parse(Assert.Single(runner.Calls));
+        Assert.Equal(root, document.RootElement.GetProperty("workspace").GetString());
+    }
+
+    [Fact]
     public async Task Runner_start_failure_never_blocks_the_tool()
     {
         var inner = new FakeGateway();
@@ -218,9 +244,12 @@ public sealed class HookToolGatewayTests
     {
         public List<string> Calls { get; } = [];
 
+        public List<string> WorkingDirectories { get; } = [];
+
         public Task<HookResult> RunAsync(HookDefinition hook, string stdinJson, string workingDirectory, CancellationToken cancellationToken)
         {
             Calls.Add(stdinJson);
+            WorkingDirectories.Add(workingDirectory);
             return result is null ? throw new InvalidOperationException("hook_start_failed") : Task.FromResult(result);
         }
     }

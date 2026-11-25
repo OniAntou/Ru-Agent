@@ -135,6 +135,43 @@ public sealed class ScratchWorkspaceStoreTests : IDisposable
         Assert.True(Directory.Exists(path));
     }
 
+    /// <summary>
+    /// An agent's tools can rewrite the marker into one naming another session, for
+    /// example by copying it from another folder. The folder is still named after this
+    /// session and the Host's record proves the allocation, so allocation repairs it.
+    /// </summary>
+    [Fact]
+    public void Ensure_repairs_a_marker_relabelled_to_another_session_when_the_record_proves_ownership()
+    {
+        var store = Store;
+        var sessionId = Session('a');
+        var path = store.Ensure(sessionId);
+        File.WriteAllText(Path.Combine(path, "work.txt"), "keep");
+        var marker = Path.Combine(path, ScratchWorkspaceStore.MarkerFileName);
+        File.WriteAllText(marker, "{\"Version\":1,\"SessionId\":\"" + Session('f') + "\"}");
+
+        Assert.Equal(path, store.Ensure(sessionId));
+
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(path, "work.txt")));
+        Assert.Contains(sessionId, File.ReadAllText(marker), StringComparison.Ordinal);
+        Assert.True(store.OwnsCanonicalWorkspace(path, sessionId));
+    }
+
+    [Fact]
+    public void Ensure_leaves_a_matching_record_unwritten()
+    {
+        var store = Store;
+        var sessionId = Session('6');
+        store.Ensure(sessionId);
+        var record = store.RecordPathFor(sessionId);
+        var written = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(record, written);
+
+        store.Ensure(sessionId);
+
+        Assert.Equal(written, File.GetLastWriteTimeUtc(record));
+    }
+
     [Fact]
     public async Task DeleteOrphansAsync_removes_dead_sessions_and_keeps_live_and_foreign_folders()
     {

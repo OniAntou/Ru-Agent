@@ -166,6 +166,36 @@ public sealed class ScratchWorkspaceProvenanceTests
         Assert.Contains(sessionId, await File.ReadAllTextAsync(marker), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A chat allocated before ownership records existed has only its marker. Its client
+    /// echoes the scratch path, which used to bypass allocation, so the record was never
+    /// written and a later damaged marker still stranded the chat.
+    /// </summary>
+    [Fact]
+    public async Task An_echoed_path_of_a_pre_record_scratch_folder_gains_its_record()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var (sessionId, _) = await CreateSessionAsync(fixture);
+        var scratch = new ScratchWorkspaceStore(fixture.RootPath);
+        var service = new AgentV1ServiceTestBuilder(fixture).WithScratchWorkspaces(scratch).Build().Creation;
+        var path = scratch.PathFor(sessionId);
+        Directory.CreateDirectory(path);
+        var marker = Path.Combine(path, ScratchWorkspaceStore.MarkerFileName);
+        await File.WriteAllTextAsync(marker, $"{{\"Version\":1,\"SessionId\":\"{sessionId}\"}}");
+        Assert.False(File.Exists(scratch.RecordPathFor(sessionId)));
+
+        var created = await service.CreateRunAsync(Request(sessionId, path), CancellationToken.None);
+
+        Assert.Equal(201, created.StatusCode);
+        Assert.Equal("scratch", Assert.IsType<CreateAgentRunResponse>(created.Body).WorkspaceKind);
+        Assert.True(File.Exists(scratch.RecordPathFor(sessionId)));
+
+        // With the record in place, a marker the agent damages afterwards is repaired.
+        await File.WriteAllTextAsync(marker, "{\"note\":\"rewritten inside the workspace\"}");
+        Assert.Equal(path, scratch.Ensure(sessionId));
+        Assert.Contains(sessionId, await File.ReadAllTextAsync(marker), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task An_unrecoverable_scratch_folder_reports_what_the_user_can_do()
     {

@@ -13,15 +13,49 @@ public static class ExceptionFingerprint
 {
     private static readonly Regex SafeSitePattern = new("^[A-Za-z0-9_.`<>+]{1,160}$", RegexOptions.Compiled);
 
+    private const int MaxUnwrapDepth = 4;
+    private const int MaxScannedFrames = 64;
+    private static readonly Regex AsyncStateMachinePattern = new(@"^<([A-Za-z0-9_]+)>d__\d+$", RegexOptions.Compiled);
+
     /// <summary>The run's terminal fingerprint, or null when the exception cannot name itself.</summary>
     public static RuAgent.Harness.Core.RunFailureFingerprint? For(Exception? exception) =>
         exception is null
             ? null
             : new RuAgent.Harness.Core.RunFailureFingerprint(KindOf(exception), SiteOf(exception));
 
+    /// <summary>
+    /// The fault a wrapper carries: an <see cref="AggregateException"/> holding exactly one
+    /// fault, or a <see cref="System.Reflection.TargetInvocationException"/>, says nothing
+    /// itself, so classification looks at what it wraps. Bounded, and a wrapper holding
+    /// several faults stays as it is.
+    /// </summary>
+    public static Exception Unwrap(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        var current = exception;
+        for (var depth = 0; depth < MaxUnwrapDepth; depth++)
+        {
+            Exception? inner = current switch
+            {
+                AggregateException { InnerExceptions.Count: 1 } aggregate => aggregate.InnerExceptions[0],
+                System.Reflection.TargetInvocationException { InnerException: { } wrapped } => wrapped,
+                _ => null,
+            };
+            if (inner is null)
+            {
+                break;
+            }
+
+            current = inner;
+        }
+
+        return current;
+    }
+
     /// <summary>Only the exception's type bucket is recorded, never its message or stack.</summary>
     public static string KindOf(Exception? exception)
     {
+        exception = exception is null ? null : Unwrap(exception);
         if (exception is null)
         {
             return "unknown";
@@ -51,7 +85,12 @@ public static class ExceptionFingerprint
         };
     }
 
-    /// <summary>The throwing method's type and name only: enough to find a failure without a message.</summary>
+    /// <summary>
+    /// The type and method name only: enough to find a failure without a message. The
+    /// innermost Ru frame is preferred over the throwing frame, because a fault raised
+    /// by a framework helper (a SQLite error code, a throw helper) would otherwise name
+    /// only the helper. An async method is named as written, not as its state machine.
+    /// </summary>
     public static string? SiteOf(Exception? exception)
     {
         if (exception is null)
@@ -59,15 +98,27 @@ public static class ExceptionFingerprint
             return null;
         }
 
+        exception = Unwrap(exception);
         try
         {
-            var method = new StackTrace(exception, false).GetFrame(0)?.GetMethod();
-            if (method?.DeclaringType?.FullName is not { } type)
+            var trace = new StackTrace(exception, false);
+            System.Reflection.MethodBase? chosen = null;
+            var count = Math.Min(trace.FrameCount, MaxScannedFrames);
+            for (var index = 0; index < count && chosen is null; index++)
+            {
+                var method = trace.GetFrame(index)?.GetMethod();
+                if (method?.DeclaringType?.FullName is { } name && IsRuCode(name))
+                {
+                    chosen = method;
+                }
+            }
+
+            chosen ??= trace.GetFrame(0)?.GetMethod();
+            if (Describe(chosen) is not { } site)
             {
                 return null;
             }
 
-            var site = $"{type}.{method.Name}";
             return SafeSitePattern.IsMatch(site) ? site : null;
         }
         catch (Exception error) when (error is ArgumentException or InvalidOperationException)
@@ -76,5 +127,27 @@ public static class ExceptionFingerprint
             // change the failure.
             return null;
         }
+    }
+
+    private static bool IsRuCode(string typeName) =>
+        typeName.StartsWith("RuBackend.", StringComparison.Ordinal)
+        || typeName.StartsWith("RuAgent.", StringComparison.Ordinal);
+
+    /// <summary>"Type.Method", with a compiler async state machine folded back to its method.</summary>
+    private static string? Describe(System.Reflection.MethodBase? method)
+    {
+        if (method?.DeclaringType is not { FullName: { } type } declaring)
+        {
+            return null;
+        }
+
+        if (method.Name == "MoveNext"
+            && declaring.DeclaringType?.FullName is { } outer
+            && AsyncStateMachinePattern.Match(declaring.Name) is { Success: true } match)
+        {
+            return $"{outer}.{match.Groups[1].Value}";
+        }
+
+        return $"{type}.{method.Name}";
     }
 }

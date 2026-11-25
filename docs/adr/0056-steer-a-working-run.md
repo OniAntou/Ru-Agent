@@ -110,11 +110,14 @@ The owner asked for images in a steer and for limits that do not refuse ordinary
    exactly as a new run's images (`UserImageDataUrls`). Images alone may steer. Schema v41 adds
    `agent_run_steer_images`; each image waits in an encrypted `SteerImage` payload, which no
    run-image listing reads, so no request carries it early. Delivery, in the same transaction
-   as the delivered mark, copies the images into the run as `UserImage` payloads and closes the
+   as the delivered mark, moves the images into the run as `UserImage` payloads whose ids derive
+   from the waiting ones (`RunSteerContract.DeliveredImagePayloadId`), deletes the waiting
+   `SteerImage` payloads so each image is stored once (amended 2026-11-25), and closes the
    steer's text with `[Images attached to this message: N. …]`, which tells the model which
    message they came with and lets clients show the count (`AgentSteerText`). The idempotency
    check covers the images' hashes. `GET …/steers` reports `image_count`; the sender keeps its
-   own copy of the images until the steer settles, so a returned steer is resent with them.
+   own copy of the images until the steer settles, so a returned steer is resent with them;
+   the run's terminal commit deletes a returned steer's waiting images, keeping its image rows.
 3. **No image error mid-run.** The run's images join every later request, as a turn's own
    images do. A run can now hold more images than one request carries, so each request sends
    the newest within its bound, in order, and tells the model how many older ones were left
@@ -130,7 +133,9 @@ The owner asked for images in a steer and for limits that do not refuse ordinary
    a full turn of images plus files.
 7. **Reopened images.** `GET /agent/v1/runs/{runId}` adds `image_payloads`: the run's
    `UserImage` payloads for its prompt and each delivered steer's own images (its
-   `agent_run_steer_images` rows survive delivery), with the steer id. Desktop reads them back
+   `agent_run_steer_images` rows survive delivery and name them through the derived id; a
+   steer delivered before that amendment still names its kept `SteerImage` copy), with the
+   steer id. Desktop reads them back
    when a chat reopens, so a steer and a turn show thumbnails instead of only their count.
 4. **Returned steers.** Their images go back into the next turn up to one message's bound;
    any beyond it are named on screen, never refused by the Host.

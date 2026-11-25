@@ -81,8 +81,8 @@ Version 38 adds `agent_session_advisors`, the advisor each session's new root ru
 Version 39 adds `agent_run_failures`, the bounded failure fingerprint of a failed run.
 Version 40 adds `agent_run_steers`: steers sent into a working root run, their text in an
 unbound encrypted payload until delivery at a step boundary (ADR 0056). Version 41 adds
-`agent_run_steer_images`: a steer's images in `SteerImage` payloads, copied into the run as
-`UserImage` payloads when the steer is delivered.
+`agent_run_steer_images`: a steer's images in `SteerImage` payloads, moved into the run as
+`UserImage` payloads with derived ids when the steer is delivered.
 Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
 v19-v39 databases remain eligible sources; adding a migration extends one ordered

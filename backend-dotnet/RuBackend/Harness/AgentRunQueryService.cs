@@ -4,6 +4,7 @@ using System.Globalization;
 using Microsoft.Data.Sqlite;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Steering;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Workspace;
 using RuAgent.Harness.Persistence.Policy;
@@ -76,10 +77,12 @@ public sealed class AgentRunQueryService
 
     /// <summary>
     /// The run's user images, grouped by the message that carried them: the prompt's images
-    /// first, then each delivered steer's in delivery order. A delivered steer keeps its
-    /// <c>SteerImage</c> rows, which name exactly its images; the run's <c>UserImage</c>
-    /// payloads beyond those are the prompt's, in the order they were stored. Null when the
-    /// run carried no image.
+    /// first, then each delivered steer's in delivery order. A delivered steer's image rows
+    /// name its images: delivery stores each as the <c>UserImage</c> whose id derives from
+    /// the row (<see cref="RunSteerContract.DeliveredImagePayloadId"/>). A steer delivered
+    /// before that kept its <c>SteerImage</c> payload and an unnamed <c>UserImage</c> copy, so
+    /// that many unnamed copies are left out of the prompt's images. The rest are the
+    /// prompt's, in the order they were stored. Null when the run carried no image.
     /// </summary>
     internal async Task<IReadOnlyList<AgentRunImagePayload>?> ReadImagePayloadsAsync(
         RunId runId, CancellationToken cancellationToken)
@@ -110,9 +113,27 @@ public sealed class AgentRunQueryService
                 steerImages.Add(new AgentRunImagePayload(reader.GetString(1), reader.GetString(0)));
         }
 
-        var promptCount = Math.Max(0, userImages.Count - steerImages.Count);
+        var stored = new HashSet<string>(userImages, StringComparer.Ordinal);
+        var delivered = new HashSet<string>(StringComparer.Ordinal);
+        var legacyCopies = 0;
+        for (var index = 0; index < steerImages.Count; index++)
+        {
+            var derived = RunSteerContract.DeliveredImagePayloadId(new PayloadId(steerImages[index].PayloadId)).Value;
+            if (stored.Contains(derived))
+            {
+                steerImages[index] = steerImages[index] with { PayloadId = derived };
+                delivered.Add(derived);
+            }
+            else
+            {
+                legacyCopies++;
+            }
+        }
+
+        var unnamed = userImages.Where(id => !delivered.Contains(id)).ToList();
+        var promptCount = Math.Max(0, unnamed.Count - legacyCopies);
         if (promptCount == 0 && steerImages.Count == 0) return null;
-        return userImages.Take(promptCount).Select(id => new AgentRunImagePayload(id)).Concat(steerImages).ToArray();
+        return unnamed.Take(promptCount).Select(id => new AgentRunImagePayload(id)).Concat(steerImages).ToArray();
     }
 
     /// <summary>

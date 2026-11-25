@@ -448,6 +448,38 @@ internal static class HarnessSqliteWriteSet
     }
 
     /// <summary>
+    /// Drops the waiting images of steers a terminal run never read (ADR 0056). No run-image
+    /// listing or model request reads them, the sender keeps its own copy to resend the
+    /// returned steer, and a terminal run reads no further steer, so the encrypted bytes
+    /// would otherwise stay until the session is deleted. The steer and its image rows stay,
+    /// so the returned steer still reports its text and image count.
+    /// </summary>
+    internal static async Task DeleteUnreadSteerImagesIfTerminalAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        AgentRun run,
+        CancellationToken cancellationToken)
+    {
+        if (!run.State.IsTerminal())
+        {
+            return;
+        }
+
+        await using var delete = connection.CreateCommand();
+        delete.Transaction = transaction;
+        delete.CommandText = """
+            DELETE FROM agent_payloads
+            WHERE run_id = $run_id AND kind = $kind AND payload_id IN (
+                SELECT i.payload_id FROM agent_run_steer_images i
+                JOIN agent_run_steers s ON s.steer_id = i.steer_id
+                WHERE s.run_id = $run_id AND s.delivered_event_id IS NULL)
+            """;
+        delete.Parameters.AddWithValue("$run_id", run.RunId.Value);
+        delete.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.SteerImage);
+        await delete.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Drops a terminal run's tool images (ADR 0026). Only the run that read an image
     /// attaches it again, and a terminal run assembles no further model context, so the
     /// encrypted bytes (up to 4 MiB each) would otherwise sit in the database until the

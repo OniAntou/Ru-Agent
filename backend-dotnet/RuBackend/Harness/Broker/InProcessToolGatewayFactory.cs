@@ -222,17 +222,19 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
     /// (never driven), a trusted one may pass through WaitingHistory, and a subagent run
     /// is provisioned from an already trusted parent. Loading the workspace's hooks here
     /// therefore follows that decision instead of skipping it. A <c>plan</c> run loads only
-    /// the user-level hooks (<see cref="RuBackend.Harness.Hooks.HookConfiguration.RunsWorkspaceHooks"/>).
+    /// the user-level hooks (<see cref="RuBackend.Harness.Hooks.HookConfiguration.RunsWorkspaceHooks"/>),
+    /// started in the user's profile so a bare program name never resolves to a workspace file.
     /// </summary>
     private static IToolGateway WithHooks(InProcessToolGateway gateway, string canonicalRoot, AgentPermissionPreset preset)
     {
         var workspaceHooks = RuBackend.Harness.Hooks.HookConfiguration.RunsWorkspaceHooks(workspaceTrusted: true, preset);
-        var hooks = RuBackend.Harness.Hooks.HookConfiguration.Load(
-            workspaceHooks ? canonicalRoot : null, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var hooks = RuBackend.Harness.Hooks.HookConfiguration.Load(workspaceHooks ? canonicalRoot : null, userHome);
         return hooks.IsEmpty
             ? gateway
             : new RuBackend.Harness.Hooks.HookToolGateway(
-                gateway, hooks, new RuBackend.Harness.Hooks.HookProcessRunner(), canonicalRoot);
+                gateway, hooks, new RuBackend.Harness.Hooks.HookProcessRunner(), canonicalRoot,
+                RuBackend.Harness.Hooks.HookConfiguration.HookWorkingDirectory(workspaceHooks, canonicalRoot, userHome));
     }
 
     /// <summary>

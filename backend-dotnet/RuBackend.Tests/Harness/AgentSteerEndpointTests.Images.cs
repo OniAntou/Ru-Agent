@@ -86,6 +86,119 @@ public sealed partial class AgentInputEndpointTests
             SqliteConnectionClear(dataPaths);
         }
     }
+    /// <summary>
+    /// A steer delivered before images were stored once kept its waiting copy and gave the
+    /// run an unnamed <c>UserImage</c> copy. A reopened chat must still give the prompt only
+    /// its own image and the steer its own, not count the copy as the prompt's.
+    /// </summary>
+    [Fact]
+    public async Task A_steer_delivered_with_an_unnamed_image_copy_keeps_its_attribution()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new RecordingRunner(
+                AskUserStep("Which environment?", "staging", "production"),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "a prompt image", [OnePixelPng]);
+            var runId = created.GetProperty("run_id").GetString()!;
+            var request = await WaitForInputRequestAsync(client, runId, StateDeadline);
+            Assert.NotNull(request);
+            var steerId = NewSteerId();
+            using (var steer = await client.PostAsJsonAsync($"/agent/v1/runs/{runId}/steers",
+                       new { steer_id = steerId, text = "and this", images = new[] { OnePixelPng } }))
+            {
+                Assert.Equal(HttpStatusCode.Accepted, steer.StatusCode);
+            }
+
+            using (var answer = await client.PostAsJsonAsync(
+                       $"/agent/v1/runs/{runId}/inputs/{request!.Value.InputId}", new { answer = "staging" }))
+            {
+                Assert.Equal(HttpStatusCode.OK, answer.StatusCode);
+            }
+
+            Assert.True(await WaitForStatusAsync(client, runId,
+                new HashSet<string>(StringComparer.Ordinal) { "completed", "failed" }, StateDeadline));
+            var promptImage = (await client.GetFromJsonAsync<JsonElement>($"/agent/v1/runs/{runId}"))
+                .GetProperty("image_payloads").EnumerateArray()
+                .Single(item => item.GetProperty("steer_id").ValueKind == JsonValueKind.Null)
+                .GetProperty("payload_id").GetString();
+
+            // Recreate the earlier layout: the delivered image under an id nothing derives.
+            string waiting;
+            await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                             $"Data Source={dataPaths.AgentHarnessDatabase};Mode=ReadWrite;Pooling=False"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT payload_id FROM agent_run_steer_images WHERE steer_id=$steer";
+                command.Parameters.AddWithValue("$steer", steerId);
+                waiting = (string)(await command.ExecuteScalarAsync())!;
+                command.CommandText = "UPDATE agent_payloads SET payload_id=$copy WHERE payload_id=$derived";
+                command.Parameters.AddWithValue("$copy", "payload_" + Guid.NewGuid().ToString("N"));
+                command.Parameters.AddWithValue("$derived", RuAgent.Harness.Core.Steering.RunSteerContract
+                    .DeliveredImagePayloadId(new RuAgent.Harness.Core.PayloadId(waiting)).Value);
+                Assert.Equal(1, await command.ExecuteNonQueryAsync());
+            }
+
+            var images = (await client.GetFromJsonAsync<JsonElement>($"/agent/v1/runs/{runId}"))
+                .GetProperty("image_payloads").EnumerateArray()
+                .Select(item => (Payload: item.GetProperty("payload_id").GetString(), Steer: item.GetProperty("steer_id").GetString()))
+                .ToArray();
+            Assert.Equal(new (string?, string?)[] { (promptImage, null), (waiting, steerId) }, images);
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
+    /// <summary>
+    /// Images a steer may carry together are above the generic 8 MiB body cap. The steers
+    /// route used to keep that cap, so two 3 MiB images answered 413 although the
+    /// endpoint and the image checks accept them.
+    /// </summary>
+    [Fact]
+    public async Task A_steer_above_the_generic_body_cap_is_accepted()
+    {
+        var wsPath = CreateTempWorkspace(out var dataPaths);
+        BackendWebApplicationFactory? factory = null;
+        try
+        {
+            var runner = new RecordingRunner(
+                AskUserStep("Which environment?", "staging", "production"),
+                FinalStep("done"));
+            factory = new BackendWebApplicationFactory(dataPaths: dataPaths, modelStepRunner: runner);
+            var client = factory.CreateAuthenticatedClient();
+            var sessionId = await CreateSessionAsync(client);
+            var created = await CreateRunAndTrustAsync(client, sessionId, wsPath, "steer with large images", null);
+            var runId = created.GetProperty("run_id").GetString()!;
+            Assert.NotNull(await WaitForInputRequestAsync(client, runId, StateDeadline));
+
+            var image = "data:image/png;base64," + Convert.ToBase64String(new byte[3 * 1024 * 1024]);
+            using var content = JsonContent.Create(new { steer_id = NewSteerId(), text = "Match these", images = new[] { image, image } });
+            await content.LoadIntoBufferAsync();
+            Assert.True(content.Headers.ContentLength > 8 * 1024 * 1024);
+
+            using var steer = await client.PostAsync($"/agent/v1/runs/{runId}/steers", content);
+
+            Assert.Equal(HttpStatusCode.Accepted, steer.StatusCode);
+            Assert.Equal(2, Assert.Single(await ListSteersAsync(client, runId)).GetProperty("image_count").GetInt32());
+        }
+        finally
+        {
+            factory?.Dispose();
+            try { Directory.Delete(Path.GetDirectoryName(wsPath)!, true); } catch { }
+            SqliteConnectionClear(dataPaths);
+        }
+    }
+
     [Fact]
     public async Task An_image_at_the_per_image_bound_reads_back_whole()
     {

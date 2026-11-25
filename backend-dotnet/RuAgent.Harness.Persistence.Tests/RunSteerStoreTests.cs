@@ -58,7 +58,43 @@ public sealed class RunSteerStoreTests
         var delivered = Assert.Single(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
         Assert.Equal(images, delivered.ImageDataUrls);
         Assert.Equal(("look at these", 2), RuAgent.Protocol.Harness.AgentSteerText.Split(delivered.DeliveredText));
-        Assert.Equal(2, (await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.UserImage, default)).Count);
+        var runImages = await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.UserImage, default);
+        Assert.Equal(2, runImages.Count);
+
+        // Each image is stored once: the waiting copy goes, and the run's image id derives
+        // from it, so the steer's image rows still name what the run now holds.
+        Assert.Empty(await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.SteerImage, default));
+        var sources = await SteerImageSourcesAsync(fixture, SteerOne);
+        Assert.Equal(sources.Select(RunSteerContract.DeliveredImagePayloadId), runImages);
+    }
+
+    [Fact]
+    public async Task A_run_that_ends_drops_the_images_of_steers_it_never_read()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (events, steers, runId) = await RunningAsync(fixture);
+        await steers.AppendAsync(runId, SteerOne, "never read", [Png("a"), Png("b")], HarnessStoreTestFixture.Timestamp, default);
+        Assert.Equal(2, (await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.SteerImage, default)).Count);
+
+        var running = (await events.GetRunAsync(runId, default))!;
+        var ended = new AgentRun(
+            running.RunId, running.SessionId, running.WorkspaceId,
+            new HarnessRunStatus(HarnessRunState.Cancelled),
+            running.Version + 1, running.LastSequence + 1,
+            running.BudgetWindow, running.ModelStepsInWindow, running.ToolCallsInWindow,
+            running.Preset, running.PolicySnapshotVersion, running.PolicySnapshotSha256,
+            running.CreatedAt, running.UpdatedAt.AddSeconds(1), terminalAt: running.UpdatedAt.AddSeconds(1),
+            terminalErrorCode: "cancelled");
+        var result = await events.CommitAsync(new HarnessCommit(runId, running.Version, ended,
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(901), HarnessEventKind.RunStateChanged)], [], []), default);
+
+        Assert.Equal(HarnessCommitOutcome.Committed, result.Outcome);
+        Assert.Empty(await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.SteerImage, default));
+        // The returned steer still reads back with its text and image count.
+        var steer = Assert.Single(await steers.ListAsync(runId, default));
+        Assert.Equal(RunSteerContract.StateReturned, steer.State);
+        Assert.Equal("never read", steer.Text);
+        Assert.Equal(2, steer.ImageCount);
     }
 
     [Fact]
@@ -189,6 +225,19 @@ public sealed class RunSteerStoreTests
         var run = fixture.NewRun(1, 1, 1, status: status);
         await events.TryCreateRunAsync(run, default);
         return (events, new SqliteRunSteerStore(fixture.Options, fixture.PayloadStore), run.Run.RunId);
+    }
+
+    private static async Task<IReadOnlyList<PayloadId>> SteerImageSourcesAsync(HarnessStoreTestFixture fixture, string steerId)
+    {
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT payload_id FROM agent_run_steer_images WHERE steer_id=$steer ORDER BY ordinal";
+        command.Parameters.AddWithValue("$steer", steerId);
+        var sources = new List<PayloadId>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) sources.Add(new PayloadId(reader.GetString(0)));
+        return sources;
     }
 
     private static async Task<long> BoundUserEntriesAsync(HarnessStoreTestFixture fixture, RunId runId)

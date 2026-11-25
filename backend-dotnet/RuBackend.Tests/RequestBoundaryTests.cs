@@ -169,6 +169,12 @@ public sealed class RequestBoundaryTests
     [InlineData("/agent/v1/runs/selected/", true)]
     [InlineData("/agent/v1/runsXYZ", false)]
     [InlineData("/agent/v1/runs/selected/extra", false)]
+    [InlineData("/agent/v1/runs/run_0123456789abcdef0123456789abcdef/steers", true)]
+    [InlineData("/agent/v1/runs/run_0123456789abcdef0123456789abcdef/steers/", true)]
+    [InlineData("/agent/v1/runs//steers", false)]
+    [InlineData("/agent/v1/runs/a/b/steers", false)]
+    [InlineData("/agent/v1/runs/run_x/steers/extra", false)]
+    [InlineData("/agent/v1/runs/run_x/steersXYZ", false)]
     public async Task Request_size_middleware_matches_only_the_run_create_route_family(
         string path,
         bool agentRunCap)

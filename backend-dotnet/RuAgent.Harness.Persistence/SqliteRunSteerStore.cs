@@ -243,14 +243,16 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
         {
             var content = await payloads.ReadForModelAsync(connection, transaction, runId, payloadId, ct).ConfigureAwait(false);
             var images = new List<string>();
+            var sources = new List<PayloadId>();
             foreach (var image in await ReadImageRowsAsync(connection, transaction, id, ct).ConfigureAwait(false))
             {
                 var imageContent = await payloads.ReadForModelAsync(connection, transaction, runId, image.PayloadId, ct)
                     .ConfigureAwait(false);
                 images.Add(Encoding.UTF8.GetString(imageContent.Plaintext.Span));
+                sources.Add(image.PayloadId);
             }
 
-            steers.Add(new DeliveredSteer(id, Encoding.UTF8.GetString(content.Plaintext.Span), images));
+            steers.Add(new DeliveredSteer(id, Encoding.UTF8.GetString(content.Plaintext.Span), images, sources));
         }
 
         var commit = RunSteerDelivery.CreateCommit(run, steers, now);
@@ -277,11 +279,34 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
                 throw new HarnessStoreException("run_steer_stale");
         }
 
+        // Each image now lives in the run as the UserImage whose id derives from its waiting
+        // copy, so the waiting copy goes: an image is stored once, and the steer's image rows
+        // still name it through RunSteerContract.DeliveredImagePayloadId.
+        await DeleteWaitingImagesAsync(connection, transaction, runId,
+            steers.SelectMany(steer => steer.ImageSources ?? []).ToArray(), ct).ConfigureAwait(false);
+
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         return steers;
     }
 
     private static PayloadId NewPayloadId() => new("payload_" + Guid.NewGuid().ToString("N"));
+
+    private static async Task DeleteWaitingImagesAsync(
+        SqliteConnection connection, SqliteTransaction transaction, RunId runId, IReadOnlyList<PayloadId> waiting, CancellationToken ct)
+    {
+        foreach (var chunk in waiting.Chunk(128))
+        {
+            using var delete = connection.CreateCommand();
+            delete.Transaction = transaction;
+            var names = chunk.Select((_, index) => "$image" + index).ToArray();
+            delete.CommandText =
+                $"DELETE FROM agent_payloads WHERE run_id=$run AND kind=$kind AND payload_id IN ({string.Join(',', names)})";
+            delete.Parameters.AddWithValue("$run", runId.Value);
+            delete.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.SteerImage);
+            for (var index = 0; index < chunk.Length; index++) delete.Parameters.AddWithValue(names[index], chunk[index].Value);
+            await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
 
     private static async Task<IReadOnlyList<(PayloadId PayloadId, string Sha256)>> ReadImageRowsAsync(
         SqliteConnection connection, SqliteTransaction transaction, string steerId, CancellationToken ct)

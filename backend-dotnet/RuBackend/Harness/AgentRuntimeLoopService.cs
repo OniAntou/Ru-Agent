@@ -867,6 +867,8 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
 
     internal static string NormalizeDriveFailureCode(Exception error)
     {
+        // A wrapper holding one fault names nothing itself; classify what it wraps.
+        error = Diagnostics.ExceptionFingerprint.Unwrap(error);
         if (error is InvalidDataException
             && error.Message.StartsWith("retained_input_", StringComparison.Ordinal))
         {

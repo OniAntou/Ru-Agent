@@ -411,6 +411,10 @@ public sealed class SteerAttachmentWiringTests
         Assert.Contains("RestoreWaitingSteerCopies();", code, StringComparison.Ordinal);
         Assert.Contains("ShowRetainedSteerNotice();", code, StringComparison.Ordinal);
         Assert.Contains("Ru did not read your message", GuiSource.MethodBody(code, "ShowRetainedSteerNotice"), StringComparison.Ordinal);
+        // A reopened chat asks the session for messages no run has read, so they survive a
+        // closed app or a switched chat.
+        Assert.Contains("RestoreRetainedSteersAsync(sessionId, generation, openToken);", code, StringComparison.Ordinal);
+        Assert.Contains("ListSessionReturnedSteersAsync", GuiSource.MethodBody(code, "RestoreRetainedSteersAsync"), StringComparison.Ordinal);
     }
 }
 

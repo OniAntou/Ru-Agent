@@ -2,6 +2,7 @@ using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Steering;
 using RuAgent.Harness.Persistence;
+using RuBackend.Business.Sessions;
 using static RuBackend.Harness.AgentV1Shared;
 
 namespace RuBackend.Harness;
@@ -19,6 +20,7 @@ public sealed class AgentSteersService
     private readonly ITimeProvider _time;
     private readonly AgentV1SubagentGuard _subagentGuard;
     private readonly IAgentRuntimeRootRegistry _runtimeRoots;
+    private readonly ISessionStore _sessions;
     private readonly Hooks.RunLifecycleHooks? _lifecycleHooks;
 
     public AgentSteersService(
@@ -27,6 +29,7 @@ public sealed class AgentSteersService
         ITimeProvider time,
         AgentV1SubagentGuard subagentGuard,
         IAgentRuntimeRootRegistry runtimeRoots,
+        ISessionStore sessions,
         Hooks.RunLifecycleHooks? lifecycleHooks = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -34,6 +37,7 @@ public sealed class AgentSteersService
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _subagentGuard = subagentGuard ?? throw new ArgumentNullException(nameof(subagentGuard));
         _runtimeRoots = runtimeRoots ?? throw new ArgumentNullException(nameof(runtimeRoots));
+        _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _lifecycleHooks = lifecycleHooks;
     }
 
@@ -138,6 +142,35 @@ public sealed class AgentSteersService
                 text = steer.Text,
                 created_at = steer.CreatedAt.ToString("O"),
                 delivered_payload_id = RunSteerContract.DeliveredPayloadId(steer.SteerId).Value,
+                image_count = steer.ImageCount,
+            }),
+        });
+    }
+
+    /// <summary>
+    /// The steers a session's runs never read. A client reopening the chat shows them so a
+    /// message that arrived while nobody watched keeps its place until the session's next run
+    /// reads it (ADR 0056 amendment).
+    /// </summary>
+    public async Task<AgentServiceResult> ListSessionAsync(string sessionIdRaw, CancellationToken ct)
+    {
+        if (!IsSessionId(sessionIdRaw)) return BoundedError(400, "invalid_session_id", "session_id invalid.");
+        if (await _subagentGuard.IsInternalSessionAsync(sessionIdRaw, ct).ConfigureAwait(false))
+            return BoundedError(404, "session_not_found", "Session not found.");
+        if (await _sessions.GetAsync(sessionIdRaw, ct).ConfigureAwait(false) is null)
+            return BoundedError(404, "session_not_found", "Session not found.");
+        var returned = await _steers.ListReturnedForSessionAsync(new SessionId(sessionIdRaw), ct)
+            .ConfigureAwait(false);
+        return new AgentServiceResult(200, new
+        {
+            session_id = sessionIdRaw,
+            steers = returned.Select(steer => new
+            {
+                run_id = steer.RunId,
+                steer_id = steer.SteerId,
+                state = RunSteerContract.StateReturned,
+                text = steer.Text,
+                created_at = steer.CreatedAt.ToString("O"),
                 image_count = steer.ImageCount,
             }),
         });

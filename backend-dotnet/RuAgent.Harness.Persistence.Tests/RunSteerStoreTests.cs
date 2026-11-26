@@ -116,6 +116,27 @@ public sealed class RunSteerStoreTests
         Assert.Single(await steers.DeliverAsync(sameSessionNext, HarnessStoreTestFixture.Timestamp, default));
     }
 
+    [Fact]
+    public async Task A_session_lists_only_the_steers_its_runs_never_read()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (events, steers, firstRun) = await RunningAsync(fixture);
+        await steers.AppendAsync(firstRun, SteerOne, "never read", [Png("a")], HarnessStoreTestFixture.Timestamp, default);
+        await EndRunAsync(events, firstRun);
+
+        var returned = Assert.Single(await steers.ListReturnedForSessionAsync(HarnessStoreTestFixture.Session(1), default));
+        Assert.Equal(SteerOne, returned.SteerId);
+        Assert.Equal(firstRun.Value, returned.RunId);
+        Assert.Equal("never read", returned.Text);
+        Assert.Equal(1, returned.ImageCount);
+        Assert.Empty(await steers.ListReturnedForSessionAsync(HarnessStoreTestFixture.Session(2), default));
+
+        // The session's next run reads it, so a chat reopened after that lists nothing.
+        var nextRun = await StartRunAsync(fixture, events, runNumber: 2, sessionNumber: 1);
+        Assert.Single(await steers.DeliverAsync(nextRun, HarnessStoreTestFixture.Timestamp, default));
+        Assert.Empty(await steers.ListReturnedForSessionAsync(HarnessStoreTestFixture.Session(1), default));
+    }
+
     private static async Task<RunId> StartRunAsync(
         HarnessStoreTestFixture fixture, SqliteHarnessEventStore events, int runNumber, int sessionNumber)
     {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: A reopened chat shows the messages its runs never read. `GET
+  /agent/v1/sessions/{sessionId}/steers` lists a session's returned steers, so Desktop draws
+  them at the tail again — with the "Ru did not read your message" notice — after an app
+  restart or a chat switch, instead of leaving the text invisible until the next turn. Nothing
+  is sent again; the session's next run reads them.
+
 - **feat(agent)!**: A steer the run ends without reading is retained by the session instead of
   being handed back to the client. The session's next run reads it at its first step boundary,
   before any steer sent to that run, its images move with it, and the run that read it is

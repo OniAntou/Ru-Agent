@@ -19,6 +19,14 @@ public static class RunSteerContract
     /// <summary>Characters of all steers waiting for one run together.</summary>
     public const int MaxPendingCharacters = AgentSteerLimits.MaxPendingCharacters;
 
+    /// <summary>
+    /// Returned steers one session list carries, and their text in all. A client reopening a
+    /// chat shows them; steers beyond these bounds still reach the session's next run.
+    /// </summary>
+    public const int MaxReturnedPerSession = 32;
+
+    public const int MaxReturnedCharacters = AgentSteerLimits.MaxPendingCharacters;
+
     /// <summary>Images one steer may carry.</summary>
     public const int MaxImages = AgentSteerLimits.MaxImages;
 
@@ -30,7 +38,7 @@ public static class RunSteerContract
     public const string StatePending = AgentSteerLimits.StatePending;
     public const string StateDelivered = AgentSteerLimits.StateDelivered;
 
-    /// <summary>The run ended before the steer reached a boundary; the client offers it again.</summary>
+    /// <summary>The run ended before reading it; the session retains it for its next run.</summary>
     public const string StateReturned = AgentSteerLimits.StateReturned;
 
     public static bool IsValidId(string? steerId) => AgentSteerLimits.IsValidSteerId(steerId);

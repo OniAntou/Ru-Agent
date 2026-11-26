@@ -536,6 +536,50 @@ namespace RuApp.Services
             || string.Equals(status, "cancelled", StringComparison.Ordinal)
             || string.Equals(status, "interrupted", StringComparison.Ordinal);
 
+        /// <summary>A steer a session's runs never read, as a reopened chat shows it.</summary>
+        public sealed record RetainedSteerMessage(string SteerId, string Text, int ImageCount);
+
+        /// <summary>
+        /// The steers this session's runs never read, so a reopened chat can show them. They
+        /// stay with the session and its next run reads them; this window sends nothing again.
+        /// </summary>
+        public async Task<IReadOnlyList<RetainedSteerMessage>> ListSessionReturnedSteersAsync(
+            string sessionId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var response = await _httpClient.GetAsync(
+                    $"{_baseUrl}/agent/v1/sessions/{Uri.EscapeDataString(sessionId)}/steers", cancellationToken);
+                if (!response.IsSuccessStatusCode) return Array.Empty<RetainedSteerMessage>();
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                if (!document.RootElement.TryGetProperty("steers", out var steers)
+                    || steers.ValueKind != JsonValueKind.Array)
+                {
+                    return Array.Empty<RetainedSteerMessage>();
+                }
+
+                var returned = new List<RetainedSteerMessage>();
+                foreach (var steer in steers.EnumerateArray())
+                {
+                    var id = steer.TryGetProperty("steer_id", out var idNode) ? idNode.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(id) || !AgentSteerLimits.IsValidSteerId(id)) continue;
+                    // An image-only steer has no words to draw; the next run still reads it.
+                    var text = steer.TryGetProperty("text", out var textNode) ? textNode.GetString() ?? string.Empty : string.Empty;
+                    if (text.Length == 0) continue;
+                    var images = steer.TryGetProperty("image_count", out var count)
+                        && count.TryGetInt32(out var parsed) ? parsed : 0;
+                    returned.Add(new RetainedSteerMessage(id, text, images));
+                }
+
+                return returned;
+            }
+            catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+            {
+                return Array.Empty<RetainedSteerMessage>();
+            }
+        }
+
         public Task<RunActivityReplay?> ListRunActivitiesAsync(string runId, CancellationToken cancellationToken) =>
             ListRunActivitiesAsync(runId, beforeSequence: null, cancellationToken);
 

@@ -32,6 +32,7 @@ public static partial class AgentV1Endpoints
         app.MapPost("/agent/v1/runs/{runId}/inputs/{inputId}", PostInputAsync);
         app.MapGet("/agent/v1/runs/{runId}/steers", GetSteersAsync);
         app.MapPost("/agent/v1/runs/{runId}/steers", PostSteerAsync);
+        app.MapGet("/agent/v1/sessions/{sessionId}/steers", GetSessionSteersAsync);
         app.MapPost("/agent/v1/runs/{runId}/trust", PostTrustAsync);
         app.MapPost("/agent/v1/runs/{runId}/cancel", PostCancelAsync);
         app.MapPost("/agent/v1/runs/{runId}/compact", PostCompactAsync);
@@ -701,6 +702,12 @@ public static partial class AgentV1Endpoints
     private static async Task<IResult> GetSteersAsync(string runId, AgentSteersService service, CancellationToken ct)
     {
         var result = await service.ListAsync(runId, ct);
+        return Results.Json(result.Body, statusCode: result.StatusCode);
+    }
+
+    private static async Task<IResult> GetSessionSteersAsync(string sessionId, AgentSteersService service, CancellationToken ct)
+    {
+        var result = await service.ListSessionAsync(sessionId, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

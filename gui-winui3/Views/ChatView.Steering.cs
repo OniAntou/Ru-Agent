@@ -290,6 +290,48 @@ namespace RuApp.Views
         }
 
         /// <summary>
+        /// A message the run ended without reading survives a closed app or a switched chat: a
+        /// reopened chat asks the session for the steers no run has read and draws them at the
+        /// tail, exactly like a message sent into a working run. Nothing is sent again — the
+        /// session's next run reads them (ADR 0056).
+        /// </summary>
+        private async Task RestoreRetainedSteersAsync(string sessionId, long generation, CancellationToken cancellationToken)
+        {
+            if (_apiService is null) return;
+            IReadOnlyList<ApiService.RetainedSteerMessage> retained;
+            try
+            {
+                retained = await _apiService.ListSessionReturnedSteersAsync(sessionId, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] retained steers could not be read: {ex.GetType().Name}");
+                return;
+            }
+
+            if (retained.Count == 0 || !IsCurrentOpen(generation)
+                || !string.Equals(sessionId, _activeSessionId, StringComparison.Ordinal)) return;
+            foreach (var steer in retained)
+            {
+                var activityId = SteerActivityId(steer.SteerId);
+                if (_waitingSteers.TryGetValue(activityId, out var existing))
+                {
+                    // Still unread: keep its copy on screen instead of drawing a second one.
+                    if (!Messages.Contains(existing)) Messages.Add(existing);
+                    continue;
+                }
+
+                var waiting = SteerMessage(steer.Text);
+                waiting.MissingImageCount = steer.ImageCount;
+                _waitingSteers[activityId] = waiting;
+                Messages.Add(waiting);
+            }
+
+            ShowRetainedSteerNotice();
+            ScrollChatToBottom();
+        }
+
+        /// <summary>
         /// A message the run ended without reading is retained by the session, so it stays at
         /// the tail of the chat until the next run of this chat reads it (ADR 0056). The
         /// transcript reload that ends a turn drops rows that are not in history yet; this

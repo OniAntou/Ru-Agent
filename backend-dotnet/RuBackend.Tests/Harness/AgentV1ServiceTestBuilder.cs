@@ -100,7 +100,7 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
             workspaceTrust,
             new AgentActivitiesService(fixture.EventStore, fixture.PayloadStore, new RuBackend.Conversation.MetadataPolicy()),
             new AgentSteersService(fixture.EventStore,
-                new SqliteRunSteerStore(fixture.Options, fixture.PayloadStore), time, guard, roots));
+                new SqliteRunSteerStore(fixture.Options, fixture.PayloadStore), time, guard, roots, sessions));
     }
 
     private sealed class NoChildrenCleanup : IAgentRuntimeRunCleanup

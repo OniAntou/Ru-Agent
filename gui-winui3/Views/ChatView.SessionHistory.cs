@@ -627,6 +627,11 @@ namespace RuApp.Views
                 }
                 UpdateLoadEarlierHistoryButton();
 
+                // A message no run has read is still with the session: draw it at the tail so a
+                // reopened chat does not look like it never arrived.
+                await RestoreRetainedSteersAsync(sessionId, generation, openToken);
+                if (!IsCurrentOpen(generation)) return;
+
                 // Restore the latest step's report and optional request breakdown,
                 // not cumulative session billing. The forced repaint below adopts
                 // its originating run's context capacity.

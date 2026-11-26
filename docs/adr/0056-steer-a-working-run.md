@@ -78,7 +78,8 @@ Three constraints shaped the design:
 - Steer text is guidance for the pinned run, not a new turn: it cannot change the model or
   carry a command. Files ride inside its text and images beside it (amendments below).
 - Schema v40, two routes (59 public HTTP routes in all), a new activity kind and a new RPC
-  method are part of the public contract.
+  method are part of the public contract. *(Amended 2026-11-27: a third route, the session's
+  returned-steer list, makes 60.)*
 
 ## Amendment (2026-11-25): text and code files ride along
 
@@ -181,5 +182,14 @@ context limit, a Stop — leaves the note in that run's history rather than a pe
 run fails or stops, and the session's next run inherits the note through the handoff (ADR 0023),
 which the handoff store test pins. Making delivery atomic with the step start would need the
 context assembled inside the delivery transaction, which the assembler does not support.
+
+## Amendment (2026-11-27): a reopened chat lists what its runs never read
+
+`GET /agent/v1/sessions/{sessionId}/steers` lists a session's returned steers — text, the run
+that held each, and its image count, within the per-run pending bounds — so a client reopening
+the chat can draw them again. Delivered steers are not listed, and the list empties as the
+session's next run reads them. Desktop asks once when a chat opens and shows the copy again with
+the "Ru did not read your message" notice; the TUI does not ask yet. Nothing is sent again: the
+message still reaches Ru with the user's next message.
 
 

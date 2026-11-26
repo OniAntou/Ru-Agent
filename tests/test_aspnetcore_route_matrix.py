@@ -60,6 +60,7 @@ EXPECTED_HTTP_ROUTES = {
     ("GET", "/agent/v1/runs/{runId}/subagents/{agentId}"),
     ("GET", "/agent/v1/runs/{runId}/subagents/{agentId}/changes"),
     ("GET", "/agent/v1/sessions/{sessionId}/runs"),
+    ("GET", "/agent/v1/sessions/{sessionId}/steers"),
     ("GET", "/agent/v1/sessions/{sessionId}/preset"),
     ("GET", "/agent/v1/sessions/{sessionId}/advisor"),
     ("PUT", "/agent/v1/sessions/{sessionId}/advisor"),
@@ -80,7 +81,7 @@ EXPECTED_WEBSOCKET_ROUTES: set[tuple[str, str]] = set()
 def test_public_route_contract_matches_the_final_surface() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
-    assert validate_route_contract(repo_root) == (59, 0)
+    assert validate_route_contract(repo_root) == (60, 0)
     contract = load_route_contract(repo_root)
 
     assert {
@@ -129,7 +130,7 @@ def test_every_mapped_route_is_declared_and_every_declared_route_is_mapped() -> 
     mapped_count, wildcards = validate_mapped_routes_are_declared(repo_root)
     contract = load_route_contract(repo_root)
 
-    assert mapped_count == len(contract) == 59
+    assert mapped_count == len(contract) == 60
     # The OPTIONS catch-all is the one deliberate exception, and it stays visible.
     assert wildcards == ["METHODS /{**path}"]
 

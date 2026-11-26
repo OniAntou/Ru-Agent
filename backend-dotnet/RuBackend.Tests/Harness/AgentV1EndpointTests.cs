@@ -45,6 +45,7 @@ public sealed class AgentV1EndpointTests
         ("POST", "/agent/v1/runs/{runId}/compact"),
         ("POST", "/agent/v1/runs/{runId}/commands"),
         ("GET", "/agent/v1/sessions/{sessionId}/runs"),
+        ("GET", "/agent/v1/sessions/{sessionId}/steers"),
         ("GET", "/agent/v1/sessions/{sessionId}/preset"),
         ("GET", "/agent/v1/sessions/{sessionId}/advisor"),
         ("PUT", "/agent/v1/sessions/{sessionId}/advisor"),
@@ -71,7 +72,7 @@ public sealed class AgentV1EndpointTests
 
         var expected = ExpectedRoutes.ToHashSet();
         Assert.Equal(expected, routes);
-        Assert.Equal(59, doc.RootElement.GetArrayLength()); // Steering adds two run routes (ADR 0056); skills, user plugins and selected admission remain; external session exchange is retired.
+        Assert.Equal(60, doc.RootElement.GetArrayLength()); // Steering adds three run/session routes (ADR 0056); skills, user plugins and selected admission remain; external session exchange is retired.
     }
 
     [Theory]

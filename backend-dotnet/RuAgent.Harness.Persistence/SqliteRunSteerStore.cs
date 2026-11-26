@@ -24,6 +24,12 @@ public enum RunSteerAppendOutcome
 public sealed record RunSteerRecord(string SteerId, string State, string Text, DateTimeOffset CreatedAt, int ImageCount = 0);
 
 /// <summary>
+/// One steer a session's runs never read, as a client reopening that session reads it: the run
+/// that held it, the text, and how many images wait with it (ADR 0056).
+/// </summary>
+public sealed record SessionReturnedSteer(string RunId, string SteerId, string Text, DateTimeOffset CreatedAt, int ImageCount = 0);
+
+/// <summary>
 /// Durable steers of root runs (ADR 0056). A steer waits in an encrypted payload that no
 /// event binds, and its images in <c>SteerImage</c> payloads no run-image listing reads; then
 /// <see cref="DeliverAsync"/> moves them into the run at a step boundary in the same
@@ -205,6 +211,56 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The steers this session's runs never read, oldest first, within the list's bounds. A
+    /// client reopening the chat shows them; they stay here until the session's next run reads
+    /// them, which marks them delivered.
+    /// </summary>
+    public async Task<IReadOnlyList<SessionReturnedSteer>> ListReturnedForSessionAsync(
+        SessionId sessionId, CancellationToken ct)
+    {
+        await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction(deferred: true);
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$session", sessionId.Value);
+        command.CommandText = """
+            SELECT s.run_id,s.steer_id,s.payload_id,s.created_at_utc,r.state,r.history_wait_kind,
+                (SELECT count(*) FROM agent_run_steer_images i WHERE i.steer_id=s.steer_id)
+            FROM agent_run_steers s JOIN agent_runs r ON r.run_id=s.run_id
+            WHERE r.session_id=$session AND s.delivered_event_id IS NULL
+            ORDER BY s.created_at_utc,s.steer_id
+            """;
+        var candidates = new List<(string Run, string Steer, PayloadId Payload, string Created, int Images)>();
+        using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var kind = reader.IsDBNull(5) ? (HistoryWaitKind?)null : (HistoryWaitKind)reader.GetInt32(5);
+                var status = new HarnessRunStatus((HarnessRunState)reader.GetInt32(4), kind);
+                if (!NeverReadsSteers(status)) continue;
+                candidates.Add((reader.GetString(0), reader.GetString(1), new PayloadId(reader.GetString(2)),
+                    reader.GetString(3), reader.GetInt32(6)));
+            }
+        }
+
+        var returned = new List<SessionReturnedSteer>();
+        long characters = 0;
+        foreach (var candidate in candidates)
+        {
+            if (returned.Count == RunSteerContract.MaxReturnedPerSession) break;
+            var content = await payloads.ReadForModelAsync(connection, transaction, new RunId(candidate.Run),
+                candidate.Payload, ct).ConfigureAwait(false);
+            var text = Encoding.UTF8.GetString(content.Plaintext.Span);
+            if (characters + text.Length > RunSteerContract.MaxReturnedCharacters) break;
+            characters += text.Length;
+            returned.Add(new SessionReturnedSteer(candidate.Run, candidate.Steer, text,
+                HarnessSqliteMapper.ParseUtc(candidate.Created), candidate.Images));
+        }
+
+        return returned;
     }
 
     public async Task<bool> HasPendingAsync(RunId runId, CancellationToken ct)

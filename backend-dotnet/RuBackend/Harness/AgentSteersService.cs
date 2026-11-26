@@ -70,18 +70,25 @@ public sealed class AgentSteersService
             return BoundedError(400, "invalid_steer_text", $"text must be 1..{RunSteerContract.MaxCharacters:N0} characters, or images must be attached.");
         if (UserImageDataUrls.Validate(images) is { } imageError) return imageError;
 
-        var run = await _store.GetRunAsync(runId, ct).ConfigureAwait(false);
-        if (run is null) return BoundedError(404, "run_not_found", "Run not found.");
-        if (!RunSteerContract.AcceptsSteer(run.State))
-            return NotSteerable();
-
-        if (_lifecycleHooks is not null)
+        // A retried send answers as the first one did, even once the run has read the steer or
+        // ended: the row is already stored, so the steerability check (which asks about new
+        // messages) and the user's prompt hooks do not apply a second time.
+        var alreadyStored = await _steers.ExistsAsync(steerId!, ct).ConfigureAwait(false);
+        if (!alreadyStored)
         {
-            // A run past admission is trusted; without its live root only the user's own hooks run.
-            var hasRoot = _runtimeRoots.TryGetRoot(runId, out var root) && !string.IsNullOrWhiteSpace(root);
-            var refusal = await _lifecycleHooks.SubmitPromptAsync(text, run.SessionId.Value,
-                hasRoot ? root! : string.Empty, workspaceTrusted: hasRoot, run.Preset, ct).ConfigureAwait(false);
-            if (refusal is not null) return BoundedError(422, "prompt_blocked_by_hook", refusal);
+            var run = await _store.GetRunAsync(runId, ct).ConfigureAwait(false);
+            if (run is null) return BoundedError(404, "run_not_found", "Run not found.");
+            if (!RunSteerContract.AcceptsSteer(run.State))
+                return NotSteerable();
+
+            if (_lifecycleHooks is not null)
+            {
+                // A run past admission is trusted; without its live root only the user's own hooks run.
+                var hasRoot = _runtimeRoots.TryGetRoot(runId, out var root) && !string.IsNullOrWhiteSpace(root);
+                var refusal = await _lifecycleHooks.SubmitPromptAsync(text, run.SessionId.Value,
+                    hasRoot ? root! : string.Empty, workspaceTrusted: hasRoot, run.Preset, ct).ConfigureAwait(false);
+                if (refusal is not null) return BoundedError(422, "prompt_blocked_by_hook", refusal);
+            }
         }
 
         RunSteerAppendOutcome outcome;
@@ -97,8 +104,10 @@ public sealed class AgentSteersService
 
         return outcome switch
         {
-            RunSteerAppendOutcome.Accepted => Accepted(runIdRaw, steerId!, 202),
-            RunSteerAppendOutcome.Duplicate => Accepted(runIdRaw, steerId!, 200),
+            RunSteerAppendOutcome.Accepted => Accepted(runIdRaw, steerId!, 202, RunSteerContract.StatePending),
+            RunSteerAppendOutcome.Duplicate => Accepted(runIdRaw, steerId!, 200,
+                await _steers.FindStateAsync(runId, steerId!, ct).ConfigureAwait(false)
+                    ?? RunSteerContract.StatePending),
             RunSteerAppendOutcome.RunNotFound => BoundedError(404, "run_not_found", "Run not found."),
             RunSteerAppendOutcome.RunNotSteerable => NotSteerable(),
             RunSteerAppendOutcome.QueueFull => BoundedError(409, "steer_queue_full",
@@ -131,12 +140,12 @@ public sealed class AgentSteersService
         });
     }
 
-    private static AgentServiceResult Accepted(string runId, string steerId, int status) =>
+    private static AgentServiceResult Accepted(string runId, string steerId, int status, string state) =>
         new(status, new
         {
             run_id = runId,
             steer_id = steerId,
-            state = RunSteerContract.StatePending,
+            state,
             delivered_payload_id = RunSteerContract.DeliveredPayloadId(steerId).Value,
         });
 

@@ -405,6 +405,9 @@ public partial class ChatSessionEngine
         if (refused)
         {
             TuiDebug.Log("submit", "refused: queue full");
+            // A message sent back from a steer had already left the prompt; a full queue must
+            // not drop what the user wrote, so it returns to the composer like any refusal.
+            if (steerFallback is not null) RestoreToPrompt(steerFallback);
             _view.ShowFeedback(QueueFullHint, true);
             return;
         }

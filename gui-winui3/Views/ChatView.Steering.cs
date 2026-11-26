@@ -59,15 +59,16 @@ namespace RuApp.Views
                 return;
             }
 
+            // No attachments answers true with a null payload list: a plain message must steer.
             if (!ChatComposerViewModel.TryBuildImagePayloads(sent.Attachments, out var imagePayloads)
-                || imagePayloads!.Count > AgentSteerLimits.MaxImages)
+                || imagePayloads is { Count: > AgentSteerLimits.MaxImages })
             {
                 if (QueueCurrentComposerTurn()) ShowAgentInlineStatus(SteerImagesNotReadyStatus);
                 return;
             }
 
             var steerText = ChatComposerViewModel.BuildEffectivePrompt(text, sent.Attachments);
-            if (string.IsNullOrWhiteSpace(steerText) && imagePayloads.Count == 0)
+            if (string.IsNullOrWhiteSpace(steerText) && imagePayloads is not { Count: > 0 })
             {
                 // Nothing the run could read (a file with no text yet): it needs a turn.
                 QueueCurrentComposerTurn();

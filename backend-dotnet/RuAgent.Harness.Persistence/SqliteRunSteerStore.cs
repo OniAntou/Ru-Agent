@@ -216,6 +216,42 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
         return (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
     }
 
+    /// <summary>
+    /// Whether this steer id is already stored, for this run or another. A retried send is
+    /// answered from the stored row without running the prompt hooks again or asking whether
+    /// a run in hand still accepts new steers (ADR 0056).
+    /// </summary>
+    public async Task<bool> ExistsAsync(string steerId, CancellationToken ct)
+    {
+        await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var command = connection.CreateCommand();
+        command.Parameters.AddWithValue("$steer", steerId);
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_run_steers WHERE steer_id=$steer)";
+        return (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
+    }
+
+    /// <summary>
+    /// The state <see cref="ListAsync"/> reports for one stored steer, or null when this run
+    /// holds no such steer. A retry answers with it instead of repeating the first reply's
+    /// <c>pending</c>, which would outlive the run's reading of the steer.
+    /// </summary>
+    public async Task<string?> FindStateAsync(RunId runId, string steerId, CancellationToken ct)
+    {
+        await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction(deferred: true);
+        var run = await HarnessSqliteQueries.GetRunAsync(connection, transaction, runId, ct).ConfigureAwait(false);
+        if (run is null) return null;
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$steer", steerId);
+        command.Parameters.AddWithValue("$run", runId.Value);
+        command.CommandText = "SELECT delivered_event_id IS NOT NULL FROM agent_run_steers WHERE steer_id=$steer AND run_id=$run";
+        if (await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is not long delivered) return null;
+        return delivered != 0 ? RunSteerContract.StateDelivered
+            : run.State.IsTerminal() ? RunSteerContract.StateReturned
+            : RunSteerContract.StatePending;
+    }
+
     public async Task<IReadOnlyList<DeliveredSteer>> DeliverAsync(RunId runId, DateTimeOffset now, CancellationToken ct)
     {
         await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);

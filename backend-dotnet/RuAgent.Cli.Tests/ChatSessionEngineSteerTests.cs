@@ -220,6 +220,26 @@ public sealed class ChatSessionEngineSteerTests
         Assert.Equal("first\n\nand this", parts.Text);
     }
 
+    [Fact]
+    public async Task A_returned_steer_the_full_queue_refuses_goes_back_to_the_prompt()
+    {
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        for (var index = 0; index < ChatSessionEngine.MaxQueueDepth; index++)
+        {
+            harness.View.InputText = "queued " + index;
+            harness.Engine.QueueSubmit();
+        }
+
+        await WaitUntilAsync(() => harness.Engine.QueuedCount == ChatSessionEngine.MaxQueueDepth);
+
+        harness.Engine.SendReturnedSteers(["meant for now"]);
+
+        // The queue refuses it, but the text came back from a steer and had already left the
+        // prompt: dropping it silently would lose what the user wrote.
+        await WaitUntilAsync(() => harness.View.InputText == "meant for now");
+        Assert.Equal(ChatSessionEngine.MaxQueueDepth, harness.Engine.QueuedCount);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + Deadline;

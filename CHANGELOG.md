@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Enter while Ru works steers a plain message again. A message without files or
+  images asks the composer for its image payloads, which answers "none" rather than an empty
+  list, and the steer path dereferenced that null before the request: Enter threw, the chat
+  logged it, and the message stayed in the box instead of reaching the run. A plain message now
+  steers, and the wiring test forbids the null-forgiving dereference that hid it.
+
+- **fix(host)**: A retried steer is answered as the first send, even after the run read it or
+  ended. The service refused a resend with `run_not_steerable` before the store could see the
+  stored row, so a client that lost the response could send the same instruction twice — once
+  as the delivered steer and once as the next turn. The retry now answers `200` with the state
+  the steer list reports (`delivered`, `pending` or `returned`), the same id with other text
+  stays `idempotency_conflict`, and the user's `UserPromptSubmit` hooks run once per accepted
+  steer instead of once per request.
+
+- **fix(tui)**: A message the run ended without reading is no longer dropped when the queue is
+  full. It goes back to the prompt, as every other refused prompt does, instead of being
+  discarded on the way to the next turn.
+
 - **fix(tui)**: Native chat shows every tool again. Successful reads, edits, writes and
   commands had been removed from the transcript once they finished, so a turn looked like
   thinking rows only. Each now stays as one compact row (for example `✓ Edited ChatView.cs

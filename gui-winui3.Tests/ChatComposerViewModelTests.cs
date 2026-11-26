@@ -394,6 +394,11 @@ public sealed class SteerAttachmentWiringTests
         Assert.Contains("if (text.StartsWith('/'))", steer, StringComparison.Ordinal);
         Assert.DoesNotContain("sent.ImageCount > 0", steer, StringComparison.Ordinal);
         Assert.Contains("ChatComposerViewModel.TryBuildImagePayloads(sent.Attachments, out var imagePayloads)", steer, StringComparison.Ordinal);
+        // No attachments answers true with a null payload list, so a null-forgiving dereference
+        // made Enter throw and do nothing for a plain message. Every use must accept null.
+        Assert.DoesNotContain("imagePayloads!", steer, StringComparison.Ordinal);
+        Assert.Contains("imagePayloads is { Count: > AgentSteerLimits.MaxImages }", steer, StringComparison.Ordinal);
+        Assert.Contains("imagePayloads is not { Count: > 0 }", steer, StringComparison.Ordinal);
         Assert.Contains("ChatComposerViewModel.BuildEffectivePrompt(text, sent.Attachments)", steer, StringComparison.Ordinal);
         Assert.Contains("controller.SteerAsync(steerText, imagePayloads", steer, StringComparison.Ordinal);
         Assert.Contains("RestoreUnsentSteer(sessionId, sent)", steer, StringComparison.Ordinal);

@@ -140,3 +140,12 @@ The owner asked for images in a steer and for limits that do not refuse ordinary
 4. **Returned steers.** Their images go back into the next turn up to one message's bound;
    any beyond it are named on screen, never refused by the Host.
 5. **RPC.** `run.steer` takes the larger text bound; it does not carry images.
+
+## Amendment (2026-11-26): a retry is answered after its run ended
+
+A send whose `steer_id` is already stored is answered from that row: `200` with the state
+`GET …/steers` reports (`pending`, `delivered` or `returned`), even once the run has read the
+steer or ended, and the user's `UserPromptSubmit` hooks run once per accepted steer rather than
+once per request. `run_not_steerable` still answers a *new* steer on a run that cannot take it,
+and the same id with other text stays `idempotency_conflict`.
+

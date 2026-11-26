@@ -116,6 +116,7 @@ public sealed partial class AgentCommands
                 RunOnTgUi(() =>
                 {
                     if (!IsCurrent()) return;
+                    if (turns is { Length: > 0 } drawn) RememberReplayedTurns(targetSessionId, drawn, retained, generation);
                     var rowsBelow = transcript.RowsBelowViewport;
                     transcript.DeferWrapping = true;
                     try

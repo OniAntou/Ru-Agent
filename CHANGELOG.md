@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: A reopened long turn in the terminal shows how many earlier steps it has, and
+  `/older` loads the next earlier page of the newest such turn. While the replay is all that is
+  on screen the turns are redrawn in place; after a new prompt, and in line mode, the turn's
+  fuller record is printed below instead.
+
 - **feat(gui)**: Scrolling up through a reopened long run loads its earlier activity. The
   run's first reply shows "Loading N earlier steps…" above its activity; when that line comes
   into view, the next older page is read and drawn above, in order, and the view keeps the

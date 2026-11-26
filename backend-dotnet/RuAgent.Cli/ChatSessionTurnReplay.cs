@@ -104,6 +104,35 @@ internal static class ChatSessionTurnReplay
         return turns.Select(turn => new ChatReplayTurn(turn.RunId, [.. turn.Prompts], [.. turn.Replies])).ToList();
     }
 
+    /// <summary>The line a reopened long turn shows above its newest steps.</summary>
+    internal static string OlderStepsNotice(int olderCount) => olderCount switch
+    {
+        <= 0 => "↑ earlier steps not shown · /older shows them",
+        1 => "↑ 1 earlier step not shown · /older shows it",
+        _ => $"↑ {olderCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} earlier steps not shown · /older shows them",
+    };
+
+    /// <summary>
+    /// Joins an older replay page onto a turn's record: rows in durable order, the checklist
+    /// the newest page led with kept once at its own place, and the cursor of the page read.
+    /// </summary>
+    internal static AgentRunActivityReplay MergeOlder(AgentRunActivityReplay shown, AgentRunActivityReplay older)
+    {
+        ArgumentNullException.ThrowIfNull(shown);
+        ArgumentNullException.ThrowIfNull(older);
+        var olderIds = older.Activities.Select(row => row.ActivityId).ToHashSet(StringComparer.Ordinal);
+        var rows = older.Activities
+            .Concat(shown.Activities.Where(row => !olderIds.Contains(row.ActivityId)))
+            .OrderBy(row => row.DurableSequence ?? long.MaxValue)
+            .ToArray();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var transcript = older.Transcript.Concat(shown.Transcript)
+            .OrderBy(entry => entry.Sequence)
+            .Where(entry => entry.ActivityId is not { } id || seen.Add(id))
+            .ToArray();
+        return new AgentRunActivityReplay(rows, transcript, older.HasMore, older.NextBeforeSequence, older.OlderCount);
+    }
+
     internal static Tui.TuiTurnOutcome Outcome(string? status) => status?.ToLowerInvariant() switch
     {
         "completed" => Tui.TuiTurnOutcome.Completed,

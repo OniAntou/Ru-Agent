@@ -147,7 +147,9 @@ A send whose `steer_id` is already stored is answered from that row: `200` with 
 `GET …/steers` reports (`pending`, `delivered` or `returned`), even once the run has read the
 steer or ended, and the user's `UserPromptSubmit` hooks run once per accepted steer rather than
 once per request. `run_not_steerable` still answers a *new* steer on a run that cannot take it,
-and the same id with other text stays `idempotency_conflict`.
+and the same id with other text stays `idempotency_conflict`. The client library retries a steer
+whose response was lost in transit with that same id, so a dropped connection is answered by
+the stored row instead of the caller sending the message again.
 
 ## Amendment (2026-11-26): returned before the run is terminal
 

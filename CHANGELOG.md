@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(client)**: A steer whose response was lost in transit is retried with the same
+  `steer_id`, so the Host replays the stored steer instead of the client putting the text back
+  for a second send. A refusal, or a send the caller cancelled, is never retried.
+
 - **fix(host)**: A steer still waiting when the run committed its final reply reads as
   `returned`, not `pending`, so its sender offers it as the next turn instead of waiting for a
   model step that can never come. The steer list also refuses a subagent run with

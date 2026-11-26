@@ -34,6 +34,34 @@ public sealed partial class AgentApiClient
         var payload = imageCount == 0
             ? JsonSerializer.Serialize(new { steer_id = steerId, text })
             : JsonSerializer.Serialize(new { steer_id = steerId, text, images });
+
+        // A response lost in transit leaves the caller unsure whether the steer was stored.
+        // steer_id makes the request idempotent at the Host (ADR 0056), so a transport failure
+        // is retried with the same id: a stored steer answers 200 from its row, never a second
+        // message. A refusal is an answer, not a lost request, and is never retried.
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return await SendSteerAsync(url, payload, ct).ConfigureAwait(false);
+            }
+            catch (Exception error) when (attempt < SteerTransportRetries
+                && !ct.IsCancellationRequested
+                && error is HttpRequestException or IOException or TaskCanceledException)
+            {
+                await Task.Delay(SteerRetryDelay(attempt), ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Attempts of a steer's POST before a transport failure is reported.</summary>
+    internal const int SteerTransportRetries = 2;
+
+    private static TimeSpan SteerRetryDelay(int attempt) =>
+        TimeSpan.FromMilliseconds(attempt == 0 ? 200 : 500);
+
+    private async Task<AgentSteerResponse> SendSteerAsync(Uri url, string payload, CancellationToken ct)
+    {
         using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(payload, Encoding.UTF8, "application/json") };
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);

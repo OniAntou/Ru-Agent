@@ -218,6 +218,29 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 brokerRunId.Value,
                 new RuAgent.Protocol.SessionTaskRequest(),
                 ct));
+        // Session notes change slowly; one read per ten seconds keeps a per-step
+        // prompt build from opening SQLite and decrypting work state every time.
+        var noteRefresh = TimeSpan.FromSeconds(10);
+        bool subagentsRead = false, tasksRead = false;
+        DateTimeOffset subagentsAt = default, tasksAt = default;
+        string? subagentsValue = null, tasksValue = null;
+
+        // Awareness references describe a real model's workspace and machine. Scripted and
+        // development seams keep their deterministic prompt: no probe runs without a pinned
+        // provider, and every hook below stays null there.
+        var promptAwareness = _runModelMetadataResolver is not null;
+        Func<CancellationToken, Task<RuAgent.Broker.Tools.Git.WorkspaceGitSnapshot?>>? workspaceGitSnapshot = null;
+        Func<string?>? machineSnapshot = null;
+        Func<CancellationToken, Task<string?>>? subagentNote = null;
+        Func<CancellationToken, Task<string?>>? taskNote = null;
+        if (promptAwareness)
+        {
+            workspaceGitSnapshot = ct => _brokerGateways.WorkspaceGitSnapshotAsync(brokerRunId.Value, ct);
+            machineSnapshot = MachineSnapshotProbe.Read;
+            subagentNote = DescribeSubagentsAsync;
+            taskNote = DescribeOpenTasksAsync;
+        }
+
         var promptContextProvider = new RuPromptContextProvider(
             workspaceRoot,
             _instructionLoader,
@@ -228,7 +251,105 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             _runModelMetadataResolver)
         {
             BackgroundTaskNotes = backgroundTaskNotes.ProbeAsync,
+            WorkspaceGitSnapshot = workspaceGitSnapshot,
+            MachineSnapshot = machineSnapshot,
+            IncludeRunState = promptAwareness,
+            ActiveSubagents = subagentNote,
+            OpenTasks = taskNote,
         };
+
+        async Task<string?> DescribeSubagentsAsync(CancellationToken ct)
+        {
+            var now = _time.UtcNow;
+            if (subagentsRead && now - subagentsAt < noteRefresh)
+            {
+                return subagentsValue;
+            }
+
+            try
+            {
+                var records = await subagentStore.ListAsync(brokerRunId, ct).ConfigureAwait(false);
+                subagentsValue = records.Count == 0
+                    ? null
+                    : $"{records.Count} known subagent(s): "
+                        + string.Join(", ", records.Take(8).Select(record =>
+                            $"{record.AgentId} ({record.Role}{(record.Canceled ? ", cancelled" : string.Empty)})"))
+                        + (records.Count > 8 ? ", …" : string.Empty);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // Session context only: an unreadable store omits the note.
+                subagentsValue = null;
+            }
+
+            subagentsRead = true;
+            subagentsAt = now;
+            return subagentsValue;
+        }
+
+        async Task<string?> DescribeOpenTasksAsync(CancellationToken ct)
+        {
+            if (_workStates is null || storedRun is null)
+            {
+                return null;
+            }
+
+            var now = _time.UtcNow;
+            if (tasksRead && now - tasksAt < noteRefresh)
+            {
+                return tasksValue;
+            }
+
+            try
+            {
+                var state = await _workStates
+                    .GetAsync(storedRun.SessionId, storedRun.WorkspaceId, ct)
+                    .ConfigureAwait(false);
+                if (state is null || state.Tasks.Count == 0)
+                {
+                    tasksValue = null;
+                }
+                else
+                {
+                    var open = state.Tasks.Where(item => item.Status == SessionWorkItemStatus.Open).ToArray();
+                    var completed = state.Tasks.Count(item => item.Status == SessionWorkItemStatus.Completed);
+                    var other = state.Tasks.Count - open.Length - completed;
+                    var shown = open.Take(4).Select(item => ClipNote(item.Text.Replace('\n', ' ').Trim(), 200));
+                    tasksValue = $"{open.Length} open, {completed} completed"
+                        + (other > 0 ? $", {other} other" : string.Empty)
+                        + (open.Length > 0 ? $"; open: {string.Join(" | ", shown)}" : string.Empty);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                tasksValue = null;
+            }
+
+            tasksRead = true;
+            tasksAt = now;
+            return tasksValue;
+        }
+
+        static string ClipNote(string text, int maxChars)
+        {
+            if (text.Length <= maxChars)
+            {
+                return text;
+            }
+
+            // Keep the cut on a character boundary so the note stays valid text.
+            var cut = char.IsHighSurrogate(text[maxChars - 1]) ? maxChars - 1 : maxChars;
+            return text[..cut] + "…";
+        }
+
         return new AgentRunCoordinator(
             _model,
             gateway,

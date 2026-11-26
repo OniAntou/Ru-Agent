@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)**: A run starts knowing the workspace and the machine. The prompt now carries
+  a bounded `workspace_snapshot` (repository root, branch, head, tracking position, workspace-scoped
+  working-tree counts or an explicit unavailable marker, workspace-relative changed paths, recent
+  commits, a name-only top-level view and detected build/test commands), a `machine_snapshot` (OS,
+  architecture, cores, memory, runtime, PATH-resolved shell and tool versions from file metadata)
+  and a `run_state` note (model step against the per-window step limit and the window ordinal, tool
+  calls used, visible transcript counts, known subagents and open work items). Repository facts come
+  from a fixed read-only Broker Git probe, so the Host still never starts a process; each reference
+  is untrusted context after history, fail-soft and inside the existing runtime-reference budget,
+  and no prompt contract changed.
+
 - **fix(gui)**: Deleting the chat that is open returns to the new-chat screen instead of
   opening another chat. The newest remaining chat used to take its place, so a delete moved
   the reader into a conversation they had not chosen; the welcome screen now comes back, as it

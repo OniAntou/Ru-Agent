@@ -49,6 +49,11 @@ The Host-owned conversation and message/source history. A view may detach or swi
 Implementation: [gui](docs/architecture/gui.md#conversation-session).
 _Avoid_: treating an HTTP 200 response as a successful delete
 
+**Prompt Awareness Reference**:
+A bounded, host-assembled runtime reference that orients a run before it explores (`workspace_snapshot`, `machine_snapshot`, `run_state`). It travels as untrusted context after history and is never execution authority, verification evidence or permission.
+Implementation: [context management](docs/architecture/context-management.md#prompt-time-awareness-references).
+_Avoid_: reading a snapshot as a verified check or a grant
+
 **Chat Session Engine**:
 The CLI's single conversation controller for submission admission, bounded prompt
 history, queueing, turn cancellation and inspection lifetime. Terminal.Gui and

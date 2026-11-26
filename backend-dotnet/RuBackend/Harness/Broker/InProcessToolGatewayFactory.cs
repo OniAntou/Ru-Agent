@@ -315,6 +315,35 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
     }
 
     /// <summary>
+    /// Reads the run workspace's bounded, read-only repository facts for prompt
+    /// context through the run's open gateway. A run without a gateway, or a probe
+    /// the authority cannot answer, omits the snapshot rather than failing the prompt.
+    /// </summary>
+    public async Task<RuAgent.Broker.Tools.Git.WorkspaceGitSnapshot?> WorkspaceGitSnapshotAsync(
+        string runId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        if (!_gateways.TryGetValue(runId, out var gateway))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await gateway.WorkspaceGitSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Reads a pending approval from the Broker without consuming it. Unknown when the run has no tracked gateway,
     /// the Host holds no ask for that approval, or the Broker no longer holds it as pending.
     /// </summary>

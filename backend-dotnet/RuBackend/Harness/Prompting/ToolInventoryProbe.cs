@@ -19,10 +19,45 @@ public static class ToolInventoryProbe
     public static string Probe(IReadOnlyList<string>? searchDirectories = null)
     {
         var directories = (searchDirectories ?? PathDirectories()).Take(MaxSearchDirectories).ToArray();
-        var shells = Shells.Where(name => Exists(directories, name)).ToArray();
-        var tools = Tools.Where(name => Exists(directories, name)).ToArray();
+        var shells = Shells.Where(name => ResolvePath(name, directories) is not null).ToArray();
+        var tools = Tools.Where(name => ResolvePath(name, directories) is not null).ToArray();
         var missing = Shells.Concat(Tools).Except(shells, StringComparer.Ordinal).Except(tools, StringComparer.Ordinal).ToArray();
         return $"shells: {Join(shells)}; tools: {Join(tools)}; missing: {Join(missing)}";
+    }
+
+    /// <summary>
+    /// Resolves one executable on PATH without running it. Used by the machine
+    /// snapshot for file-version metadata; a missing or malformed entry answers null.
+    /// </summary>
+    internal static string? ResolvePath(string name, IReadOnlyList<string>? searchDirectories = null)
+    {
+        var directories = (searchDirectories ?? PathDirectories()).Take(MaxSearchDirectories).ToArray();
+        foreach (var directory in directories)
+        {
+            try
+            {
+                var direct = Path.Combine(directory, name);
+                if (File.Exists(direct))
+                {
+                    return direct;
+                }
+
+                foreach (var extension in WindowsExtensions)
+                {
+                    var candidate = Path.Combine(directory, name + extension);
+                    if (File.Exists(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            catch
+            {
+                // A malformed PATH entry skips instead of failing the prompt.
+            }
+        }
+
+        return null;
     }
 
     private static string Join(string[] names) => names.Length == 0 ? "none" : string.Join(", ", names);
@@ -47,26 +82,5 @@ public static class ToolInventoryProbe
         }
 
         return directories;
-    }
-
-    private static bool Exists(IReadOnlyList<string> directories, string name)
-    {
-        foreach (var directory in directories)
-        {
-            try
-            {
-                if (File.Exists(Path.Combine(directory, name))
-                    || WindowsExtensions.Any(extension => File.Exists(Path.Combine(directory, name + extension))))
-                {
-                    return true;
-                }
-            }
-            catch
-            {
-                // A malformed PATH entry skips instead of failing the prompt.
-            }
-        }
-
-        return false;
     }
 }

@@ -200,6 +200,21 @@ runtime context. The model then receives ordered typed user/assistant/tool
 messages; clock, mood, and references are not appended as separate system
 messages.
 
+The prompt also carries bounded awareness references when the host supplies them.
+`workspace_snapshot` names the repository root, branch, head commit, tracking
+position, workspace-scoped working-tree counts (or an explicit unavailable marker),
+workspace-relative changed paths, recent commits, and a name-only top-level view with
+detected project files and candidate build/test commands labelled unverified. Its
+repository half comes from a fixed, read-only Broker Git probe; the Host never runs the
+process and cannot choose an argument, and the snapshot is re-read on a short interval.
+`machine_snapshot` names the OS, architecture, logical processors, memory visible to
+.NET, the runtime and the PATH-resolved shells/tools with metadata versions, without
+executing them. `run_state` names the model step against the per-window step limit and
+the budget-window ordinal, tool calls used in that window, visible transcript counts,
+known subagents and open work items. All three travel after history as untrusted
+runtime context, are fail-soft, and share the bounded runtime-reference budget with
+tool results.
+
 Host capabilities are the runtime projection of the Protocol-owned tool
 definitions selected by the run-pinned `coding_v3` or `coding_v2`
 profile. File tools use explicit identities such as `write_file`/`edit_file`;

@@ -75,6 +75,16 @@ public interface IToolGatewayFactory : IAsyncDisposable
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads the run workspace's bounded, read-only repository facts for prompt
+    /// context. Context, not evidence: a missing gateway or a failed probe answers
+    /// null, and the prompt omits the snapshot instead of failing.
+    /// </summary>
+    Task<RuAgent.Broker.Tools.Git.WorkspaceGitSnapshot?> WorkspaceGitSnapshotAsync(
+        string runId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<RuAgent.Broker.Tools.Git.WorkspaceGitSnapshot?>(null);
+
+    /// <summary>
     /// Reads one pending approval without consuming it or issuing a token. The Host checks <c>Known</c> before it
     /// commits an allow, and refuses allow_always unless <c>Rememberable</c>. The default answers unknown, so an
     /// authority that cannot answer fails closed.

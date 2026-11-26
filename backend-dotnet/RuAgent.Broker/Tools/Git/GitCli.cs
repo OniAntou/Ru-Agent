@@ -23,11 +23,27 @@ public interface IGitCli
         string workingDirectory,
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, string>? additionalEnvironment = null);
+
+    /// <summary>
+    /// Runs a fixed read whose arguments cannot make Git apply a repository content
+    /// filter (identity and history reads such as <c>rev-parse</c>, <c>symbolic-ref</c>
+    /// and <c>log --format</c>). The filtering implementation skips the per-command
+    /// filter-table discovery this way; callers must not pass a verb or option that
+    /// renders file contents.
+    /// </summary>
+    Task<GitCliResult> RunWithoutFilterDiscoveryAsync(
+        IReadOnlyList<string> arguments,
+        string workingDirectory,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? additionalEnvironment = null) =>
+        RunAsync(arguments, workingDirectory, cancellationToken, additionalEnvironment);
 }
 
 public sealed class StreamingGitCli : IGitCli
 {
-    private const int TimeoutMs = 30_000;
+    private const int DefaultTimeoutMs = 30_000;
+    private const int MinimumTimeoutMs = 100;
+    private const int MaximumTimeoutMs = 120_000;
     private const int DefaultOutputLimitBytes = 256 * 1024;
     private const int MaximumOutputLimitBytes = 8 * 1024 * 1024;
     private const int MaximumFilterDrivers = 64;
@@ -46,15 +62,20 @@ public sealed class StreamingGitCli : IGitCli
     private readonly StreamingProcessRunner _runner;
     private readonly IReadOnlyDictionary<string, string> _environment;
     private readonly int _outputLimitBytes;
+    private readonly int _timeoutMs;
 
     public StreamingGitCli(
         StreamingProcessRunner? runner = null,
         IReadOnlyDictionary<string, string>? environment = null,
-        int outputLimitBytes = DefaultOutputLimitBytes)
+        int outputLimitBytes = DefaultOutputLimitBytes,
+        int timeoutMs = DefaultTimeoutMs)
     {
         if (outputLimitBytes is < 1 or > MaximumOutputLimitBytes)
             throw new ArgumentOutOfRangeException(nameof(outputLimitBytes));
+        if (timeoutMs is < MinimumTimeoutMs or > MaximumTimeoutMs)
+            throw new ArgumentOutOfRangeException(nameof(timeoutMs));
         _outputLimitBytes = outputLimitBytes;
+        _timeoutMs = timeoutMs;
         // Git status is line-oriented and callers need the whole bounded answer:
         // the runner's 8k+8k default would report a 300-file status as truncated.
         _runner = runner ?? new StreamingProcessRunner(
@@ -142,7 +163,7 @@ public sealed class StreamingGitCli : IGitCli
                 ],
                 workingDirectory,
                 _environment,
-                TimeoutMs,
+                _timeoutMs,
                 _outputLimitBytes);
             var result = await _runner.RunAsync(spec, onDelta: null, cancellationToken).ConfigureAwait(false);
             if (result.Status == "cancelled")
@@ -235,11 +256,26 @@ public sealed class StreamingGitCli : IGitCli
         return environment;
     }
 
-    public async Task<GitCliResult> RunAsync(
+    public Task<GitCliResult> RunAsync(
         IReadOnlyList<string> arguments,
         string workingDirectory,
         CancellationToken cancellationToken,
-        IReadOnlyDictionary<string, string>? additionalEnvironment = null)
+        IReadOnlyDictionary<string, string>? additionalEnvironment = null) =>
+        RunCoreAsync(arguments, workingDirectory, cancellationToken, additionalEnvironment, discoverFilters: true);
+
+    public Task<GitCliResult> RunWithoutFilterDiscoveryAsync(
+        IReadOnlyList<string> arguments,
+        string workingDirectory,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? additionalEnvironment = null) =>
+        RunCoreAsync(arguments, workingDirectory, cancellationToken, additionalEnvironment, discoverFilters: false);
+
+    private async Task<GitCliResult> RunCoreAsync(
+        IReadOnlyList<string> arguments,
+        string workingDirectory,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? additionalEnvironment,
+        bool discoverFilters)
     {
         ArgumentNullException.ThrowIfNull(arguments);
         if (arguments.Count == 0)
@@ -252,7 +288,7 @@ public sealed class StreamingGitCli : IGitCli
         // repo-supplied clean/smudge/process filter. Mutating verbs (add, commit,
         // worktree checkout, ...) keep repository filters: those filters are part
         // of what the mutation must do (LFS, repository transforms).
-        var filterEnvironment = DisablesRepositoryFilters(arguments)
+        var filterEnvironment = discoverFilters && DisablesRepositoryFilters(arguments)
             ? await FilterEnvironmentAsync(workingDirectory, cancellationToken).ConfigureAwait(false)
             : new Dictionary<string, string>();
         if (filterEnvironment is null)
@@ -301,7 +337,7 @@ public sealed class StreamingGitCli : IGitCli
             argv,
             workingDirectory,
             environment,
-            TimeoutMs,
+            _timeoutMs,
             _outputLimitBytes);
         var result = await _runner.RunAsync(spec, onDelta: null, cancellationToken);
 

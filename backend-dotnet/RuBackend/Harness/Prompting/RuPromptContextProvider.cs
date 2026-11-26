@@ -43,6 +43,34 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
     /// </summary>
     public Func<CancellationToken, Task<string?>>? BackgroundTaskNotes { get; init; }
 
+    /// <summary>
+    /// Optional read-only repository facts for the prompt. Null omits the workspace
+    /// snapshot; the runtime loop injects it because only it reaches the Broker.
+    /// </summary>
+    public Func<CancellationToken, Task<RuAgent.Broker.Tools.Git.WorkspaceGitSnapshot?>>? WorkspaceGitSnapshot { get; init; }
+
+    /// <summary>
+    /// Optional execution-free machine description. Null omits the machine snapshot;
+    /// the runtime loop injects it so tests can keep the prompt deterministic.
+    /// </summary>
+    public Func<string?>? MachineSnapshot { get; init; }
+
+    /// <summary>Whether the prompt carries the run counters and session notes.</summary>
+    public bool IncludeRunState { get; init; }
+
+    /// <summary>Optional bounded note naming this run's subagents.</summary>
+    public Func<CancellationToken, Task<string?>>? ActiveSubagents { get; init; }
+
+    /// <summary>Optional bounded note naming this session's open work items.</summary>
+    public Func<CancellationToken, Task<string?>>? OpenTasks { get; init; }
+
+    private const string WorkspaceSnapshotLabel = "bounded workspace and repository snapshot";
+    private static readonly TimeSpan WorkspaceSnapshotRefresh = TimeSpan.FromSeconds(10);
+    private string? _workspaceSnapshotText;
+    private DateTimeOffset _workspaceSnapshotBuiltAt;
+    private string? _machineSnapshotText;
+    private bool _machineSnapshotRead;
+
     public RuPromptContextProvider(
         string workspaceRoot,
         RuInstructionLoader instructionLoader,
@@ -246,9 +274,13 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
             .ToList();
         var workspaceActivity = await BuildWorkspaceActivityReferenceAsync(run, cancellationToken).ConfigureAwait(false);
         var backgroundTasks = await BuildBackgroundTaskReferenceAsync(cancellationToken).ConfigureAwait(false);
+        var workspaceSnapshot = await BuildWorkspaceSnapshotReferenceAsync(cancellationToken).ConfigureAwait(false);
+        var machineSnapshot = MachineSnapshotReference();
+        var runState = await BuildRunStateReferenceAsync(run, modelContext, cancellationToken).ConfigureAwait(false);
         var verification = modelContext.VerificationEvidence.DescribePending();
         var reservedReferences = (workspaceActivity is null ? 0 : 1) + (backgroundTasks is null ? 0 : 1)
-            + (verification is null ? 0 : 1);
+            + (verification is null ? 0 : 1) + (workspaceSnapshot is null ? 0 : 1)
+            + (machineSnapshot is null ? 0 : 1) + (runState is null ? 0 : 1);
         var maximumResultReferences = ToolResultReferenceBudget - reservedReferences;
         var hasOmittedResults = toolResults.Count > maximumResultReferences;
         var resultReferenceBudget = maximumResultReferences - (hasOmittedResults ? 1 : 0);
@@ -288,6 +320,14 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
 
         if (workspaceActivity is not null)
             references.Add(workspaceActivity);
+        // The snapshot references orient the model before any exploratory call. They
+        // are stable-ish data, so they sit ahead of the most actionable notes below.
+        if (workspaceSnapshot is not null)
+            references.Add(workspaceSnapshot);
+        if (machineSnapshot is not null)
+            references.Add(machineSnapshot);
+        if (runState is not null)
+            references.Add(runState);
 
         // The background-task note is the most actionable reference, so it stays
         // last: the overflow guard below keeps the newest entries.
@@ -348,6 +388,179 @@ public sealed partial class RuPromptContextProvider : ISystemPromptContextProvid
                 "background_tasks",
                 "harness background task state",
                 note);
+    }
+
+    /// <summary>
+    /// Builds the workspace snapshot reference, refreshing its repository facts on a
+    /// short interval so an edit the run just made is visible without paying a Git
+    /// read on every step. Failures and cancellations follow the note rules above.
+    /// </summary>
+    private async Task<PromptReference?> BuildWorkspaceSnapshotReferenceAsync(
+        CancellationToken cancellationToken)
+    {
+        if (WorkspaceGitSnapshot is null)
+        {
+            return null;
+        }
+
+        var now = _time.UtcNow;
+        if (_workspaceSnapshotText is not null && now - _workspaceSnapshotBuiltAt < WorkspaceSnapshotRefresh)
+        {
+            return TryCreateReference("workspace_snapshot", WorkspaceSnapshotLabel, _workspaceSnapshotText);
+        }
+
+        RuAgent.Broker.Tools.Git.WorkspaceGitSnapshot? git = null;
+        try
+        {
+            git = await WorkspaceGitSnapshot(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // Context only: an unavailable repository probe costs the snapshot section.
+            git = null;
+        }
+
+        string? text;
+        try
+        {
+            text = WorkspaceSnapshotComposer.Render(git, _canonicalRoot);
+        }
+        catch (Exception)
+        {
+            // Rendering is presentation only: an unexpected failure costs the section.
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        _workspaceSnapshotText = text;
+        _workspaceSnapshotBuiltAt = now;
+        return TryCreateReference("workspace_snapshot", WorkspaceSnapshotLabel, text);
+    }
+
+    private PromptReference? MachineSnapshotReference()
+    {
+        if (MachineSnapshot is null)
+        {
+            return null;
+        }
+
+        if (!_machineSnapshotRead)
+        {
+            _machineSnapshotRead = true;
+            try
+            {
+                _machineSnapshotText = MachineSnapshot();
+            }
+            catch (Exception)
+            {
+                _machineSnapshotText = null;
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(_machineSnapshotText)
+            ? null
+            : TryCreateReference("machine_snapshot", "bounded machine and toolchain facts", _machineSnapshotText);
+    }
+
+    /// <summary>
+    /// Run counters and session notes. They change every step, so they travel as
+    /// runtime references after history instead of in the stable system prefix.
+    /// </summary>
+    private async Task<PromptReference?> BuildRunStateReferenceAsync(
+        AgentRun run,
+        ModelContextSnapshot modelContext,
+        CancellationToken cancellationToken)
+    {
+        if (!IncludeRunState)
+        {
+            return null;
+        }
+
+        var steps = modelContext.Entries.Count(entry => entry.Kind == ModelContextEntryKind.AssistantStep);
+        var results = modelContext.Entries.Count(entry => entry.Kind == ModelContextEntryKind.ToolResult);
+        // BudgetWindow is the window ordinal (a run opens window 2, 3, ...), not its
+        // size; ModelStepLimit bounds how many steps fit in any one window.
+        var stepInWindow = Math.Min(run.ModelStepsInWindow + 1, AgentBudgetPolicy.ModelStepLimit);
+        var builder = new StringBuilder();
+        builder.AppendLine("run_state:");
+        builder.AppendLine(
+            $"  model step: {stepInWindow} of {AgentBudgetPolicy.ModelStepLimit} in budget window {run.BudgetWindow}");
+        builder.AppendLine($"  tool calls this window: {run.ToolCallsInWindow} of {AgentBudgetPolicy.ToolCallLimit}");
+        builder.AppendLine($"  visible transcript: {steps} assistant step(s), {results} tool result(s)");
+
+        var subagents = await ReadNoteAsync(ActiveSubagents, cancellationToken).ConfigureAwait(false);
+        if (subagents is not null)
+        {
+            builder.AppendLine($"  subagents: {subagents}");
+        }
+
+        var tasks = await ReadNoteAsync(OpenTasks, cancellationToken).ConfigureAwait(false);
+        if (tasks is not null)
+        {
+            builder.AppendLine($"  work items: {tasks}");
+        }
+
+        return TryCreateReference("run_state", "host run counters and session state", builder.ToString().TrimEnd());
+    }
+
+    /// <summary>
+    /// Builds one reference from untrusted or host-assembled text. NUL and invalid
+    /// UTF-16 are removed first (a todo or filename can carry either), and a text the
+    /// Core still rejects omits only this reference instead of failing the prompt.
+    /// </summary>
+    private static PromptReference? TryCreateReference(string kind, string label, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var safe = Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(text.Replace("\0", string.Empty, StringComparison.Ordinal)));
+        if (string.IsNullOrWhiteSpace(safe))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new PromptReference(kind, label, safe);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<string?> ReadNoteAsync(
+        Func<CancellationToken, Task<string?>>? note,
+        CancellationToken cancellationToken)
+    {
+        if (note is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var value = await note(cancellationToken).ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private async Task<PromptReference?> BuildWorkspaceActivityReferenceAsync(

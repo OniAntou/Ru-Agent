@@ -154,6 +154,52 @@ not independent verification evidence.
 
 Outstanding-check guidance lists each outstanding declared check with its provider call ID, authority-recorded working directory, code and next action: read a pending background check's terminal execution until it exits, repair and rerun a failed check, or report the observed exit of an expected-exit mismatch without forcing the expected code. Inspecting logs does not satisfy a check. The text is bounded and never establishes equivalence between tests.
 
+## Prompt-time awareness references
+
+Three optional host-assembled references orient a run before it has to explore:
+`workspace_snapshot`, `machine_snapshot` and `run_state`. They are context, not
+evidence or authority: the composer renders them inside the untrusted runtime
+boundary, and they never grant paths, tools, approval or a different
+provider/model. They travel after history as deferred runtime context, so a value
+that changes between steps does not invalidate the provider prefix cache.
+
+`workspace_snapshot` combines repository facts reported by the Broker with a shallow,
+name-only view of the workspace. The Broker probe is a fixed-argv read-only Git read
+(`rev-parse`, `symbolic-ref`, `log`, `status --porcelain=v2 --branch -z -- .`) over the
+same hardened channel as its other fixed Git reads: sanitized child environment,
+hooks and fsmonitor disabled, no lazy fetch, one snapshot-wide time budget, per-command
+timeout and an output cap. The Host never starts the process and cannot choose an
+argument. Counts and at most twenty changed paths are kept; the status pathspec scopes
+them to the run workspace and the probe strips the workspace's repository prefix, so
+paths render workspace-relative and a workspace below the repository root reports no
+sibling directory names. Recent commits are bounded to five and remain repository
+history, and a repository root above the workspace is labelled as such. A truncated or
+failed status is named as unavailable, never reported as a clean tree. The Host half
+lists at most forty top-level entries (known build/cache directories such as `.git`,
+`node_modules`, `bin` and `obj` are skipped), the detected project files and candidate
+build/test commands, which are labelled as detected and not verified. Control
+characters in rendered names are flattened so a filename cannot forge a line, and the
+combined reference is capped at 8 KiB and re-read on a ten-second interval, so a long
+run sees its own edits without a Git read on every step.
+
+`machine_snapshot` names the OS, architecture, logical processor count, memory
+visible to .NET, the runtime, and the shells and helper tools resolved on PATH, with
+versions taken from file metadata. It never executes a probed program and is capped at
+4 KiB. `run_state` reports the model step against the per-window step limit together
+with the budget-window ordinal, tool calls used against their window limit, visible
+transcript counts, known subagents and open work items; the session notes are best
+effort, cached for ten seconds and omitted when their store is unavailable.
+
+All three are opt-in and fail-soft: an absent hook, probe failure or timeout omits
+that reference (for `workspace_snapshot`, only the repository half is lost while a
+readable layout may remain) and never fails the prompt or the run. Reference text is
+sanitized before construction — NUL and invalid UTF-16 are removed and an unusable
+reference is dropped — so untrusted names or notes cannot fail the prompt. They share
+the bounded runtime-reference budget with tool results; an overflow keeps the newest
+references and folds the dropped count into one notice. The runtime loop enables them
+only for provider-backed runs, so scripted and development seams keep their
+deterministic prompt.
+
 ## Provider usage anchors
 
 The Generation Kernel may increase a heuristic input estimate using observed

@@ -213,6 +213,30 @@ public sealed class RunSteerStoreTests
             await steers.AppendAsync(runId, SteerTwo, "after the end", HarnessStoreTestFixture.Timestamp, default));
     }
 
+    [Fact]
+    public async Task A_steer_still_pending_when_the_final_reply_is_committed_reads_as_returned()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (_, steers, runId) = await RunningAsync(fixture);
+        await steers.AppendAsync(runId, SteerOne, "never delivered", HarnessStoreTestFixture.Timestamp, default);
+        await using (var connection = fixture.CreateRawConnection())
+        {
+            await connection.OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE agent_runs SET state=$state,history_wait_kind=$kind WHERE run_id=$run";
+            command.Parameters.AddWithValue("$state", (int)HarnessRunState.WaitingHistory);
+            command.Parameters.AddWithValue("$kind", (int)HistoryWaitKind.FinalBeforeCompletion);
+            command.Parameters.AddWithValue("$run", runId.Value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        // The run will not reach another model step, so the sender must offer it as the next turn.
+        var steer = Assert.Single(await steers.ListAsync(runId, default));
+        Assert.Equal(RunSteerContract.StateReturned, steer.State);
+        Assert.Equal("never delivered", steer.Text);
+        Assert.Equal(RunSteerContract.StateReturned, await steers.FindStateAsync(runId, SteerOne, default));
+    }
+
     private static Task<(SqliteHarnessEventStore Events, SqliteRunSteerStore Steers, RunId RunId)> RunningAsync(
         HarnessStoreTestFixture fixture) =>
         RunAsync(fixture, new HarnessRunStatus(HarnessRunState.Running));

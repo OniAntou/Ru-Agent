@@ -149,3 +149,11 @@ steer or ended, and the user's `UserPromptSubmit` hooks run once per accepted st
 once per request. `run_not_steerable` still answers a *new* steer on a run that cannot take it,
 and the same id with other text stays `idempotency_conflict`.
 
+## Amendment (2026-11-26): returned before the run is terminal
+
+A steer still waiting when the run has committed its final reply — only the history
+acknowledgement is missing — reads as `returned`: that run reaches no further model step, so
+the sender must offer the message as the next turn instead of waiting. The steer list refuses a
+subagent run with `subagent_read_only`, as the send route does.
+
+

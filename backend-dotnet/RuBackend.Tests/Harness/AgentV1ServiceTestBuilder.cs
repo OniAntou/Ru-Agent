@@ -98,7 +98,9 @@ internal sealed class AgentV1ServiceTestBuilder(BackendHarnessTestFixture fixtur
                 sessions, permissionStore, fixture.KeyStore),
             new AgentWorkspaceService(fixture.Options, workspaces, trust, time, workspaceCoordinator, journalProtector),
             workspaceTrust,
-            new AgentActivitiesService(fixture.EventStore, fixture.PayloadStore, new RuBackend.Conversation.MetadataPolicy()));
+            new AgentActivitiesService(fixture.EventStore, fixture.PayloadStore, new RuBackend.Conversation.MetadataPolicy()),
+            new AgentSteersService(fixture.EventStore,
+                new SqliteRunSteerStore(fixture.Options, fixture.PayloadStore), time, guard, roots));
     }
 
     private sealed class NoChildrenCleanup : IAgentRuntimeRunCleanup
@@ -119,4 +121,5 @@ internal sealed record AgentV1ServiceTestBundle(
     AgentPoliciesService Policies,
     AgentWorkspaceService Workspace,
     AgentWorkspaceTrustService WorkspaceTrust,
-    AgentActivitiesService Activities);
+    AgentActivitiesService Activities,
+    AgentSteersService Steers);

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(host)**: A steer still waiting when the run committed its final reply reads as
+  `returned`, not `pending`, so its sender offers it as the next turn instead of waiting for a
+  model step that can never come. The steer list also refuses a subagent run with
+  `subagent_read_only`, as the send route already did.
+
 - **fix(gui)**: A message the run ended without reading no longer disappears when the next turn
   cannot start. It had already left the tail of the chat, so a send refused during a rewind, a
   full-access prompt or a dropped connection lost it; the message and its images now go back to

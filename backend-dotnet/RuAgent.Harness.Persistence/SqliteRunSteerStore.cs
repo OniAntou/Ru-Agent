@@ -189,7 +189,7 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
         foreach (var row in rows)
         {
             var state = row.Delivered ? RunSteerContract.StateDelivered
-                : run.State.IsTerminal() ? RunSteerContract.StateReturned
+                : NeverReadsSteers(run.Status) ? RunSteerContract.StateReturned
                 : RunSteerContract.StatePending;
             // A read steer lives in the transcript; only steers the sender may still need to
             // resend carry their text, which keeps the list bounded.
@@ -248,9 +248,19 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
         command.CommandText = "SELECT delivered_event_id IS NOT NULL FROM agent_run_steers WHERE steer_id=$steer AND run_id=$run";
         if (await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is not long delivered) return null;
         return delivered != 0 ? RunSteerContract.StateDelivered
-            : run.State.IsTerminal() ? RunSteerContract.StateReturned
+            : NeverReadsSteers(run.Status) ? RunSteerContract.StateReturned
             : RunSteerContract.StatePending;
     }
+
+    /// <summary>
+    /// A run that will not reach another model step: it ended, or its final reply is committed
+    /// and only the history acknowledgement is missing. A steer still pending there is never
+    /// delivered, so it reads as returned and the sender offers it again as the next turn.
+    /// </summary>
+    private static bool NeverReadsSteers(HarnessRunStatus status) =>
+        status.State.IsTerminal()
+        || status.State == HarnessRunState.WaitingHistory
+            && status.HistoryWaitKind == HistoryWaitKind.FinalBeforeCompletion;
 
     public async Task<IReadOnlyList<DeliveredSteer>> DeliverAsync(RunId runId, DateTimeOffset now, CancellationToken ct)
     {

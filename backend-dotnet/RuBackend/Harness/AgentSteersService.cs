@@ -122,6 +122,9 @@ public sealed class AgentSteersService
     {
         if (!IsRunId(runIdRaw)) return BoundedError(400, "invalid_run_id", "run_id invalid.");
         var runId = new RunId(runIdRaw);
+        // A child run is not the client's to read, as it is not the client's to steer.
+        if (await _subagentGuard.IsInternalRunAsync(runId, ct).ConfigureAwait(false))
+            return BoundedError(409, "subagent_read_only", "Subagents are controlled by the main agent. Send your request to the parent.");
         if (await _store.GetRunAsync(runId, ct).ConfigureAwait(false) is null)
             return BoundedError(404, "run_not_found", "Run not found.");
         var steers = await _steers.ListAsync(runId, ct).ConfigureAwait(false);

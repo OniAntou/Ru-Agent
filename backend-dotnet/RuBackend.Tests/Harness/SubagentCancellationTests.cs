@@ -46,7 +46,9 @@ public sealed partial class SubagentCancellationTests
             await services.Inputs.HandleInputAsync(child.RunId.Value, "input_fixture", null, default),
             await services.Commands.CompactAsync(child.RunId.Value, null, default),
             await services.Commands.DispatchCommandAsync(child.RunId.Value, null, default),
-            await services.WorkspaceTrust.TrustAsync(child.RunId.Value, null!, default) })
+            await services.WorkspaceTrust.TrustAsync(child.RunId.Value, null!, default),
+            await services.Steers.SteerAsync(child.RunId.Value, null, default),
+            await services.Steers.ListAsync(child.RunId.Value, default) })
         {
             Assert.Equal(409, blocked.StatusCode);
             Assert.Contains("subagent_read_only", System.Text.Json.JsonSerializer.Serialize(blocked.Body));

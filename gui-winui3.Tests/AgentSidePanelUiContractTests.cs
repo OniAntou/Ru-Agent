@@ -254,6 +254,9 @@ public sealed class AgentSidePanelUiContractTests
         Assert.Contains("SetRegionRects", region, StringComparison.Ordinal);
         Assert.Contains("TitleBarActions", region, StringComparison.Ordinal);
         Assert.Contains("NavigationSidebarToggleButton", region, StringComparison.Ordinal);
+        // A refused non-client region update (E_INVALIDARG during relayout) is traced and
+        // retried; the crash policy treats ArgumentException as fatal, so it must not escape.
+        Assert.Contains("catch (Exception error) when (error is ArgumentException or System.Runtime.InteropServices.COMException)", region, StringComparison.Ordinal);
         Assert.Contains("ShowUpdates", GuiSource.MethodBody(code, "OnTitleBarUpdateClick"), StringComparison.Ordinal);
 
         Assert.Contains(

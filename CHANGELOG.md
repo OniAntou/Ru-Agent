@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Ru no longer closes when the title bar's input regions cannot be updated.
+  `InputNonClientPointerSource.GetForWindowId` sometimes refuses with `E_INVALIDARG` while the
+  window relayouts or closes (seen when the side panel preview changed), and the crash policy
+  treated that `ArgumentException` as fatal. The refusal is now traced once and retried on the
+  next layout pass.
+
 - **feat(gui)**: Mermaid diagrams, math and SVG files show as pictures. A closed
   ```` ```mermaid ```` fence and a `$$` block become a picture card with a Source toggle,
   inline `$…$` is typeset on the text line, and a `.svg` in Preview shows as an image with a

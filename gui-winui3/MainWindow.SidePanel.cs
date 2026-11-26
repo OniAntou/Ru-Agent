@@ -17,6 +17,7 @@ namespace RuApp
         private Windows.Graphics.RectInt32? _titleBarActionsRegion;
         private Windows.Graphics.RectInt32? _navigationSidebarRegion;
         private Windows.Graphics.RectInt32? _titleBarHistoryRegion;
+        private bool _titleBarRegionRefused;
 
         /// <summary>
         /// Back and forward start this far inside the toggle's slot. Each slot has an empty
@@ -96,10 +97,29 @@ namespace RuApp
             if (navigation is { } left) regions.Add(left);
             if (history is { } middle) regions.Add(middle);
             if (update is { } right) regions.Add(right);
-            var source = InputNonClientPointerSource.GetForWindowId(_appWindow.Id);
-            source.SetRegionRects(
-                NonClientRegionKind.Passthrough,
-                regions.ToArray());
+            // The window's non-client input source is sometimes refused with E_INVALIDARG
+            // while the window relayouts (seen when the side panel preview changes). The
+            // app's crash policy treats ArgumentException as fatal, so a refused update is
+            // traced once and retried on the next layout pass instead of closing Ru.
+            try
+            {
+                var source = InputNonClientPointerSource.GetForWindowId(_appWindow.Id);
+                source.SetRegionRects(
+                    NonClientRegionKind.Passthrough,
+                    regions.ToArray());
+                _titleBarRegionRefused = false;
+            }
+            catch (Exception error) when (error is ArgumentException or System.Runtime.InteropServices.COMException)
+            {
+                if (!_titleBarRegionRefused)
+                {
+                    GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] title bar regions not updated: {error.GetType().Name} 0x{error.HResult:X8}");
+                }
+
+                _titleBarRegionRefused = true;
+                return;
+            }
+
             _navigationSidebarRegion = navigation;
             _titleBarHistoryRegion = history;
             _titleBarActionsRegion = update;

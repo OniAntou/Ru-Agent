@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Native chat shows every tool again. Successful reads, edits, writes and
+  commands had been removed from the transcript once they finished, so a turn looked like
+  thinking rows only. Each now stays as one compact row (for example `✓ Edited ChatView.cs
+  +12 −3`) with no output or diff, live and in reopened sessions; failures keep their reason
+  and diff.
+
 - **feat(tui)**: A reopened long turn in the terminal shows how many earlier steps it has, and
   scrolling that line into view loads the next earlier page above what you were reading, with
   no command to type. It loads while the reopened history is what is on screen; after a new

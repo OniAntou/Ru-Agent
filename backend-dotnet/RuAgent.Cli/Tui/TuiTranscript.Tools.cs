@@ -316,25 +316,13 @@ public sealed partial class TuiTranscript
         if (_surface.Presentation is { } presentation)
         {
             UpdateGroupWork(previous, detail);
-            if (_surface.Writer is ITranscriptToolResultFilter filter)
-            {
-                if (status == ToolLineStatus.Ok)
-                {
-                    filter.RemoveActivityPresentation(activity.ActivityId);
-                    return;
-                }
-                if (ToolStatus(previous) == ToolLineStatus.Ok)
-                {
-                    // A late failure must remain visible even if its first outcome
-                    // was successful and therefore never had a screen row.
-                    WriteNativeTool(detail, status, detail.Target);
-                    if (ResultLine(status, detail.SafeCode) is { } reason) WriteResultLine(reason);
-                    return;
-                }
-            }
             presentation.UpdateActivityPresentation(activity.ActivityId, TuiToolRow.ComposePresentation(status,
                 ActionLabel(detail, status), detail.Target, InspectorMetrics(detail), Width,
                 actionColumnWidth: ActivityActionColumnWidth), null);
+            // A late failure on a row that first settled as a compact success names its reason.
+            if (_surface.Writer is ITranscriptToolResultFilter && status == ToolLineStatus.Failed
+                && ToolStatus(previous) == ToolLineStatus.Ok && ResultLine(status, detail.SafeCode) is { } reason)
+                WriteResultLine(reason);
         }
         else if (_surface.Writer is ITranscriptActivityWriter screen) screen.UpdateToolRow(activity.ActivityId, TuiToolRow.Compose(status,
             detail.Display ?? TitleCase(detail.Verb), detail.Target, ToolRowMetrics(detail), Width));
@@ -436,8 +424,10 @@ public sealed partial class TuiTranscript
         // auditable detail the durable stream carries, so it takes the target column.
         // A known tool with no target (terminal_read, terminal_stop) keeps an empty column:
         // its summary is a policy class ("read_only"), not something it acted on.
-        var hideSuccess = status == ToolLineStatus.Ok && filterSuccesses;
-        if (!hideSuccess && !failed && detail is null && string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(envelope.SafeSummary))
+        // The native screen keeps a successful tool to its one compact row: no result line
+        // and no diff, so the turn reads as what was done rather than every output.
+        var compactSuccess = status == ToolLineStatus.Ok && filterSuccesses;
+        if (!compactSuccess && !failed && detail is null && string.IsNullOrWhiteSpace(target) && !string.IsNullOrWhiteSpace(envelope.SafeSummary))
         {
             var safe = Escape(envelope.SafeSummary);
             if (_fullScreenCards)
@@ -451,15 +441,10 @@ public sealed partial class TuiTranscript
             }
         }
 
-        if (hideSuccess)
-        {
-            // Keep bounded metadata for late corrections without retaining a receipt.
-            if (detail is not null) _settledToolRows[detail.ActivityId] = detail;
-        }
-        else if (_fullScreenCards || _surface.Presentation is not null)
+        if (_fullScreenCards || _surface.Presentation is not null)
         {
             WriteToolRow(status, detail, target);
-            if (resultLine is not null)
+            if (resultLine is not null && !compactSuccess)
             {
                 WriteResultLine(resultLine);
             }
@@ -477,9 +462,9 @@ public sealed partial class TuiTranscript
             }
         }
 
-        // Diagnostic receipts retain bounded diffs; hidden successes must not leave
-        // result fragments behind. Plain logs keep their existing result output.
-        if (!hideSuccess) ApplyDiffText(envelope.SafeSummary, Width);
+        // Diagnostic receipts retain bounded diffs; a compact success shows none.
+        // Plain logs keep their existing result output.
+        if (!compactSuccess) ApplyDiffText(envelope.SafeSummary, Width);
 
         _toolsSettled++;
         RecordGroupWork(detail, status);

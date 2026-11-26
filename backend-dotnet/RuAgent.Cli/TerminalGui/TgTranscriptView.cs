@@ -188,18 +188,6 @@ public sealed partial class TgTranscriptView : View
     internal void ReplaceToolRow(int index, string text) =>
         ReplaceToolRow(index, new TgTranscriptRow(text, TranscriptStyle.Tool));
 
-    // The writer rebases its activity/recovery marks for this exact deletion.
-    internal bool RemoveToolRow(int index)
-    {
-        if (index < 0 || index >= _lines.Count || _lines[index].Style != TranscriptStyle.Tool) return false;
-        ClearTextSelection();
-        RemoveLine(index);
-        _wrapWidth = -1;
-        _tailDirty = false;
-        SetNeedsDraw();
-        return true;
-    }
-
     internal void ReplaceToolRow(int index, TgTranscriptRow row, IReadOnlyList<string>? details = null)
     {
         // An activity row is a tool row or a meta row (the thinking row opens as meta and

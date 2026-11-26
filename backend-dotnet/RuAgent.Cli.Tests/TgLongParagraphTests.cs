@@ -314,16 +314,11 @@ public sealed class TgLongParagraphTests
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)), view.CopyText().Trim());
             Assert.Equal(string.Concat(MarkdigInline.Parse(reply).Select(run => run.Text)),
                 string.Concat(view.Lines.Where(row => row.Style == TranscriptStyle.Prose).Select(row => row.Text)).Trim());
-            // Successes stay hidden; diagnostic receipts stay before the intact paragraph.
+            // Every outcome keeps its compact row before the intact paragraph.
             Assert.DoesNotContain(view.Lines, row => row.Text.Contains("2 searched", StringComparison.Ordinal));
             var lastTool = view.Lines.ToList().FindLastIndex(row => row.Text.Contains("README.md", StringComparison.Ordinal));
             var firstProse = view.Lines.ToList().FindIndex(row => row.Text.Contains("answer words", StringComparison.Ordinal));
-            if (state == AgentActivityState.Completed)
-            {
-                Assert.Equal(-1, lastTool);
-                Assert.DoesNotContain(view.Lines, row => row.Style == TranscriptStyle.Tool);
-            }
-            else Assert.True(lastTool >= 0 && lastTool < firstProse);
+            Assert.True(lastTool >= 0 && lastTool < firstProse);
             Assert.Equal(2, renderer.Transcript.ToolsSettled);
         });
     }

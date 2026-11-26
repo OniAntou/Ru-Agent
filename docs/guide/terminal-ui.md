@@ -3,10 +3,10 @@
 The terminal UI is a full-screen chat with your project: a transcript, tool rows, approvals, a composer
 and session history. It needs a terminal of at least 80 by 24 cells.
 
-While tools run, the live indicator shows their activity. Successful tool receipts
-are hidden in native chat, including reopened sessions; the turn footer still counts
-them. Failures, unknown outcomes and approval requests stay visible. Plain text logs
-keep their existing tool receipts.
+While tools run, the live indicator shows their activity. Each finished tool stays as one
+compact row, such as `✓ Edited ChatView.cs +12 −3`, in live and reopened sessions; a
+successful tool shows no output or diff. Failures and unknown outcomes keep their reason
+and diff, and approval requests stay visible. Plain text logs keep their full tool receipts.
 
 ## Start
 

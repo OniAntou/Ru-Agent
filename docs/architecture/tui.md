@@ -90,12 +90,12 @@ existing invocation rules.
 
 ### Activity and conversation flow
 
-Native chat keeps routine successful tool receipts out of the transcript, including
-their result lines and bounded diffs. The live activity indicator remains while a tool
-runs; the turn footer still counts all tools and successful edits. This presentation
-filter applies to live and replayed activity without changing stored evidence.
-Failed or unknown actions retain compact rows between model prose and the following
-response. Common actions align their targets in a shared column on wide terminals;
+Native chat keeps every tool as a compact row between model prose and the following
+response, so a turn shows what was read, edited, written or run. A successful tool keeps
+only that row: no result line and no diff. Failed or unknown actions keep their result
+line and bounded diff. The live activity indicator remains while a tool runs; the turn
+footer counts all tools and successful edits. This applies to live and replayed activity
+without changing stored evidence. Common actions align their targets in a shared column on wide terminals;
 narrow terminals reclaim that space. These rows use neutral action names and explicit
 outcomes rather than claiming an edit succeeded. Units follow the actual tool:
 read counts are lines, search counts are matches, and terminal exit codes appear
@@ -105,12 +105,12 @@ when space is limited.
 A native tool row is self-contained: display name, target, and bounded metrics stay
 inline, and the row keeps no hidden inspector. Ctrl+O is reserved for the model's
 reasoning; diffs are bounded and the overflow is summarized as a line count rather
-than hidden behind a key. Late successful metadata removes an unknown receipt without
-a blank gap; late failure metadata can reveal a previously hidden successful receipt.
-Visible diagnostic rows update by activity identity, preserving semantic colors.
-Explicit failure or a nonzero process exit code takes precedence over a legacy
-success label. Row removal rebases other activity and recovery marks on the UI thread;
-retention generations still protect evicted history from stale updates.
+than hidden behind a key. Late metadata updates a row in place by activity identity,
+preserving semantic colors: a late success settles an unknown row into its compact form,
+and a late failure repaints a compact success and adds its reason. Explicit failure or a
+nonzero process exit code takes precedence over a legacy success label, and a later
+generic success never erases a reported failure. Retention generations protect evicted
+history from stale updates.
 
 A command row names the script's first real statement, skipping preference, encoding,
 environment and location setup, and counts the remaining statements (`(+3 more)`). A

@@ -31,14 +31,12 @@ public sealed partial class StructuredTranscriptWorkflowTests
         });
 
     [Fact]
-    public Task Late_success_removes_the_unknown_row_without_leaving_a_gap() =>
+    public Task Late_success_settles_the_row_into_one_compact_edit() =>
         RunWorker(async ui =>
         {
             ui.Renderer.BeginTurn();
             var activity = InspectionActivity("edit", AgentActivityKind.Edit, "Edit") with
             { State = AgentActivityState.Started, FileName = "src/Session.cs" };
-            TgTranscriptRow[] before = [];
-            await ui.OnUi(() => before = ui.View.Lines.ToArray());
             ui.Renderer.Transcript.ApplyActivity(activity);
             SettleInspectionActivity(ui.Renderer, 1);
             await ui.OnUi(() => Assert.Single(ui.View.Lines, line => line.Style == TranscriptStyle.Tool));
@@ -46,8 +44,10 @@ public sealed partial class StructuredTranscriptWorkflowTests
             { State = AgentActivityState.Completed, Added = 12, Removed = 4, SafeCode = "succeeded" });
             await ui.OnUi(() =>
             {
-                Assert.Equal(before, ui.View.Lines);
-                Assert.Equal(0, ui.View.RetainedCharacterCount);
+                var row = Assert.Single(ui.View.Lines, line => line.Style == TranscriptStyle.Tool);
+                Assert.Contains("Edited", row.Text);
+                Assert.Contains("+12", row.Text);
+                Assert.Contains(row.Spans!, span => span.Attr.Foreground == TgPalette.ToColor(TuiToken.Ok));
                 Assert.Equal(1, ui.Renderer.Transcript.ToolsSettled);
                 Assert.Empty(ui.View.CollapsedRows);
                 Assert.True(ui.View.RetainedRowCount <= TgTranscriptView.MaxRetainedRows);

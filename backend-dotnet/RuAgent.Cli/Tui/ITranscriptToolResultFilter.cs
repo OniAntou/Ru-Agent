@@ -1,7 +1,9 @@
 namespace RuAgent.Cli.Tui;
 
-/// <summary>Interactive screens can omit successful receipts while retaining diagnostic updates.</summary>
+/// <summary>
+/// Marks an interactive screen that keeps a successful tool to one compact row (no result
+/// line, no diff) while failures keep their full diagnostic detail.
+/// </summary>
 public interface ITranscriptToolResultFilter
 {
-    void RemoveActivityPresentation(string activityId);
 }

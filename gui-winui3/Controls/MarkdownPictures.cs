@@ -40,17 +40,6 @@ public static class MarkdownPictures
         return keyPrefix;
     }
 
-    /// <summary>A diagram may shrink to fit its column, but never below this share of its own size.</summary>
-    public const double MinDiagramScale = 0.75;
-
-    /// <summary>
-    /// The width a diagram is shown at: its own width when it fits, the column's when a
-    /// little smaller, and no less than <see cref="MinDiagramScale"/> of its own, past
-    /// which it scrolls sideways rather than shrinking its labels out of reading.
-    /// </summary>
-    public static double DiagramWidth(double natural, double available) =>
-        available > 0 ? Math.Min(natural, Math.Max(available, natural * MinDiagramScale)) : natural;
-
     /// <summary>"#rrggbb" for an opaque text color; pictures take the reader's ink.</summary>
     public static string Ink(byte red, byte green, byte blue) => $"#{red:x2}{green:x2}{blue:x2}";
 

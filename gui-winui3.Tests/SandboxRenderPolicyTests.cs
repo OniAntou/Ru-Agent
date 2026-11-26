@@ -208,14 +208,6 @@ public sealed class SandboxRenderPolicyTests
         Assert.Equal(2, MarkdownPictures.Retained(2, built, index => MarkdownPictures.IsSettled(index, 2, streaming: true)));
     }
 
-    [Theory]
-    [InlineData(300, 500, 300)]
-    [InlineData(600, 500, 500)]
-    [InlineData(600, 300, 450)]
-    [InlineData(600, 0, 600)]
-    public void A_diagram_fits_its_column_but_keeps_its_labels_readable(double natural, double available, double width) =>
-        Assert.Equal(width, MarkdownPictures.DiagramWidth(natural, available));
-
     [Fact]
     public void The_renderer_has_its_own_unthrottled_profile()
     {

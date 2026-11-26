@@ -835,8 +835,8 @@ to it only as a JSON string; the reply is untrusted data read by
 `SandboxRenderPolicy` (request id, PNG signature, size bounds); a page failure is
 traced only as its plain error code. The renderer has its own WebView2 profile with
 background throttling off, and reports ready only once both libraries are warm. A
-diagram fits its column down to 75% of its own size (`MarkdownPictures.DiagramWidth`)
-and scrolls sideways past that. A closed
+diagram fits the whole picture to its column (never enlarged), and its Expand button
+opens it at full size in a dialog that scrolls and zooms. A closed
 ```` ```mermaid ```` fence and a closed `$$` block become a picture card with a
 Source toggle and Copy (which copies the source); inline `$…$` becomes a picture on
 the text baseline; inside a table cell (a TextBlock, which cannot host a picture)

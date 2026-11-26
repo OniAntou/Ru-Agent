@@ -115,34 +115,25 @@ namespace RuApp.Controls
                         return;
                     }
 
-                    // Fitted to the column down to MinDiagramScale; a wider picture scrolls
-                    // sideways rather than shrinking its labels out of reading.
-                    var drawn = new Image
+                    // The whole picture fits the column (never enlarged); Expand opens it at
+                    // full size with zoom, so a wide diagram is never cut off or unreadable.
+                    var view = new Image
                     {
                         Source = image,
                         Stretch = Stretch.Uniform,
-                        Width = picture!.Width,
-                        Height = picture.Height,
+                        MaxWidth = picture!.Width,
+                        MaxHeight = picture.Height,
+                        HorizontalAlignment = kind == SandboxRenderKind.Math ? HorizontalAlignment.Center : HorizontalAlignment.Left,
                     };
-                    void Fit()
+                    view.SetValue(AutomationProperties.NameProperty, kind == SandboxRenderKind.Math ? "Formula: " + text : "Diagram");
+                    if (kind == SandboxRenderKind.Mermaid)
                     {
-                        double available = body.ActualWidth - body.Padding.Left - body.Padding.Right;
-                        drawn.Width = MarkdownPictures.DiagramWidth(picture.Width, available);
-                        drawn.Height = drawn.Width * picture.Height / picture.Width;
+                        var expand = HeaderButton(new FontIcon { Glyph = "", FontSize = 12 }, "Open diagram full size");
+                        expand.Click += (_, _) => _ = ShowFullSizeAsync(expand, image, picture);
+                        tools.Children.Insert(0, expand);
+                        RevealOnHover(card, expand);
                     }
 
-                    body.SizeChanged += (_, _) => Fit();
-                    Fit();
-                    drawn.SetValue(AutomationProperties.NameProperty, kind == SandboxRenderKind.Math ? "Formula: " + text : "Diagram");
-                    var view = new ScrollViewer
-                    {
-                        Content = drawn,
-                        HorizontalAlignment = kind == SandboxRenderKind.Math ? HorizontalAlignment.Center : HorizontalAlignment.Left,
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        HorizontalScrollMode = ScrollMode.Enabled,
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                        VerticalScrollMode = ScrollMode.Disabled,
-                    };
                     var sourceView = new ScrollViewer
                     {
                         Content = new TextBlock
@@ -213,6 +204,40 @@ namespace RuApp.Controls
                     // Insert first: if the picture cannot be placed, the source run stays.
                     target.Insert(index, new InlineUIContainer { Child = view });
                     target.Remove(fallback);
+                }
+            }
+
+            /// <summary>The diagram at its own size in a dialog that scrolls and zooms.</summary>
+            private static async Task ShowFullSizeAsync(FrameworkElement owner, BitmapImage image, SandboxPicture picture)
+            {
+                try
+                {
+                    var full = new Image { Source = image, Stretch = Stretch.Fill, Width = picture.Width, Height = picture.Height };
+                    full.SetValue(AutomationProperties.NameProperty, "Diagram");
+                    var dialog = new ContentDialog
+                    {
+                        XamlRoot = owner.XamlRoot,
+                        Title = "Diagram",
+                        CloseButtonText = "Close",
+                        Content = new ScrollViewer
+                        {
+                            Content = full,
+                            ZoomMode = ZoomMode.Enabled,
+                            MinZoomFactor = 0.25f,
+                            MaxZoomFactor = 4,
+                            HorizontalScrollMode = ScrollMode.Enabled,
+                            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                            VerticalScrollMode = ScrollMode.Enabled,
+                            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                            MaxHeight = 640,
+                        },
+                    };
+                    dialog.Resources["ContentDialogMaxWidth"] = 1200.0;
+                    await Services.ContentDialogGate.ShowAsync(dialog);
+                }
+                catch (Exception error)
+                {
+                    Services.GuiDiagnosticWriter.AppendTraceLine($"[MarkdownBlock] full-size diagram failed: {error.GetType().Name}");
                 }
             }
 

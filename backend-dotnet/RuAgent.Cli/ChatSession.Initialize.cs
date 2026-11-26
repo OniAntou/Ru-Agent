@@ -25,8 +25,7 @@ public sealed partial class AgentCommands
             canonicalWorkspace = bootstrap.CanonicalWorkspace;
             sessionId = bootstrap.SessionId;
             workspaceLabel = bootstrap.WorkspaceLabel;
-            backendName = bootstrap.BackendName;
-            activeModel = bootstrap.ActiveModel;
+            modelSelection = new(bootstrap.BackendName, bootstrap.ActiveModel);
             activeReasoningEffort = bootstrap.ReasoningEffort;
             modelWarning = bootstrap.ModelWarning;
             // The shared controller is configured once the run handlers exist;

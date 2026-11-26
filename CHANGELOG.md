@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Native chat reads the model saved for the selected provider, including Custom
+  OpenAI. Sending without a model keeps the draft and points to `/model`.
+
 - **fix(tui)**: Native chat shows every tool again. Successful reads, edits, writes and
   commands had been removed from the transcript once they finished, so a turn looked like
   thinking rows only. Each now stays as one compact row (for example `✓ Edited ChatView.cs

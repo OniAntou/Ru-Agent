@@ -108,15 +108,9 @@ public sealed partial class AgentCommands
         try
         {
             var settings = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-            backendName = settings.TryGetProperty("backend", out var b) && !string.IsNullOrWhiteSpace(b.GetString())
-                ? b.GetString()
-                : null;
-            activeModel = backendName switch
-            {
-                "OpenAI" => settings.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
-                "Anthropic" => settings.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
-                _ => settings.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "",
-            };
+            backendName = AgentSlashCommands.ReadBackend(settings);
+            if (string.IsNullOrEmpty(backendName)) backendName = null;
+            activeModel = backendName is null ? string.Empty : AgentSlashCommands.ReadModel(settings, backendName) ?? string.Empty;
             reasoningEffort = ReadReasoningEffort(settings);
         }
         catch (Exception)

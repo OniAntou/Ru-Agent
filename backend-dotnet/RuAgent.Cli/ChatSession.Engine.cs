@@ -4,6 +4,8 @@ public sealed partial class AgentCommands
 {
     private sealed partial class ChatSession
     {
+        private const string MissingModelHint = "Select a model with /model";
+
         /// <summary>
         /// Wires one conversation controller independently of its input/output adapter.
         /// </summary>
@@ -18,9 +20,16 @@ public sealed partial class AgentCommands
             loop.SetPausedQueueRetryProbe(() => submissions.Retryable is not null);
             loop.SetShutdownSettlement(() => Task.WhenAll(
                 runSession.WaitForRunSettlementAsync(), attachmentTasks.StopAsync()));
-            loop.SetSubmissionSnapshotFactory(line => submissions.CreateSnapshot(
-                line, sessionId, canonicalWorkspace, cmd.Preset,
-                backendName ?? string.Empty, activeModel, runSession.ParkedRunId is not null || runSession.FollowableRunId is not null));
+            loop.SetSubmissionSnapshotFactory(line =>
+            {
+                var selection = modelSelection;
+                return submissions.CreateSnapshot(line, sessionId, canonicalWorkspace, cmd.Preset,
+                    selection.Backend, selection.Model,
+                    runSession.ParkedRunId is not null || runSession.FollowableRunId is not null);
+            });
+            if (tgMode)
+                loop.SetNewPromptValidation(submission =>
+                    string.IsNullOrEmpty(submission.Model) ? MissingModelHint : null);
             loop.SetSubmissionOwnershipHandlers(
                 snapshot =>
                 {

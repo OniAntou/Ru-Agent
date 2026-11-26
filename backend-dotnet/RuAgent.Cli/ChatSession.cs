@@ -45,8 +45,9 @@ public sealed partial class AgentCommands
         private string? initialDraftSessionId;
         private bool draftCreationFailed;
         private string workspaceLabel = default!;
-        private string backendName = default!;
-        private string activeModel = default!;
+        private volatile CreateRunProviderSelection modelSelection = default!;
+        private string backendName => modelSelection.Backend;
+        private string activeModel => modelSelection.Model;
         private string activeReasoningEffort = string.Empty;
         private string? modelWarning = default!;
         private TgChatLoop? tgLoop = null;

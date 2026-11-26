@@ -38,6 +38,7 @@ public partial class ChatSessionEngine
     private Func<ChatSubmissionSnapshot, CancellationToken, Task> _submissionHandler =
         (submission, ct) => Task.CompletedTask;
     private Func<string, ChatSubmissionSnapshot?>? _snapshotFactory;
+    private Func<ChatSubmissionSnapshot, string?>? _validateNewPrompt;
     private Func<string, bool>? _stateChangingCommandClassifier;
     private Func<string, bool>? _localCommandClassifier;
     private Func<string, bool>? _retainedContinuationClassifier;
@@ -141,6 +142,9 @@ public partial class ChatSessionEngine
 
     internal void SetSubmissionSnapshotFactory(Func<string, ChatSubmissionSnapshot?> factory) =>
         _snapshotFactory = factory;
+
+    internal void SetNewPromptValidation(Func<ChatSubmissionSnapshot, string?> validate) =>
+        _validateNewPrompt = validate;
 
     internal void SetStateChangingCommandClassifier(Func<string, bool> classifier) =>
         _stateChangingCommandClassifier = classifier;
@@ -338,6 +342,13 @@ public partial class ChatSessionEngine
             _draft = string.Empty;
             TuiDebug.Log("submit", $"steer len={steerText.Length} files={submission.Texts.Length}");
             _ = SteerAsync(line.Trim(), steerText, submission);
+            return;
+        }
+
+        if (!retainedContinuation && !line.TrimStart().StartsWith('/')
+            && _validateNewPrompt?.Invoke(submission) is { } validationMessage)
+        {
+            _view.ShowFeedback(validationMessage, true);
             return;
         }
 

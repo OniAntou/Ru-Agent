@@ -46,15 +46,9 @@ internal sealed record ChatSubmissionSnapshot(
 
     public bool MatchesSelection(JsonElement settings)
     {
-        var currentBackend = ReadString(settings, "backend");
-        var modelProperty = currentBackend switch
-        {
-            "OpenAI" => "openai_model",
-            "Anthropic" => "anthropic_model",
-            _ => "model",
-        };
+        var currentBackend = AgentSlashCommands.ReadBackend(settings);
         return string.Equals(currentBackend, Backend, StringComparison.Ordinal)
-            && string.Equals(ReadString(settings, modelProperty), Model, StringComparison.Ordinal);
+            && string.Equals(AgentSlashCommands.ReadModel(settings, currentBackend), Model, StringComparison.Ordinal);
     }
 
     public static ChatSubmissionSnapshot Create(
@@ -100,10 +94,4 @@ internal sealed record ChatSubmissionSnapshot(
 
     private static int Utf16Bytes(string value) => Encoding.Unicode.GetByteCount(value);
 
-    private static string? ReadString(JsonElement element, string propertyName) =>
-        element.ValueKind == JsonValueKind.Object
-        && element.TryGetProperty(propertyName, out var value)
-        && value.ValueKind == JsonValueKind.String
-            ? value.GetString()?.Trim()
-            : null;
 }

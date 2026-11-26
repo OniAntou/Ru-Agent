@@ -142,11 +142,8 @@ public sealed partial class AgentSlashCommands
         KnownBackends.FirstOrDefault(b => string.Equals(b.Backend, backend, StringComparison.OrdinalIgnoreCase)).Field
         ?? "model";
 
-    private static string? ReadModel(JsonElement settings, string? backend)
-    {
-        var field = ModelFieldFor(backend);
-        return settings.TryGetProperty(field, out var value) ? value.GetString() : null;
-    }
+    internal static string? ReadModel(JsonElement settings, string? backend) =>
+        ReadSettingString(settings, ModelFieldFor(backend));
 
     private static bool? ReadApiKeyState(JsonElement settings, string? backend)
     {
@@ -161,8 +158,15 @@ public sealed partial class AgentSlashCommands
             : null;
     }
 
-    private static string? ReadBackend(JsonElement settings) =>
-        settings.TryGetProperty("backend", out var backend) ? backend.GetString() : null;
+    internal static string? ReadBackend(JsonElement settings) =>
+        ReadSettingString(settings, "backend");
+
+    private static string? ReadSettingString(JsonElement settings, string field) =>
+        settings.ValueKind == JsonValueKind.Object
+        && settings.TryGetProperty(field, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString()?.Trim()
+            : null;
 
     private static bool IsModelsDevBackend(string? backend) =>
         !string.IsNullOrWhiteSpace(backend)

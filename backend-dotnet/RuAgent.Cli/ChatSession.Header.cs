@@ -142,36 +142,18 @@ public sealed partial class AgentCommands
             try
             {
                 var s = await _settingsClient.GetAsync(cancellationToken).ConfigureAwait(false);
-                var bName = s.TryGetProperty("backend", out var bProp) && !string.IsNullOrWhiteSpace(bProp.GetString())
-                    ? bProp.GetString()!
-                    : backendName;
-                var curModel = bName switch
-                {
-                    "OpenAI" => s.TryGetProperty("openai_model", out var oam) ? oam.GetString() ?? "" : "",
-                    "Anthropic" => s.TryGetProperty("anthropic_model", out var anm) ? anm.GetString() ?? "" : "",
-                    _ => s.TryGetProperty("model", out var mProp) ? mProp.GetString() ?? "" : "",
-                };
-
-                var backendChanged = !string.IsNullOrWhiteSpace(bName)
-                    && !string.Equals(bName, backendName, StringComparison.Ordinal);
-                var modelChanged = !string.IsNullOrWhiteSpace(curModel)
-                    && !string.Equals(curModel, activeModel, StringComparison.Ordinal);
+                var backend = AgentSlashCommands.ReadBackend(s);
                 activeReasoningEffort = ReadReasoningEffort(s);
-                if (backendChanged)
+                if (!string.IsNullOrEmpty(backend))
                 {
-                    backendName = bName;
-                }
-
-                if (modelChanged)
-                {
-                    // The composer meta row, the vision pre-check and the usage cluster read
-                    // this local, so a /model switch is reflected without a restart.
-                    activeModel = curModel;
-                }
-
-                if (refreshUsage && (backendChanged || modelChanged))
-                {
-                    await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
+                    var selection = new CreateRunProviderSelection(backend,
+                        AgentSlashCommands.ReadModel(s, backend) ?? string.Empty);
+                    if (selection != modelSelection)
+                    {
+                        modelSelection = selection;
+                        if (refreshUsage)
+                            await RefreshModelUsageInfoAsync(cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
             catch (Exception)

@@ -29,6 +29,15 @@ public sealed partial class AgentCommands
             var submissionWorkspace = submission?.WorkspacePath ?? canonicalWorkspace;
             var submissionPreset = submission?.Preset ?? cmd.Preset;
             var isRetainedContinuation = IsRetainedContinuation(promptLine);
+            var selection = modelSelection;
+            if (tgMode && !isRetainedContinuation && string.IsNullOrEmpty(submission?.Model ?? selection.Model))
+            {
+                if (submission is not null)
+                    HoldSubmissionForRetry(submission);
+                chatEngine?.ShowFeedback(MissingModelHint, isError: true);
+                return;
+            }
+
             IReadOnlyList<Images.CliImageAttachment> submissionImages = submission is null
                 ? submissions.Images
                 : submission.Images;
@@ -36,7 +45,7 @@ public sealed partial class AgentCommands
                 ? submissions.Texts
                 : submission.Texts;
             if (submission is not null
-                && !submission.MatchesContext(sessionId, canonicalWorkspace, cmd.Preset, backendName ?? string.Empty, activeModel))
+                && !submission.MatchesContext(sessionId, canonicalWorkspace, cmd.Preset, selection.Backend, selection.Model))
             {
                 HoldSubmissionForRetry(submission);
                 await WriteDiagnosticLineAsync(_err, "submission_context_changed: queued prompt is held; use /exit, reopen the session and submit the task again").ConfigureAwait(false);
@@ -171,7 +180,7 @@ public sealed partial class AgentCommands
                 presetUpdate.Version,
                 idempotencyKey,
                 imagePayloads,
-                tgMode ? new CreateRunProviderSelection(submission?.Backend ?? backendName ?? string.Empty, submission?.Model ?? activeModel) : null);
+                tgMode ? (submission is null ? selection : new CreateRunProviderSelection(submission.Backend, submission.Model)) : null);
             if (promptText.Length > ChatSubmissionState.MaxComposedPromptChars)
             {
                 HoldSubmissionForRetry(submission);

@@ -74,7 +74,8 @@ Custom commands you add appear in the same list; see [Teach Ru your project](tea
 `/model` groups the live catalog of the active provider together with every provider you signed
 in to, so a model of another provider is one pick away: choosing it switches the provider too.
 `/provider` selects the provider, stores its checked key, then opens that provider's model list,
-so switching never leaves the previous provider's model behind.
+so switching never leaves the previous provider's model behind. If you try to send a prompt
+before selecting a model, Ru keeps the draft and shows `Select a model with /model`.
 
 ## Attachments
 

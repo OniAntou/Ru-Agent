@@ -41,6 +41,93 @@ public sealed partial class TuiSingleSessionTests
     }
 
     [Fact]
+    public async Task Custom_openai_uses_its_saved_model_for_the_first_prompt()
+    {
+        using var host = new SingleHost { Backend = "Custom OpenAI", CustomModel = "local-model" };
+        var sent = false;
+        await Run(host, (app, page) =>
+        {
+            if (!sent)
+            {
+                Assert.Equal("Custom OpenAI", page.Composer.Provider);
+                Assert.Equal("local-model", page.Composer.Model);
+                Send(app, page, "first custom prompt");
+                sent = true;
+                return true;
+            }
+            if (!host.Streams.ContainsKey("session_1")) return true;
+            Assert.Equal("Custom OpenAI", host.AdmittedBackends["session_1"]);
+            Assert.Equal("local-model", host.AdmittedModels["session_1"]);
+            Send(app, page, "/exit");
+            return false;
+        });
+        Assert.Single(host.Prompts);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("local-model")]
+    public async Task Switched_provider_uses_only_its_own_model(string customModel)
+    {
+        using var host = new SingleHost { CustomModel = customModel };
+        const string draft = "preserve this draft";
+        var stage = 0;
+        await Run(host, (app, page) =>
+        {
+            switch (stage)
+            {
+                case 0:
+                    Assert.Equal("gpt-4o", page.Composer.Model);
+                    Send(app, page, "/backend custom");
+                    stage++;
+                    break;
+                case 1 when page.Composer.Provider == "Custom OpenAI" && !page.Hints.IsRunning:
+                    Assert.Equal(customModel, page.Composer.Model);
+                    Send(app, page, draft);
+                    if (customModel.Length == 0)
+                    {
+                        Assert.Equal(draft, page.Composer.Input.Text);
+                        Assert.Contains("Select a model with /model", page.Hints.FeedbackMessage);
+                        Assert.Equal(0, host.CreatedSessions);
+                        Assert.Empty(host.Prompts);
+                        Send(app, page, "/model local-model");
+                    }
+                    stage++;
+                    break;
+                case 2 when customModel.Length == 0 && page.Composer.Model == "local-model" && !page.Hints.IsRunning:
+                    Send(app, page, draft);
+                    stage++;
+                    break;
+                case 2 or 3 when host.Streams.ContainsKey("session_1"):
+                    Assert.Equal("Custom OpenAI", host.AdmittedBackends["session_1"]);
+                    Assert.Equal("local-model", host.AdmittedModels["session_1"]);
+                    Assert.Equal(draft, host.Prompts["session_1"]);
+                    Send(app, page, "/exit");
+                    return false;
+            }
+            return true;
+        });
+        Assert.Single(host.Prompts);
+    }
+
+    [Fact]
+    public async Task Fresh_chat_without_a_model_keeps_the_draft_and_does_not_create_a_session()
+    {
+        using var host = new SingleHost { _model = "" };
+        await Run(host, (app, page) =>
+        {
+            Send(app, page, "unsent text");
+            Assert.Equal("unsent text", page.Composer.Input.Text);
+            Assert.Contains("Select a model with /model", page.Hints.FeedbackMessage);
+            Assert.True(page.Landing.Visible);
+            Send(app, page, "/exit");
+            return false;
+        });
+        Assert.Equal(0, host.CreatedSessions);
+        Assert.Empty(host.Prompts);
+    }
+
+    [Fact]
     public async Task New_replaces_the_settled_session_in_the_same_window()
     {
         using var host = new SingleHost(); var stage = 0;
@@ -216,6 +303,7 @@ public sealed partial class TuiSingleSessionTests
         internal readonly TaskCompletionSource FirstPolicyEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly TaskCompletionSource AllowFirstPolicy = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal readonly ConcurrentDictionary<string, string> AdmittedModels = new();
+        internal readonly ConcurrentDictionary<string, string> AdmittedBackends = new();
         internal readonly ConcurrentDictionary<string, string> Workspaces = new();
         internal readonly ConcurrentDictionary<string, string> Streams = new();
         internal readonly ConcurrentDictionary<string, string> Prompts = new();
@@ -224,6 +312,8 @@ public sealed partial class TuiSingleSessionTests
         private readonly ConcurrentDictionary<string, TaskCompletionSource> _release = new();
         private readonly ConcurrentDictionary<string, bool> _completed = new();
         internal string _model = "gpt-4o";
+        internal string Backend = "OpenAI";
+        internal string CustomModel = "";
         internal string? RecordedWorkspace;
         internal string? SavedPreset;
         internal bool FailPresetRead;
@@ -263,8 +353,11 @@ public sealed partial class TuiSingleSessionTests
                 {
                     using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
                     if (body.RootElement.TryGetProperty("openai_model", out var model)) _model = model.GetString()!;
+                    if (body.RootElement.TryGetProperty("backend", out var backend)) Backend = backend.GetString()!;
+                    if (body.RootElement.TryGetProperty("custom_model", out var customModel)) CustomModel = customModel.GetString()!;
                 }
-                return Json(new { status = "ok", backend = "OpenAI", openai_model = _model });
+                return Json(new { status = "ok", backend = Backend, openai_model = _model,
+                    custom_model = CustomModel, model = "unrelated-generic-model" });
             }
             if (FailPresetRead && path.Contains("/session_2/preset", StringComparison.Ordinal)) return Json(new { error = "unavailable" }, HttpStatusCode.InternalServerError);
             if (path.EndsWith("/preset")) return Json(new { session_id = path.Split('/')[4], preset = path.Contains("/session_2/preset", StringComparison.Ordinal) ? SavedPreset : null, version = 0 });
@@ -300,8 +393,12 @@ public sealed partial class TuiSingleSessionTests
                 using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
                 var session = body.RootElement.GetProperty("session_id").GetString()!;
                 Workspaces[session] = body.RootElement.GetProperty("workspace_path").GetString()!;
-                AdmittedModels[session] = path.EndsWith("/selected", StringComparison.Ordinal)
-                    ? body.RootElement.GetProperty("provider_selection").GetProperty("model").GetString()! : _model;
+                if (body.RootElement.TryGetProperty("provider_selection", out var selection))
+                {
+                    AdmittedModels[session] = selection.GetProperty("model").GetString()!;
+                    AdmittedBackends[session] = selection.GetProperty("backend").GetString()!;
+                }
+                else AdmittedModels[session] = _model;
                 var run = "run_" + Guid.NewGuid().ToString("N");
                 _runSessions[run] = session;
                 _release[run] = new(TaskCreationOptions.RunContinuationsAsynchronously);

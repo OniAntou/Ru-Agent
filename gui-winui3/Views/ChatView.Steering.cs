@@ -334,8 +334,25 @@ namespace RuApp.Views
 
             if (kept.Count < images.Count)
                 ShowAgentInlineStatus($"{images.Count - kept.Count} image(s) from waiting messages did not fit the next turn.");
-            return await SendAgentTurnAsync(text, cancellationToken, providerSelection,
-                attachments: shown.Attachments.ToList(), displayUserText: shown.Content ?? string.Empty);
+            bool started;
+            try
+            {
+                started = await SendAgentTurnAsync(text, cancellationToken, providerSelection,
+                    attachments: shown.Attachments.ToList(), displayUserText: shown.Content ?? string.Empty);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] returned steer could not start a turn: {ex.GetType().Name}");
+                started = false;
+            }
+
+            if (started) return true;
+            // The waiting message had already left the tail, so a turn that never started would
+            // drop it. It goes back to the composer with its images, ahead of anything typed since.
+            Composer.ReturnAttachments(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty, shown.Attachments);
+            if (!string.IsNullOrEmpty(shown.Content)) RestoreToComposer(new[] { shown.Content });
+            ShowAgentInlineStatus("The message the run did not read is back in the box. It was not sent.");
+            return false;
         }
 
         /// <summary>

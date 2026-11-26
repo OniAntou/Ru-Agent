@@ -408,6 +408,10 @@ public sealed class SteerAttachmentWiringTests
         string returned = GuiSource.MethodBody(code, "SendReturnedSteersAsync");
         Assert.Contains("AttachedPromptText.Join(", returned, StringComparison.Ordinal);
         Assert.Contains("ChatAttachmentPolicy.TakeImagesWithinTurnBound(images)", returned, StringComparison.Ordinal);
+        // The waiting copy left the tail already, so a turn that never starts must put the
+        // message back instead of losing it.
+        Assert.Contains("if (started) return true;", returned, StringComparison.Ordinal);
+        Assert.Contains("The message the run did not read is back in the box", returned, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: A message the run ended without reading no longer disappears when the next turn
+  cannot start. It had already left the tail of the chat, so a send refused during a rewind, a
+  full-access prompt or a dropped connection lost it; the message and its images now go back to
+  the composer, ahead of anything typed since.
+
 - **fix(gui)**: Enter while Ru works steers a plain message again. A message without files or
   images asks the composer for its image payloads, which answers "none" rather than an empty
   list, and the steer path dereferenced that null before the request: Enter threw, the chat

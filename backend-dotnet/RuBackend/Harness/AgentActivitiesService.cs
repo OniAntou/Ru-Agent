@@ -38,31 +38,53 @@ public sealed partial class AgentActivitiesService
     internal RuAgent.Harness.Persistence.Privacy.KnownSecretRedactor Secrets => _secrets;
 
     /// <summary>
-    /// How many activity rows one replay carries. A long run has far more; the replay keeps the
-    /// newest ones, because a reopened long run used to show only its first 200 rows and none
-    /// of what it was doing when the user came back.
+    /// How many activity rows one replay page carries, and the default page. A long run has
+    /// far more: the first page holds the newest rows, because a reopened run should show what
+    /// it was doing when the user came back, and a client reads older pages with
+    /// <c>before_sequence</c> until <c>has_more</c> is false. Nothing is cut for good.
     /// </summary>
     internal const int MaxReplayedActivities = 500;
 
     /// <summary>
-    /// How many narration chunks a replayed transcript may carry. Past this the
-    /// whole transcript is dropped and the caller falls back to the session text,
-    /// so a pathological run degrades to the old grouped layout, never to a
+    /// How many narration chunks one replay page may carry. Narration is read per page, so the
+    /// budget only has to cover one page: a model step yields at most one chunk, and a page
+    /// holds at most <see cref="MaxReplayedActivities"/> rows. Past it the page's transcript is
+    /// dropped and the caller falls back to the grouped layout for that page, never to a
     /// truncated sentence.
     /// </summary>
-    private const int MaxTranscriptSegments = 64;
+    private const int MaxTranscriptSegments = 512;
 
     /// <summary>
-    /// Total narration characters a replayed transcript may carry. Same fail-soft
-    /// rule as the segment count: over budget means no transcript at all.
+    /// Narration characters one replay page may carry, sized so a full page stays well inside
+    /// the clients' 8 MiB response bound. Same fail-soft rule as the segment count.
     /// </summary>
-    private const int MaxTranscriptChars = 131072;
+    private const int MaxTranscriptChars = 512 * 1024;
 
-    public async Task<AgentServiceResult> ListRunActivitiesAsync(string runIdRaw, CancellationToken cancellationToken)
+    public Task<AgentServiceResult> ListRunActivitiesAsync(string runIdRaw, CancellationToken cancellationToken) =>
+        ListRunActivitiesAsync(runIdRaw, beforeSequence: null, limit: null, cancellationToken);
+
+    /// <summary>
+    /// One page of a run's replayed activity, newest first across pages and chronological
+    /// within one. Without <paramref name="beforeSequence"/> it is the newest page, led by the
+    /// latest checklist; with it, the page just older than that durable sequence. The response
+    /// names the next cursor (<c>next_before_sequence</c>) while older rows remain.
+    /// </summary>
+    public async Task<AgentServiceResult> ListRunActivitiesAsync(
+        string runIdRaw, long? beforeSequence, int? limit, CancellationToken cancellationToken)
     {
         if (!IsRunId(runIdRaw))
         {
             return BoundedError(400, "invalid_run_id", "run_id invalid.");
+        }
+
+        if (beforeSequence is < 1)
+        {
+            return BoundedError(400, "invalid_cursor", "before_sequence must be a positive durable sequence.");
+        }
+
+        if (limit is < 1 or > MaxReplayedActivities)
+        {
+            return BoundedError(400, "invalid_limit", $"limit must be 1..{MaxReplayedActivities}.");
         }
 
         var runId = new RunId(runIdRaw);
@@ -162,14 +184,18 @@ public sealed partial class AgentActivitiesService
             }
         }
 
+        var before = beforeSequence ?? long.MaxValue;
         var candidates = compactions.Select(row => new ReplayCandidate(row.Sequence, Compaction: row))
             .Concat(steers.Select(row => new ReplayCandidate(row.Sequence, Steer: row.PayloadId)))
             .Concat(completed.Select(row => new ReplayCandidate(row.Sequence, Completed: row)))
             .Concat(proposed.Values.Where(row => !completedCallIds.Contains(row.ToolCallId.Value))
                 .Select(row => new ReplayCandidate(row.Sequence, Pending: row)))
-            .Concat(thinking.Select(row => new ReplayCandidate(row.Sequence, Thinking: row)));
-        var cappedRows = await RebuildNewestRowsAsync(runId, run.State.IsTerminal(), candidates,
-            proposed, requestedAt, reasoning, cancellationToken).ConfigureAwait(false);
+            .Concat(thinking.Select(row => new ReplayCandidate(row.Sequence, Thinking: row)))
+            .Where(row => row.Sequence < before);
+        var page = await RebuildNewestRowsAsync(runId, run.State.IsTerminal(), candidates,
+            proposed, requestedAt, reasoning, limit ?? MaxReplayedActivities,
+            pinLatestTodos: beforeSequence is null, cancellationToken).ConfigureAwait(false);
+        var cappedRows = page.Rows;
         var wires = new List<JsonElement>(cappedRows.Count);
         foreach (var row in cappedRows)
         {
@@ -190,13 +216,25 @@ public sealed partial class AgentActivitiesService
             wires.Add(wire);
         }
 
-        var chunks = await ReadTranscriptChunksAsync(runId, stepTexts, cancellationToken).ConfigureAwait(false);
+        // Narration follows the page's own window, so each page carries the words between its
+        // rows and the narration budget applies per page instead of dropping a long run's
+        // whole transcript. The oldest page also takes everything before its first row.
+        var lower = page.HasMore ? page.OldestSequence ?? 0 : 0;
+        var pageTexts = stepTexts.Where(row => row.Sequence >= lower && row.Sequence < before).ToList();
+        var chunks = await ReadTranscriptChunksAsync(runId, pageTexts, cancellationToken).ConfigureAwait(false);
         var transcript = chunks is null
             ? Array.AsReadOnly(Array.Empty<TranscriptEntry>())
             : RunTranscriptPlanner.Merge(
                 cappedRows.Select(row => (row.Sequence, row.Activity.ActivityId)).ToList(),
                 chunks);
-        return new AgentServiceResult(200, new { activities = wires, transcript });
+        return new AgentServiceResult(200, new
+        {
+            activities = wires,
+            transcript,
+            has_more = page.HasMore,
+            next_before_sequence = page.HasMore ? page.OldestSequence : null,
+            older_count = page.OlderCount,
+        });
     }
 
     /// <summary>

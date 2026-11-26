@@ -34,7 +34,7 @@ bounds stay), so the run rarely waits on the 24-hour approval lifetime.
 | History window sent per request | 4,096 messages / 32 MiB | Compacts at 75% fill, so the oldest history reaches a checkpoint before it would be dropped | `ModelInputLimits`, `AgentRunCompaction.HistoryWindowCompactionFill` |
 | Replayed reasoning (provider continuations) | the history window's rows and bytes | Follows the window | `SqliteProviderContinuationReader` |
 | One request's memory | 64 MiB | Request is refused by name | `ModelInputLimits.MaxRequestBytes` |
-| Activity replay when a run is reopened | newest 500 rows | Older rows stay in the durable log | `AgentActivitiesService.MaxReplayedActivities` |
+| Activity replay when a run is reopened | pages of 500 rows, newest first | Older pages load on demand (`before_sequence`); nothing is cut | `AgentActivitiesService.MaxReplayedActivities` |
 | GUI live feed reconnects | 3 in a row without new events | Any delivered event refills the budget | `AgentRunClientAdapter` (`ResetResumeBudgetOnProgress`) |
 | Host idle shutdown | 10 min without requests | Every registered run, parked ones included, keeps the Host up | `RuAgent.Hosting` idle policy |
 

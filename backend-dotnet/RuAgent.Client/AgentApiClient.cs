@@ -282,10 +282,25 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
     /// The same replay plus its narration transcript: the model's own words between
     /// tool rows, in event order. A host that predates the transcript yields none.
     /// </summary>
-    public async Task<AgentRunActivityReplay> ListRunActivityReplayAsync(string runId, CancellationToken ct = default)
+    public Task<AgentRunActivityReplay> ListRunActivityReplayAsync(string runId, CancellationToken ct = default) =>
+        ListRunActivityReplayAsync(runId, beforeSequence: null, limit: null, ct);
+
+    /// <summary>
+    /// One page of the replay: the newest page without <paramref name="beforeSequence"/>,
+    /// otherwise the page just older than that durable sequence.
+    /// </summary>
+    public async Task<AgentRunActivityReplay> ListRunActivityReplayAsync(
+        string runId, long? beforeSequence, int? limit, CancellationToken ct = default)
     {
         ValidateRunId(runId);
-        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/activities");
+        if (beforeSequence is < 1) throw new ArgumentOutOfRangeException(nameof(beforeSequence));
+        if (limit is < 1) throw new ArgumentOutOfRangeException(nameof(limit));
+        var query = string.Join('&', new[]
+        {
+            beforeSequence is { } before ? "before_sequence=" + before.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+            limit is { } size ? "limit=" + size.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
+        }.Where(part => part is not null));
+        var url = new Uri(_session.BaseUri, $"agent/v1/runs/{runId}/activities" + (query.Length == 0 ? "" : "?" + query));
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         EnsureAuth(req);
         using var resp = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
@@ -351,7 +366,13 @@ public sealed partial class AgentApiClient : IAgentPolicyClient, IDisposable
                 }
             }
 
-            return new AgentRunActivityReplay(rows, transcript);
+            var hasMore = doc.RootElement.TryGetProperty("has_more", out var more) && more.ValueKind == JsonValueKind.True;
+            long? next = hasMore && doc.RootElement.TryGetProperty("next_before_sequence", out var cursor)
+                && cursor.TryGetInt64(out var nextBefore) && nextBefore > 0 ? nextBefore : null;
+            var older = doc.RootElement.TryGetProperty("older_count", out var count)
+                && count.TryGetInt32(out var olderRows) && olderRows > 0 ? olderRows : 0;
+            // A page that claims more without a usable cursor cannot be followed: treat it as the last.
+            return new AgentRunActivityReplay(rows, transcript, next is not null, next, next is null ? 0 : older);
         }
         catch (JsonException ex)
         {

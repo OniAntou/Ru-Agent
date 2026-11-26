@@ -94,7 +94,9 @@ public sealed class AgentActivityReplayBudgetTests(ITestOutputHelper output)
 
         var (body, reads) = await ReplayAsync(fixture);
         var rows = body.GetProperty("activities").EnumerateArray().ToArray();
-        Assert.Equal(500, rows.Length);
+        // The checklist leads the newest page as an extra row. Swapping it in for the oldest
+        // row used to lose that row for good, which paging can no longer allow.
+        Assert.Equal(501, rows.Length);
         var checklist = Assert.Single(rows, row => row.TryGetProperty("todos", out var items)
             && items.ValueKind == JsonValueKind.Array);
         var todos = checklist.GetProperty("todos").EnumerateArray().ToArray();
@@ -169,6 +171,144 @@ public sealed class AgentActivityReplayBudgetTests(ITestOutputHelper output)
         Assert.Equal(499, reads);
     }
 
+    /// <summary>
+    /// Paging is the contract that replaces the old hard cut: walking every page from the
+    /// newest back must yield each row exactly once, in order, the same rows one large page
+    /// holds. The fixture puts a todo_write completion (two rows from one event) on a page
+    /// boundary and an unreadable result in the middle, the two ways a cursor can drift.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(7)]
+    public async Task Walking_every_page_back_yields_each_row_once_in_order(int limit)
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        await fixture.SeedRunAsync();
+        var history = new ReplayHistory();
+        for (var index = 0; index < 10; index++) history.AddThinking(index);
+        history.AddTool(100, "read_file", "{\"path\":\"a.txt\"}", "{}");
+        history.AddTool(101, "todo_write", "{\"todos\":[]}", "{\"todos\":[]}");
+        for (var index = 10; index < 16; index++) history.AddThinking(index);
+        history.AddTool(102, "read_file", "{\"path\":\"b.txt\"}", "{}");
+        for (var index = 16; index < 20; index++) history.AddThinking(index);
+        await history.CommitAsync(fixture);
+        await CorruptToolResultAsync(fixture, newest: false);
+
+        // One unpinned page large enough for everything is the reference list.
+        var (whole, _) = await ReplayAsync(fixture, before: long.MaxValue, limit: 500);
+        var expected = Ids(whole);
+        Assert.False(whole.GetProperty("has_more").GetBoolean());
+
+        var pages = new List<string[]>();
+        long? cursor = long.MaxValue;
+        for (var guard = 0; cursor is not null; guard++)
+        {
+            Assert.True(guard < 100, "the cursor must move on every page");
+            var (page, _) = await ReplayAsync(fixture, cursor, limit);
+            var ids = Ids(page);
+            Assert.InRange(ids.Length, 0, limit + 1);
+            pages.Add(ids);
+            var more = page.GetProperty("has_more").GetBoolean();
+            var next = page.GetProperty("next_before_sequence");
+            Assert.Equal(more, next.ValueKind == JsonValueKind.Number);
+            if (more) Assert.True(next.GetInt64() < cursor);
+            cursor = more ? next.GetInt64() : null;
+        }
+
+        var walked = pages.AsEnumerable().Reverse().SelectMany(ids => ids).ToArray();
+        Assert.Equal(expected, walked);
+    }
+
+    /// <summary>
+    /// Narration is read per page: each page carries the words between its own rows, every
+    /// chunk lands on exactly one page, and a long run no longer loses its whole transcript
+    /// because the run as a whole is over the narration budget.
+    /// </summary>
+    [Fact]
+    public async Task Each_page_carries_only_the_narration_in_its_own_window()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        await fixture.SeedRunAsync();
+        var history = new ReplayHistory();
+        for (var index = 0; index < 100; index++) history.AddThinking(index, narration: $"said {index}.");
+        await history.CommitAsync(fixture);
+
+        var (newest, _) = await ReplayAsync(fixture, before: null, limit: 40);
+        var (middle, _) = await ReplayAsync(fixture, newest.GetProperty("next_before_sequence").GetInt64(), 40);
+        var (oldest, _) = await ReplayAsync(fixture, middle.GetProperty("next_before_sequence").GetInt64(), 40);
+        Assert.False(oldest.GetProperty("has_more").GetBoolean());
+
+        static string[] Said(JsonElement body) => body.GetProperty("transcript").EnumerateArray()
+            .Where(entry => entry.GetProperty("kind").GetString() == "text")
+            .Select(entry => entry.GetProperty("text").GetString()!).ToArray();
+        Assert.Equal(Enumerable.Range(60, 40).Select(index => $"said {index}."), Said(newest));
+        Assert.Equal(Enumerable.Range(20, 40).Select(index => $"said {index}."), Said(middle));
+        Assert.Equal(Enumerable.Range(0, 20).Select(index => $"said {index}."), Said(oldest));
+    }
+
+    [Fact]
+    public async Task The_newest_page_leads_with_an_older_checklist_without_losing_a_row()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        await fixture.SeedRunAsync();
+        var history = new ReplayHistory();
+        const string todos = "{\"todos\":[{\"content\":\"Older task\",\"status\":\"pending\"}]}";
+        history.AddTool(100, "todo_write", todos, todos);
+        for (var index = 0; index < 5; index++) history.AddThinking(index);
+        await history.CommitAsync(fixture);
+
+        var (newest, _) = await ReplayAsync(fixture, before: null, limit: 3);
+        var rows = newest.GetProperty("activities").EnumerateArray().ToArray();
+        // Three newest thinking rows, plus the checklist ahead of them: added, not swapped in.
+        Assert.Equal(4, rows.Length);
+        Assert.Equal("Older task", rows[0].GetProperty("todos")[0].GetProperty("content").GetString());
+        Assert.Equal("reasoning 2", rows[1].GetProperty("detail").GetString());
+        Assert.True(newest.GetProperty("has_more").GetBoolean());
+        Assert.Equal(3, newest.GetProperty("older_count").GetInt32());
+
+        // The older page holds the same checklist where it happened; clients keep one copy by id.
+        var (older, _) = await ReplayAsync(fixture, newest.GetProperty("next_before_sequence").GetInt64(), 3);
+        Assert.Contains(rows[0].GetProperty("activity_id").GetString(), Ids(older));
+        Assert.False(older.GetProperty("has_more").GetBoolean());
+    }
+
+    [Theory]
+    [InlineData("0", null, "invalid_cursor")]
+    [InlineData("-3", null, "invalid_cursor")]
+    [InlineData("abc", null, "invalid_cursor")]
+    [InlineData(null, "0", "invalid_limit")]
+    [InlineData(null, "501", "invalid_limit")]
+    [InlineData(null, "x", "invalid_limit")]
+    public async Task A_bad_cursor_or_limit_is_refused_by_name(string? before, string? limit, string code)
+    {
+        using var factory = new BackendWebApplicationFactory();
+        using var client = factory.CreateAuthenticatedClient();
+        var query = string.Join('&', new[]
+        {
+            before is null ? null : "before_sequence=" + Uri.EscapeDataString(before),
+            limit is null ? null : "limit=" + Uri.EscapeDataString(limit),
+        }.Where(part => part is not null));
+
+        using var response = await client.GetAsync($"/agent/v1/runs/run_{new string('1', 32)}/activities?{query}");
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(code, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    private static string[] Ids(JsonElement body) => body.GetProperty("activities").EnumerateArray()
+        .Select(row => row.GetProperty("activity_id").GetString()!).ToArray();
+
+    private static async Task CorruptToolResultAsync(BackendHarnessTestFixture fixture, bool newest)
+    {
+        await using var connection = await fixture.Options.OpenConnectionAsync(default);
+        using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE agent_payloads SET authentication_tag=zeroblob(16) WHERE payload_id=(SELECT payload_id FROM agent_events WHERE run_id=$run AND kind='tool.execution_completed' ORDER BY sequence "
+            + (newest ? "DESC" : "ASC") + " LIMIT 1)";
+        command.Parameters.AddWithValue("$run", ReplayHistory.Run.Value);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
     private static async Task CorruptLatestToolResultAsync(BackendHarnessTestFixture fixture)
     {
         await using var connection = await fixture.Options.OpenConnectionAsync(default);
@@ -178,13 +318,16 @@ public sealed class AgentActivityReplayBudgetTests(ITestOutputHelper output)
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
-    private async Task<(JsonElement Body, int Reads)> ReplayAsync(BackendHarnessTestFixture fixture)
+    private Task<(JsonElement Body, int Reads)> ReplayAsync(BackendHarnessTestFixture fixture) =>
+        ReplayAsync(fixture, before: null, limit: null);
+
+    private async Task<(JsonElement Body, int Reads)> ReplayAsync(BackendHarnessTestFixture fixture, long? before, int? limit)
     {
         var keys = new CountingKeyStore(fixture.KeyStore);
         var payloads = new HarnessPayloadStore(fixture.Options, new HarnessPayloadCryptography(keys), KnownSecretRedactor.Empty);
         var service = new AgentActivitiesService(fixture.EventStore, payloads, new MetadataPolicy());
         var clock = Stopwatch.StartNew();
-        var result = await service.ListRunActivitiesAsync(ReplayHistory.Run.Value, default);
+        var result = await service.ListRunActivitiesAsync(ReplayHistory.Run.Value, before, limit, default);
         Assert.Equal(200, result.StatusCode);
         output.WriteLine($"Replay: {keys.Reads} payload decryptions, {clock.Elapsed.TotalMilliseconds:F1} ms");
         return (JsonSerializer.SerializeToElement(result.Body), keys.Reads);
@@ -206,13 +349,14 @@ public sealed class AgentActivityReplayBudgetTests(ITestOutputHelper output)
         private readonly List<HarnessEventIntent> _events = [];
         private readonly List<HarnessPayloadIntent> _payloads = [];
 
-        internal PayloadId AddThinking(int index)
+        internal PayloadId AddThinking(int index, string? narration = null)
         {
             var step = new ModelStepId("step_" + (index + 1).ToString("x32"));
             var payload = AddPayload(HarnessPayloadKind.ModelReasoning, $"reasoning {index}", json: false);
             _events.Add(new(NewEvent(), HarnessEventKind.ModelStepStarted, modelStepId: step));
             _events.Add(new(NewEvent(), HarnessEventKind.ModelReasoningRecorded, modelStepId: step, payloadId: payload));
-            _events.Add(new(NewEvent(), HarnessEventKind.ModelStepCompleted, modelStepId: step));
+            PayloadId? said = narration is null ? null : AddPayload(HarnessPayloadKind.AssistantText, narration, json: false);
+            _events.Add(new(NewEvent(), HarnessEventKind.ModelStepCompleted, modelStepId: step, payloadId: said));
             return payload;
         }
 

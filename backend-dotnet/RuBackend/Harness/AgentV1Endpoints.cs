@@ -204,9 +204,37 @@ public static partial class AgentV1Endpoints
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 
-    private static async Task<IResult> GetRunActivitiesAsync(string runId, AgentActivitiesService service, CancellationToken ct)
+    private static async Task<IResult> GetRunActivitiesAsync(string runId, HttpContext context, AgentActivitiesService service, CancellationToken ct)
     {
-        var result = await service.ListRunActivitiesAsync(runId, ct);
+        // Optional paging: before_sequence reads the page older than that durable sequence and
+        // limit bounds its rows. Without either the newest page answers as it always has.
+        long? before = null;
+        int? limit = null;
+        var beforeRaw = context.Request.Query["before_sequence"].ToString();
+        if (!string.IsNullOrWhiteSpace(beforeRaw))
+        {
+            if (!long.TryParse(beforeRaw, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedBefore))
+            {
+                var invalid = AgentV1Shared.BoundedError(400, "invalid_cursor", "before_sequence must be a positive durable sequence.");
+                return Results.Json(invalid.Body, statusCode: invalid.StatusCode);
+            }
+
+            before = parsedBefore;
+        }
+
+        var limitRaw = context.Request.Query["limit"].ToString();
+        if (!string.IsNullOrWhiteSpace(limitRaw))
+        {
+            if (!int.TryParse(limitRaw, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedLimit))
+            {
+                var invalid = AgentV1Shared.BoundedError(400, "invalid_limit", "limit must be a whole number.");
+                return Results.Json(invalid.Body, statusCode: invalid.StatusCode);
+            }
+
+            limit = parsedLimit;
+        }
+
+        var result = await service.ListRunActivitiesAsync(runId, before, limit, ct);
         return Results.Json(result.Body, statusCode: result.StatusCode);
     }
 

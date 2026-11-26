@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(host)**: A long run's activity replay is paged instead of cut at its newest 500 rows.
+  `GET /agent/v1/runs/{runId}/activities` takes `before_sequence` and `limit` and answers
+  `has_more`, `next_before_sequence` and `older_count`, so clients read older pages until none
+  remain. A page never splits a completion's rows, and its cursor always moves on. The latest
+  checklist now leads the newest page as an extra row instead of replacing the oldest one.
+  Narration is read per page with a page-sized budget, so a long run keeps its interleaved
+  text instead of dropping the whole transcript. The .NET client reads pages too.
+
 - **perf(host)**: A run's event stream reads the store less and writes less. Durable events are
   read in closed batches of 128 before any payload enrichment or network write, a text-only wake
   no longer reloads the run, SSE frames are serialized once, and assistant text, tool output and

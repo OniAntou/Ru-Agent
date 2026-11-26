@@ -236,15 +236,27 @@ _Avoid_: replaying transient frames as durable history or hiding callback errors
 ## Activity replay
 
 Activity replay reads event metadata to recover proposal/receipt links, then
-rebuilds the newest 500 valid activity rows from newest to oldest. Reasoning
+rebuilds one page of activity rows from newest to oldest. `GET
+/agent/v1/runs/{runId}/activities` answers the newest page (500 rows by default);
+`before_sequence=<n>` answers the page just older than durable sequence `n`, and
+`limit` (1..500) bounds a page. Each response carries `has_more`,
+`next_before_sequence` and `older_count`, so a client walks back page by page and
+nothing is cut for good. A page takes a candidate whole (a `todo_write` completion
+keeps both its rows) and its cursor moves past every candidate it considered,
+including one that could not be rebuilt. The newest page leads with the latest
+checklist even when it is older than the page, as an extra row; that row appears
+again on its own older page, and clients keep one copy by activity id. Reasoning
 payloads are decrypted only for retained thinking rows. Once the tail is full,
 older successful tool proposals are inspected for the latest valid checklist;
 other tool results are skipped. Checklist clears remain meaningful, and an
 unreadable or malformed update preserves the preceding valid snapshot.
 
 The metadata scan remains necessary for historical runs whose tool identity lives
-inside encrypted arguments. Narration retains its separate 64-segment/131,072-
-character budget and chronological merge. Payload audience checks, read failures,
+inside encrypted arguments. Narration is read per page, for the sequence window
+between the page's oldest considered row and its cursor (the oldest page also takes
+everything before its first row), with a per-page budget of 512 segments and 524,288
+characters and the same chronological merge; over budget drops only that page's
+narration. Payload audience checks, read failures,
 live/interrupted tool state and durable sequence ordering keep their existing
 behavior. No decrypted replay cache is retained between requests.
 

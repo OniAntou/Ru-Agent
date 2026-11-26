@@ -47,16 +47,7 @@ public sealed partial class AgentCommands
                 }
                 else
                 {
-                    try
-                    {
-                        await HandlePromptLineAsync(submission.Prompt, ct, submission).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        // Esc cancels the turn's token, which is exactly when steers come back:
-                        // read them with the session's token so they are still sent.
-                        await SendReturnedSteersAsync(cancellationToken).ConfigureAwait(false);
-                    }
+                    await HandlePromptLineAsync(submission.Prompt, ct, submission).ConfigureAwait(false);
                 }
                 if (dispatcherExitCode is not null)
                 {

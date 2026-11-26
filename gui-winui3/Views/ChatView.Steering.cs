@@ -290,89 +290,30 @@ namespace RuApp.Views
         }
 
         /// <summary>
-        /// After a turn ends, messages its run never read are sent as the next turn, before
-        /// any queued turn: they were meant for now. This is also what Stop does with them.
-        /// Returns whether a turn was started, so the caller leaves the queue for later.
+        /// A message the run ended without reading is retained by the session, so it stays at
+        /// the tail of the chat until the next run of this chat reads it (ADR 0056). The
+        /// transcript reload that ends a turn drops rows that are not in history yet; this
+        /// puts the waiting copies back so the user keeps seeing what they wrote.
         /// </summary>
-        private async Task<bool> SendReturnedSteersAsync(string? runId, CancellationToken cancellationToken)
+        private void RestoreWaitingSteerCopies()
         {
-            if (_agentController is not { } controller || string.IsNullOrWhiteSpace(runId)) return false;
-            IReadOnlyList<AgentReturnedSteer> taken;
-            try
+            foreach (var waiting in _waitingSteers.Values)
             {
-                taken = await controller.TakeReturnedSteersAsync(runId, cancellationToken);
+                if (!Messages.Contains(waiting)) Messages.Add(waiting);
             }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                // A cancelled or failed read keeps them tracked; it never blocks the queue drain.
-                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] returned steers could not be read: {ex.GetType().Name}");
-                return false;
-            }
-
-            if (taken.Count == 0) return false;
-            // Only the copies of messages actually taken leave the tail; the turn they start
-            // shows the message itself, with the images those copies held (the Host's steer
-            // list carries no image data).
-            var images = new List<Models.ImageAttachmentItem>();
-            foreach (var steer in taken)
-            {
-                if (_waitingSteers.Remove(SteerActivityId(steer.SteerId), out var waiting))
-                {
-                    Messages.Remove(waiting);
-                    if (waiting.Attachments is { } held) images.AddRange(held.Where(attachment => attachment.IsImage));
-                }
-            }
-
-            // Files of every steer lead the turn, so it reads like one message with its files.
-            // A turn carries what one message may; images beyond that are said, not dropped silently.
-            var text = AttachedPromptText.Join(taken.Select(steer => steer.Text).ToArray(),
-                Environment.NewLine + Environment.NewLine);
-            var kept = ChatAttachmentPolicy.TakeImagesWithinTurnBound(images);
-            var shown = SteerMessage(text, kept);
-            if (!ModelSelection.TryCaptureRunSelection(out var providerSelection))
-            {
-                Composer.ReturnAttachments(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty, shown.Attachments);
-                if (!string.IsNullOrEmpty(shown.Content)) RestoreToComposer(new[] { shown.Content });
-                ShowAgentInlineStatus("The run ended before reading your message, and the model selection is still loading. It is back in the box.");
-                return false;
-            }
-
-            if (kept.Count < images.Count)
-                ShowAgentInlineStatus($"{images.Count - kept.Count} image(s) from waiting messages did not fit the next turn.");
-            bool started;
-            try
-            {
-                started = await SendAgentTurnAsync(text, cancellationToken, providerSelection,
-                    attachments: shown.Attachments.ToList(), displayUserText: shown.Content ?? string.Empty);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                GuiDiagnosticWriter.AppendTraceLine($"[ChatView] returned steer could not start a turn: {ex.GetType().Name}");
-                started = false;
-            }
-
-            if (started) return true;
-            // The waiting message had already left the tail, so a turn that never started would
-            // drop it. It goes back to the composer with its images, ahead of anything typed since.
-            Composer.ReturnAttachments(_activeSessionId, ChatInputTextBox?.Text ?? string.Empty, shown.Attachments);
-            if (!string.IsNullOrEmpty(shown.Content)) RestoreToComposer(new[] { shown.Content });
-            ShowAgentInlineStatus("The message the run did not read is back in the box. It was not sent.");
-            return false;
         }
 
         /// <summary>
-        /// Stop with messages waiting sends them at once. The Host settles a cancelled run
-        /// shortly after it accepts the cancel, so the waiting messages read as returned only
-        /// then: ask again briefly instead of losing them.
+        /// Says a message was not read, so nobody wonders why it went unanswered: the next
+        /// message they send in this chat brings it to Ru.
         /// </summary>
-        private async Task SendWaitingSteersAfterStopAsync(string? runId)
+        private void ShowRetainedSteerNotice()
         {
-            if (string.IsNullOrWhiteSpace(runId) || _agentController is not { } controller) return;
-            for (var attempt = 0; attempt < 15 && controller.HasTrackedSteers(runId); attempt++)
-            {
-                if (await SendReturnedSteersAsync(runId, CancellationToken.None)) return;
-                await Task.Delay(200);
-            }
+            var unread = _waitingSteers.Count;
+            if (unread == 0) return;
+            ShowAgentInlineStatus(unread == 1
+                ? "Ru did not read your message · it will be sent with your next message."
+                : $"{unread} messages Ru did not read will be sent with your next message.");
         }
     }
 }

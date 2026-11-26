@@ -37,4 +37,20 @@ public static partial class HarnessSqliteSchema
         );
         SELECT 1;
         """;
+
+    /// <summary>
+    /// Retained steers (ADR 0056 amendment). A steer still unread when the run it was sent to
+    /// ends is read by the session's next root run; this row names that run, so a reopened chat
+    /// attributes the steer's images to it. A table rather than a new column keeps the
+    /// migration replay-safe for a development database rewound to an earlier version.
+    /// </summary>
+    private const string RunSteerCarryMigration = """
+        CREATE TABLE IF NOT EXISTS agent_run_steer_carries (
+            steer_id TEXT PRIMARY KEY REFERENCES agent_run_steers(steer_id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL REFERENCES agent_runs(run_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS ix_agent_run_steer_carries_run
+            ON agent_run_steer_carries(run_id);
+        SELECT 1;
+        """;
 }

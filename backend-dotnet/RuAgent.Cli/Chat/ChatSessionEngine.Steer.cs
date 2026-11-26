@@ -27,7 +27,7 @@ internal readonly record struct SteerResult(SteerAttempt Attempt, string? Messag
 /// </summary>
 public partial class ChatSessionEngine
 {
-    internal const string SteerWaitingHint = "message waiting for Ru's next step · esc sends it now";
+    internal const string SteerWaitingHint = "message waiting for Ru's next step";
 
     private Func<string, ChatSubmissionSnapshot, Task<SteerResult>>? _steerHandler;
     private Action<ChatSubmissionSnapshot>? _submissionReturned;
@@ -115,16 +115,5 @@ public partial class ChatSessionEngine
     {
         var current = _view.InputText;
         _view.InputText = string.IsNullOrEmpty(current) ? text : text + "\n" + current;
-    }
-
-    /// <summary>
-    /// Messages the run ended without reading were meant for now: they become the next turn,
-    /// ahead of any queued prompt. Esc therefore also sends a waiting message at once.
-    /// </summary>
-    internal void SendReturnedSteers(IReadOnlyList<string> texts)
-    {
-        if (texts.Count == 0) return;
-        // Files of every steer lead the turn, so it reads like one message with its files.
-        Dispatch(() => Submit(forceQueue: true, steerFallback: AttachedPromptText.Join(texts, "\n\n")));
     }
 }

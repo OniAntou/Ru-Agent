@@ -99,7 +99,9 @@ public sealed class AgentRunQueryService
             command.CommandText = """
                 SELECT i.steer_id, i.payload_id FROM agent_run_steer_images i
                 JOIN agent_run_steers s ON s.steer_id = i.steer_id
-                WHERE s.run_id=$run AND s.delivered_event_id IS NOT NULL
+                LEFT JOIN agent_run_steer_carries c ON c.steer_id = s.steer_id
+                WHERE c.run_id=$run
+                    OR (s.run_id=$run AND s.delivered_event_id IS NOT NULL AND c.steer_id IS NULL)
                 ORDER BY s.delivered_at_utc, s.created_at_utc, s.steer_id, i.ordinal
                 """;
             command.Parameters.AddWithValue("$run", runId.Value);

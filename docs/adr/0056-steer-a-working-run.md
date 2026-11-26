@@ -54,15 +54,17 @@ Three constraints shaped the design:
 7. **Returned steers.** A steer still pending when its run ends reads as `returned`. Clients
    send returned text as the next turn, ahead of queued turns: it was meant for now. Stopping
    a run with waiting steers therefore sends them at once (Codex's Esc, Claude Code's
-   Ctrl+Enter).
+   Ctrl+Enter). *(Amended 2026-11-26: the Host retains the steer for the session's next run;
+   clients no longer resend it.)*
 8. **Presentation.** Following DeepSeek Harness, a sent steer appears at once as the user's
    message at the tail of the chat, drawn exactly like the message it becomes, while the run's
    work keeps arriving above it. When the run reads it, Desktop replaces the waiting copy at
    that point: Ru's reply so far ends, the message follows, and the run continues in a new
    reply bubble below it; replay splits at the same points, so live and reloaded transcripts
-   match. The append-only TUI shows a waiting hint ("esc sends it now") and writes the `❯`
-   user rows where the run reads it. No status line is shown, and the delivered `steer`
-   activity never draws a row of the model's work. Desktop: Enter while a run works steers by default;
+   match. The append-only TUI shows a waiting hint ("message waiting for Ru's next step") and
+   writes the `❯` user rows where the run reads it. No status line is shown, and the delivered
+   `steer` activity never draws a row of the model's work. Desktop: Enter while a run works
+   steers by default;
    Settings → "Sending while Ru is working" can make Enter queue instead (`composer.json`).
    Commands always queue; files and images ride along (see the amendments).
    TUI: Enter steers, Tab queues. The classic line
@@ -157,5 +159,18 @@ A steer still waiting when the run has committed its final reply — only the hi
 acknowledgement is missing — reads as `returned`: that run reaches no further model step, so
 the sender must offer the message as the next turn instead of waiting. The steer list refuses a
 subagent run with `subagent_read_only`, as the send route does.
+
+## Amendment (2026-11-26): a steer the run ends without reading is retained
+
+A steer still unread when its run ends — or commits its final reply — is retained by the
+session instead of being returned to the client. The session's next root run reads it at its
+first step boundary, before any steer sent to that run, and records itself in
+`agent_run_steer_carries` (schema v42); the steer's images move with it and its waiting
+copies are deleted, so a reopened chat still attributes them to the steer. Delivery and the
+delivered mark commit together, as before, so a steer is read at most once. Clients no longer
+send returned text as the next turn: Desktop keeps the waiting copy at the tail and says Ru did
+not read it, the TUI keeps its waiting hint, and the message reaches Ru with the user's next
+message. `returned` therefore names a steer waiting for the session's next run, not work the
+client owes.
 
 

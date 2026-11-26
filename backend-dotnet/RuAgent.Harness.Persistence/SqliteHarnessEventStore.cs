@@ -290,12 +290,6 @@ public sealed partial class SqliteHarnessEventStore : IHarnessEventStore
                     commit.NextRun,
                     cancellationToken)
                 .ConfigureAwait(false);
-            await HarnessSqliteWriteSet.DeleteUnreadSteerImagesIfTerminalAsync(
-                    connection,
-                    transaction,
-                    commit.NextRun,
-                    cancellationToken)
-                .ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return HarnessCommitResult.Committed(commit.NextRun);
         }

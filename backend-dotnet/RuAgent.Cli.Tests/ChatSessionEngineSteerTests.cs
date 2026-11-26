@@ -87,7 +87,7 @@ public sealed class ChatSessionEngineSteerTests
     }
 
     [Fact]
-    public async Task A_sent_steer_says_it_is_waiting_and_that_esc_sends_it_now()
+    public async Task A_sent_steer_says_it_is_waiting_for_the_next_step()
     {
         await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
 
@@ -96,23 +96,6 @@ public sealed class ChatSessionEngineSteerTests
         await harness.Steered.Task.WaitAsync(Deadline);
 
         await WaitUntilAsync(() => harness.Errors.ToString().Contains(ChatSessionEngine.SteerWaitingHint, StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task Messages_the_run_never_read_are_sent_as_the_next_turn_ahead_of_the_queue()
-    {
-        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
-        harness.View.InputText = "queued later";
-        harness.Engine.QueueSubmit();
-
-        harness.Engine.SendReturnedSteers(["first", "second"]);
-        await WaitUntilAsync(() => harness.Engine.QueuedCount == 2);
-        harness.Release();
-        await WaitUntilAsync(() => { lock (harness.Prompts) return harness.Prompts.Count == 3; });
-
-        lock (harness.Prompts)
-            Assert.Equal(["working", "first\n\nsecond", "queued later"], harness.Prompts);
-        Assert.Equal(string.Empty, harness.View.InputText);
     }
 
     [Fact]
@@ -203,27 +186,9 @@ public sealed class ChatSessionEngineSteerTests
     }
 
     [Fact]
-    public async Task Returned_steers_with_files_become_one_turn_with_the_files_first()
+    public async Task A_message_the_run_can_no_longer_take_goes_back_to_the_prompt_when_the_queue_is_full()
     {
-        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
-        var withFile = AttachedPrompt.Compose("and this", [new CliTextAttachment("a.md", "# a", 3)]);
-
-        harness.Engine.SendReturnedSteers(["first", withFile]);
-        await WaitUntilAsync(() => harness.Engine.QueuedCount == 1);
-        harness.Release();
-        await WaitUntilAsync(() => { lock (harness.Prompts) return harness.Prompts.Count == 2; });
-
-        string turn;
-        lock (harness.Prompts) turn = harness.Prompts[1];
-        var parts = Assert.IsType<AttachedPromptParts>(AttachedPromptText.TrySplit(turn));
-        Assert.Equal("a.md", Assert.Single(parts.Documents).FileName);
-        Assert.Equal("first\n\nand this", parts.Text);
-    }
-
-    [Fact]
-    public async Task A_returned_steer_the_full_queue_refuses_goes_back_to_the_prompt()
-    {
-        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.Sent));
+        await using var harness = await BusyHarness.StartAsync(new SteerResult(SteerAttempt.NotSteerable));
         for (var index = 0; index < ChatSessionEngine.MaxQueueDepth; index++)
         {
             harness.View.InputText = "queued " + index;
@@ -232,11 +197,13 @@ public sealed class ChatSessionEngineSteerTests
 
         await WaitUntilAsync(() => harness.Engine.QueuedCount == ChatSessionEngine.MaxQueueDepth);
 
-        harness.Engine.SendReturnedSteers(["meant for now"]);
+        harness.View.InputText = "one more thing";
+        harness.Engine.Submit();
+        await harness.Steered.Task.WaitAsync(Deadline);
 
-        // The queue refuses it, but the text came back from a steer and had already left the
-        // prompt: dropping it silently would lose what the user wrote.
-        await WaitUntilAsync(() => harness.View.InputText == "meant for now");
+        // The queue refuses it, but the text had already left the prompt: dropping it silently
+        // would lose what the user wrote.
+        await WaitUntilAsync(() => harness.View.InputText == "one more thing");
         Assert.Equal(ChatSessionEngine.MaxQueueDepth, harness.Engine.QueuedCount);
     }
 

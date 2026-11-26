@@ -61,7 +61,7 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Release migration tests build the original released v18 DDL and frozen
 development DDL independently of current schema creation. The selected upgrade suffix commits atomically
-at v41. Version 29 consolidated earlier development changes; v30
+at v42. Version 29 consolidated earlier development changes; v30
 normalizes retained conversation history and source receipts. Version 31 adds
 context mutation fences and indexed compaction/intent lookup; v32 indexes exact
 execution-request provenance. The schema keeps this index, but verification no longer reads the
@@ -82,10 +82,13 @@ Version 39 adds `agent_run_failures`, the bounded failure fingerprint of a faile
 Version 40 adds `agent_run_steers`: steers sent into a working root run, their text in an
 unbound encrypted payload until delivery at a step boundary (ADR 0056). Version 41 adds
 `agent_run_steer_images`: a steer's images in `SteerImage` payloads, moved into the run as
-`UserImage` payloads with derived ids when the steer is delivered.
+`UserImage` payloads with derived ids when the steer is delivered. Version 42 adds
+`agent_run_steer_carries`: a steer the run ended without reading is retained for the session,
+and the next root run that reads it records itself here so a reopened chat still attributes
+the steer's images to it (ADR 0056 amendment).
 Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v39 databases remain eligible sources; adding a migration extends one ordered
+v19-v41 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.

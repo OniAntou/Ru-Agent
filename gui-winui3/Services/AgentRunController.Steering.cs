@@ -20,24 +20,15 @@ public enum AgentSteerAttempt
     Refused,
 }
 
-/// <summary>A steer its run ended without reading, to be sent as the next turn.</summary>
-public readonly record struct AgentReturnedSteer(string SteerId, string Text);
-
+/// <summary>What a steer attempt did, with the Host's reported state when it was accepted.</summary>
 public readonly record struct AgentSteerOutcome(AgentSteerAttempt Attempt, string? ErrorCode = null, string? SteerId = null, string? State = null);
 
 /// <summary>
-/// Steering (ADR 0056): a message the user sends into the run in hand. The controller
-/// remembers which steers this window sent so the ones the run never read (it ended
-/// first) can go back to the composer.
+/// Steering (ADR 0056): a message the user sends into the run in hand. A steer the run never
+/// reads is retained by the session, so this window keeps no copy and sends nothing again.
 /// </summary>
 public sealed partial class AgentRunController
 {
-    private readonly object _steerGate = new();
-
-    // Stop and the turn's completion can both ask; one of them takes each returned steer.
-    private readonly SemaphoreSlim _returnedGate = new(1, 1);
-    private readonly List<(string RunId, string SteerId)> _sentSteers = new();
-
     public Task<AgentSteerOutcome> SteerAsync(string text, CancellationToken cancellationToken = default) =>
         SteerAsync(text, null, cancellationToken);
 
@@ -52,11 +43,9 @@ public sealed partial class AgentRunController
             var sent = images is { Count: > 0 }
                 ? await _client.SteerAsync(runId, steerId, text, images, cancellationToken).ConfigureAwait(false)
                 : await _client.SteerAsync(runId, steerId, text, cancellationToken).ConfigureAwait(false);
-            // A retried send answers from the stored row: a steer the run already read needs no
-            // waiting copy, and one it never read is a message for the next turn.
-            if (sent.State == AgentSteerLimits.StateReturned)
-                return new AgentSteerOutcome(AgentSteerAttempt.NotSteerable, "steer_returned");
-            lock (_steerGate) _sentSteers.Add((runId, steerId));
+            // A retried send answers from the stored row. A steer it reports as returned is
+            // retained by the session: the waiting copy moves when this chat's next run reads
+            // it, so it is never queued again as a turn of its own.
             return new AgentSteerOutcome(AgentSteerAttempt.Sent, SteerId: steerId, State: sent.State);
         }
         catch (AgentApiException error) when (error.ErrorCode is "run_not_steerable" or "run_not_found")
@@ -66,62 +55,6 @@ public sealed partial class AgentRunController
         catch (AgentApiException error)
         {
             return new AgentSteerOutcome(AgentSteerAttempt.Refused, error.ErrorCode);
-        }
-    }
-
-    /// <summary>Whether this window still tracks a steer it sent into <paramref name="runId"/>.</summary>
-    public bool HasTrackedSteers(string runId)
-    {
-        lock (_steerGate) return _sentSteers.Any(item => string.Equals(item.RunId, runId, StringComparison.Ordinal));
-    }
-
-    /// <summary>
-    /// Steers this window sent into <paramref name="runId"/> that the run ended without
-    /// reading. Only that run is read, so a steer is never sent into another session's chat.
-    /// Settled steers (delivered or returned) are forgotten; pending ones stay tracked, as
-    /// they are while a stopped run is still settling.
-    /// </summary>
-    public async Task<IReadOnlyList<AgentReturnedSteer>> TakeReturnedSteersAsync(
-        string runId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
-        // Stop and the turn's completion can both ask; one of them takes each returned steer.
-        await _returnedGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            string[] tracked;
-            lock (_steerGate)
-            {
-                tracked = _sentSteers.Where(item => string.Equals(item.RunId, runId, StringComparison.Ordinal))
-                    .Select(item => item.SteerId).ToArray();
-            }
-
-            if (tracked.Length == 0) return Array.Empty<AgentReturnedSteer>();
-            AgentSteerListResponse listed;
-            try
-            {
-                listed = await _client.ListSteersAsync(runId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception error) when (error is AgentApiException or System.Net.Http.HttpRequestException)
-            {
-                return Array.Empty<AgentReturnedSteer>();
-            }
-
-            var returned = new List<AgentReturnedSteer>();
-            var settled = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var steer in listed.Steers)
-            {
-                if (steer.State == AgentSteerLimits.StatePending || !tracked.Contains(steer.SteerId)) continue;
-                settled.Add(steer.SteerId);
-                if (steer.State == AgentSteerLimits.StateReturned) returned.Add(new AgentReturnedSteer(steer.SteerId, steer.Text));
-            }
-
-            lock (_steerGate) _sentSteers.RemoveAll(item => settled.Contains(item.SteerId));
-            return returned;
-        }
-        finally
-        {
-            _returnedGate.Release();
         }
     }
 }

@@ -22,6 +22,7 @@ internal static class HarnessSqliteSchemaValidator
             ["agent_subagents"] = ["agent_id", "root_run_id", "internal_session_id", "role", "canceled", "invocation_id", "request_hash"],
             ["agent_subagent_attempts"] = ["agent_id", "attempt_number", "run_id", "created_at_utc", "admitted_at_utc", "deadline_at_utc"],
             ["agent_run_steers"] = ["steer_id", "run_id", "payload_id", "created_at_utc", "delivered_event_id", "delivered_at_utc"],
+            ["agent_run_steer_carries"] = ["steer_id", "run_id"],
             ["agent_run_steer_images"] = ["steer_id", "ordinal", "payload_id", "sha256"],
             ["agent_subagent_messages"] = ["agent_id", "message_id", "payload_id", "consumed_run_id", "continuation_run_id", "continuation_error_code"],
             ["agent_subagent_results"] = ["agent_id", "result_version", "run_id", "payload_id", "delivered"],

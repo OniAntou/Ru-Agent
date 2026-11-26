@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(agent)!**: A steer the run ends without reading is retained by the session instead of
+  being handed back to the client. The session's next run reads it at its first step boundary,
+  before any steer sent to that run, its images move with it, and the run that read it is
+  recorded on the steer (schema v42), so a message survives a closed app, a switched chat or a
+  Stop. Desktop keeps the message at the tail and says Ru did not read it; the TUI keeps its
+  waiting hint. Clients no longer send returned text as the next turn.
+
 - **fix(agent)**: A steer whose retried send answers `delivered` now shows where the run read
   it instead of as a waiting message, and one answered `returned` goes back to the prompt for
   the next turn instead of leaving a waiting copy that can never settle.

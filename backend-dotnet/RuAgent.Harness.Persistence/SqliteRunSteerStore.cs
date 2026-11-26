@@ -268,38 +268,22 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
         using var transaction = connection.BeginTransaction(deferred: false);
         var run = await HarnessSqliteQueries.GetRunAsync(connection, transaction, runId, ct).ConfigureAwait(false);
         if (run?.State != HarnessRunState.Running) return [];
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.Parameters.AddWithValue("$run", runId.Value);
-        command.Parameters.AddWithValue("$limit", RunSteerContract.MaxPending);
-        command.CommandText = """
-            SELECT steer_id,payload_id FROM agent_run_steers
-            WHERE run_id=$run AND delivered_event_id IS NULL ORDER BY created_at_utc,steer_id LIMIT $limit
-            """;
-        var pending = new List<(string Id, PayloadId Payload)>();
-        using (var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
-            while (await reader.ReadAsync(ct).ConfigureAwait(false))
-                pending.Add((reader.GetString(0), new PayloadId(reader.GetString(1))));
-        if (pending.Count == 0) return [];
+
+        var own = await ReadPendingAsync(connection, transaction, runId, RunSteerContract.MaxPending, ct).ConfigureAwait(false);
+        // A steer the session's earlier run never read belongs here now: it joins this run's
+        // first step boundary, before anything sent to this run, so it is delivered at most
+        // once instead of waiting for a client to send it again (ADR 0056 amendment).
+        var carried = own.Count >= RunSteerContract.MaxPending
+            ? []
+            : await ReadCarriedAsync(connection, transaction, run, RunSteerContract.MaxPending - own.Count, ct)
+                .ConfigureAwait(false);
+        if (own.Count == 0 && carried.Count == 0) return [];
         if (!await HarnessStepBoundary.IsAtStepBoundaryAsync(connection, transaction, payloads, runId, ct).ConfigureAwait(false))
             return [];
 
-        var steers = new List<DeliveredSteer>(pending.Count);
-        foreach (var (id, payloadId) in pending)
-        {
-            var content = await payloads.ReadForModelAsync(connection, transaction, runId, payloadId, ct).ConfigureAwait(false);
-            var images = new List<string>();
-            var sources = new List<PayloadId>();
-            foreach (var image in await ReadImageRowsAsync(connection, transaction, id, ct).ConfigureAwait(false))
-            {
-                var imageContent = await payloads.ReadForModelAsync(connection, transaction, runId, image.PayloadId, ct)
-                    .ConfigureAwait(false);
-                images.Add(Encoding.UTF8.GetString(imageContent.Plaintext.Span));
-                sources.Add(image.PayloadId);
-            }
-
-            steers.Add(new DeliveredSteer(id, Encoding.UTF8.GetString(content.Plaintext.Span), images, sources));
-        }
+        var steers = new List<DeliveredSteer>(own.Count + carried.Count);
+        foreach (var entry in carried.Concat(own))
+            steers.Add(await ReadDeliveredAsync(connection, transaction, entry, ct).ConfigureAwait(false));
 
         var commit = RunSteerDelivery.CreateCommit(run, steers, now);
         HarnessSqliteWriteSet.ValidateCommit(run, commit);
@@ -310,6 +294,8 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
         await HarnessSqliteWriteSet.InsertEventsAsync(connection, transaction, runId, run.LastSequence + 1,
             commit.Events, commit.NextRun.UpdatedAt, ct).ConfigureAwait(false);
 
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE agent_run_steers SET delivered_event_id=$event,delivered_at_utc=$at
             WHERE steer_id=$steer AND delivered_event_id IS NULL
@@ -325,29 +311,118 @@ public sealed class SqliteRunSteerStore(HarnessSqliteOptions options, HarnessPay
                 throw new HarnessStoreException("run_steer_stale");
         }
 
+        // A retained steer names the run that read it, so a reopened chat attributes its images
+        // to it. Its own run keeps the row, and the text payload, for a retried send to answer.
+        if (carried.Count > 0)
+        {
+            using var carry = connection.CreateCommand();
+            carry.Transaction = transaction;
+            carry.CommandText = "INSERT INTO agent_run_steer_carries(steer_id,run_id) VALUES($steer,$run)";
+            carry.Parameters.AddWithValue("$run", runId.Value);
+            var carriedParameter = carry.Parameters.Add("$steer", SqliteType.Text);
+            foreach (var entry in carried)
+            {
+                carriedParameter.Value = entry.SteerId;
+                await carry.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+        }
+
         // Each image now lives in the run as the UserImage whose id derives from its waiting
         // copy, so the waiting copy goes: an image is stored once, and the steer's image rows
         // still name it through RunSteerContract.DeliveredImagePayloadId.
-        await DeleteWaitingImagesAsync(connection, transaction, runId,
+        await DeleteWaitingImagesAsync(connection, transaction,
             steers.SelectMany(steer => steer.ImageSources ?? []).ToArray(), ct).ConfigureAwait(false);
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
         return steers;
     }
 
+    /// <summary>One steer waiting for a run, with the run that currently holds its text.</summary>
+    private sealed record WaitingSteer(string SteerId, PayloadId Payload, RunId Owner);
+
+    private static async Task<List<WaitingSteer>> ReadPendingAsync(
+        SqliteConnection connection, SqliteTransaction transaction, RunId runId, int limit, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$run", runId.Value);
+        command.Parameters.AddWithValue("$limit", limit);
+        command.CommandText = """
+            SELECT steer_id,payload_id FROM agent_run_steers
+            WHERE run_id=$run AND delivered_event_id IS NULL ORDER BY created_at_utc,steer_id LIMIT $limit
+            """;
+        var pending = new List<WaitingSteer>();
+        using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+            pending.Add(new WaitingSteer(reader.GetString(0), new PayloadId(reader.GetString(1)), runId));
+        return pending;
+    }
+
+    /// <summary>
+    /// Steers this session's earlier runs will never read, newest last. A run that ended, or
+    /// whose final reply is committed, cannot reach another model step, so its waiting steer is
+    /// handed to the run in hand instead of being returned to the client.
+    /// </summary>
+    private static async Task<List<WaitingSteer>> ReadCarriedAsync(
+        SqliteConnection connection, SqliteTransaction transaction, AgentRun run, int limit, CancellationToken ct)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.Parameters.AddWithValue("$session", run.SessionId.Value);
+        command.Parameters.AddWithValue("$run", run.RunId.Value);
+        command.CommandText = """
+            SELECT s.steer_id,s.payload_id,s.run_id,r.state,r.history_wait_kind
+            FROM agent_run_steers s JOIN agent_runs r ON r.run_id=s.run_id
+            WHERE r.session_id=$session AND s.run_id<>$run AND s.delivered_event_id IS NULL
+            ORDER BY s.created_at_utc,s.steer_id
+            """;
+        var carried = new List<WaitingSteer>();
+        using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            if (carried.Count == limit) break;
+            var kind = reader.IsDBNull(4) ? (HistoryWaitKind?)null : (HistoryWaitKind)reader.GetInt32(4);
+            var status = new HarnessRunStatus((HarnessRunState)reader.GetInt32(3), kind);
+            if (!NeverReadsSteers(status)) continue;
+            carried.Add(new WaitingSteer(reader.GetString(0), new PayloadId(reader.GetString(1)),
+                new RunId(reader.GetString(2))));
+        }
+
+        return carried;
+    }
+
+    private async Task<DeliveredSteer> ReadDeliveredAsync(
+        SqliteConnection connection, SqliteTransaction transaction, WaitingSteer entry, CancellationToken ct)
+    {
+        var content = await payloads.ReadForModelAsync(connection, transaction, entry.Owner, entry.Payload, ct)
+            .ConfigureAwait(false);
+        var images = new List<string>();
+        var sources = new List<PayloadId>();
+        foreach (var image in await ReadImageRowsAsync(connection, transaction, entry.SteerId, ct).ConfigureAwait(false))
+        {
+            var imageContent = await payloads.ReadForModelAsync(connection, transaction, entry.Owner, image.PayloadId, ct)
+                .ConfigureAwait(false);
+            images.Add(Encoding.UTF8.GetString(imageContent.Plaintext.Span));
+            sources.Add(image.PayloadId);
+        }
+
+        return new DeliveredSteer(entry.SteerId, Encoding.UTF8.GetString(content.Plaintext.Span), images, sources);
+    }
+
     private static PayloadId NewPayloadId() => new("payload_" + Guid.NewGuid().ToString("N"));
 
     private static async Task DeleteWaitingImagesAsync(
-        SqliteConnection connection, SqliteTransaction transaction, RunId runId, IReadOnlyList<PayloadId> waiting, CancellationToken ct)
+        SqliteConnection connection, SqliteTransaction transaction, IReadOnlyList<PayloadId> waiting, CancellationToken ct)
     {
         foreach (var chunk in waiting.Chunk(128))
         {
             using var delete = connection.CreateCommand();
             delete.Transaction = transaction;
             var names = chunk.Select((_, index) => "$image" + index).ToArray();
+            // By payload id alone: a retained steer's waiting image belongs to the earlier run
+            // that stored it, while its delivered copy now lives in the run that read the steer.
             delete.CommandText =
-                $"DELETE FROM agent_payloads WHERE run_id=$run AND kind=$kind AND payload_id IN ({string.Join(',', names)})";
-            delete.Parameters.AddWithValue("$run", runId.Value);
+                $"DELETE FROM agent_payloads WHERE kind=$kind AND payload_id IN ({string.Join(',', names)})";
             delete.Parameters.AddWithValue("$kind", (int)HarnessPayloadKind.SteerImage);
             for (var index = 0; index < chunk.Length; index++) delete.Parameters.AddWithValue(names[index], chunk[index].Value);
             await delete.ExecuteNonQueryAsync(ct).ConfigureAwait(false);

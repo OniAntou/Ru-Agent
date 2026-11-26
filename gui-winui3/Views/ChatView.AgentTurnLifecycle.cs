@@ -64,7 +64,6 @@ namespace RuApp.Views
             _replyRenderScheduler.Invalidate();
             _replyTextBase = 0;
             _liveSteerActivityIds.Clear();
-            _waitingSteers.Clear();
             lock (_accumulatorLock)
             {
                 _replyAccumulator.Begin(_activeSessionId, _activeSessionId);
@@ -150,9 +149,10 @@ namespace RuApp.Views
             _activeAgentRunId = null;
             UpdateAgentInlineState();
 
-            // Messages the run ended without reading were meant for now: they go first, and
-            // the queue waits for the turn they start.
-            if (await SendReturnedSteersAsync(runId, cancellationToken)) return;
+            // A message this run never read is retained by the session: it stays above the
+            // end of the transcript and the next turn of this chat reads it (ADR 0056).
+            RestoreWaitingSteerCopies();
+            ShowRetainedSteerNotice();
 
             // Queued turns waited for exactly this moment: the previous turn is over
             // and its transcript is settled, so the next one may start.

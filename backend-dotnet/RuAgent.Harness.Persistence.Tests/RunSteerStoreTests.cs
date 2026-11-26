@@ -17,7 +17,7 @@ public sealed class RunSteerStoreTests
         var (events, steers, runId) = await RunningAsync(fixture);
 
         Assert.Equal(RunSteerAppendOutcome.Accepted,
-            await steers.AppendAsync(runId, SteerOne, "Dùng parser mới 🐈", HarnessStoreTestFixture.Timestamp, default));
+            await steers.AppendAsync(runId, SteerOne, "DÃ¹ng parser má»›i ðŸˆ", HarnessStoreTestFixture.Timestamp, default));
         Assert.True(await steers.HasPendingAsync(runId, default));
         Assert.Equal(0L, await BoundUserEntriesAsync(fixture, runId));
         Assert.Equal(RunSteerContract.StatePending, Assert.Single(await steers.ListAsync(runId, default)).State);
@@ -25,7 +25,7 @@ public sealed class RunSteerStoreTests
         var before = (await events.GetRunAsync(runId, default))!;
         var delivered = Assert.Single(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
         Assert.Equal(SteerOne, delivered.SteerId);
-        Assert.Equal("Dùng parser mới 🐈", delivered.Text);
+        Assert.Equal("DÃ¹ng parser má»›i ðŸˆ", delivered.Text);
         Assert.Empty(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
         Assert.False(await steers.HasPendingAsync(runId, default));
 
@@ -69,13 +69,68 @@ public sealed class RunSteerStoreTests
     }
 
     [Fact]
-    public async Task A_run_that_ends_drops_the_images_of_steers_it_never_read()
+    public async Task A_steer_a_terminal_run_never_read_joins_the_next_run_of_its_session()
     {
         await using var fixture = await HarnessStoreTestFixture.CreateAsync();
-        var (events, steers, runId) = await RunningAsync(fixture);
-        await steers.AppendAsync(runId, SteerOne, "never read", [Png("a"), Png("b")], HarnessStoreTestFixture.Timestamp, default);
-        Assert.Equal(2, (await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.SteerImage, default)).Count);
+        var (events, steers, firstRun) = await RunningAsync(fixture);
+        string[] images = [Png("a"), Png("b")];
+        await steers.AppendAsync(firstRun, SteerOne, "never read", images, HarnessStoreTestFixture.Timestamp, default);
+        await EndRunAsync(events, firstRun);
 
+        // The images wait for the run that will read the steer; the end of the first run does
+        // not drop them, because no client is expected to send the message again.
+        Assert.Equal(2, (await fixture.PayloadStore.ListPayloadIdsAsync(firstRun, HarnessPayloadKind.SteerImage, default)).Count);
+
+        var nextRun = await StartRunAsync(fixture, events, runNumber: 2, sessionNumber: 1);
+        var delivered = Assert.Single(await steers.DeliverAsync(nextRun, HarnessStoreTestFixture.Timestamp, default));
+        Assert.Equal(SteerOne, delivered.SteerId);
+        Assert.Equal("never read", delivered.Text);
+        Assert.Equal(images, delivered.ImageDataUrls);
+
+        // It was delivered once for the session: the earlier run reports it delivered, the run
+        // that read it is recorded, and the images moved there with the derived run image ids.
+        Assert.Equal(RunSteerContract.StateDelivered, Assert.Single(await steers.ListAsync(firstRun, default)).State);
+        Assert.Empty(await steers.DeliverAsync(nextRun, HarnessStoreTestFixture.Timestamp, default));
+        Assert.Empty(await fixture.PayloadStore.ListPayloadIdsAsync(firstRun, HarnessPayloadKind.SteerImage, default));
+        Assert.Equal(2, (await fixture.PayloadStore.ListPayloadIdsAsync(nextRun, HarnessPayloadKind.UserImage, default)).Count);
+        Assert.Equal(nextRun.Value, await CarriedRunAsync(fixture, SteerOne));
+    }
+
+    [Fact]
+    public async Task A_steer_of_another_session_and_one_a_running_run_still_holds_are_not_carried()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        var (events, steers, firstRun) = await RunningAsync(fixture);
+        await steers.AppendAsync(firstRun, SteerOne, "never read", HarnessStoreTestFixture.Timestamp, default);
+
+        // The first run is still running, so its steer is pending for that run, not retained.
+        var sameSession = await StartRunAsync(fixture, events, runNumber: 2, sessionNumber: 1);
+        Assert.Empty(await steers.DeliverAsync(sameSession, HarnessStoreTestFixture.Timestamp, default));
+
+        await EndRunAsync(events, firstRun);
+        var otherSession = await StartRunAsync(fixture, events, runNumber: 3, sessionNumber: 2);
+        Assert.Empty(await steers.DeliverAsync(otherSession, HarnessStoreTestFixture.Timestamp, default));
+
+        // Only a later run of the same session reads it.
+        var sameSessionNext = await StartRunAsync(fixture, events, runNumber: 4, sessionNumber: 1);
+        Assert.Single(await steers.DeliverAsync(sameSessionNext, HarnessStoreTestFixture.Timestamp, default));
+    }
+
+    private static async Task<RunId> StartRunAsync(
+        HarnessStoreTestFixture fixture, SqliteHarnessEventStore events, int runNumber, int sessionNumber)
+    {
+        // Each creation carries its own idempotency key: the fixture's default would replay
+        // the first run of the session instead of creating another one.
+        var next = fixture.NewRun(runNumber, sessionNumber, 1,
+            idempotencyHashCharacter: (char)('a' + runNumber % 26),
+            requestHashCharacter: (char)('b' + runNumber % 25),
+            status: new HarnessRunStatus(HarnessRunState.Running));
+        await events.TryCreateRunAsync(next, default);
+        return next.Run.RunId;
+    }
+
+    private static async Task EndRunAsync(SqliteHarnessEventStore events, RunId runId)
+    {
         var running = (await events.GetRunAsync(runId, default))!;
         var ended = new AgentRun(
             running.RunId, running.SessionId, running.WorkspaceId,
@@ -85,16 +140,19 @@ public sealed class RunSteerStoreTests
             running.Preset, running.PolicySnapshotVersion, running.PolicySnapshotSha256,
             running.CreatedAt, running.UpdatedAt.AddSeconds(1), terminalAt: running.UpdatedAt.AddSeconds(1),
             terminalErrorCode: "cancelled");
-        var result = await events.CommitAsync(new HarnessCommit(runId, running.Version, ended,
-            [new HarnessEventIntent(HarnessStoreTestFixture.Event(901), HarnessEventKind.RunStateChanged)], [], []), default);
+        Assert.Equal(HarnessCommitOutcome.Committed, (await events.CommitAsync(new HarnessCommit(runId, running.Version, ended,
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(901), HarnessEventKind.RunStateChanged)], [], []), default)).Outcome);
+    }
 
-        Assert.Equal(HarnessCommitOutcome.Committed, result.Outcome);
-        Assert.Empty(await fixture.PayloadStore.ListPayloadIdsAsync(runId, HarnessPayloadKind.SteerImage, default));
-        // The returned steer still reads back with its text and image count.
-        var steer = Assert.Single(await steers.ListAsync(runId, default));
-        Assert.Equal(RunSteerContract.StateReturned, steer.State);
-        Assert.Equal("never read", steer.Text);
-        Assert.Equal(2, steer.ImageCount);
+    private static async Task<string?> CarriedRunAsync(HarnessStoreTestFixture fixture, string steerId)
+    {
+        await using var connection = fixture.CreateRawConnection();
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT run_id FROM agent_run_steer_carries WHERE steer_id=$steer";
+        command.Parameters.AddWithValue("$steer", steerId);
+        var value = await command.ExecuteScalarAsync();
+        return value is null or DBNull ? null : (string)value;
     }
 
     [Fact]

@@ -405,25 +405,12 @@ public sealed class SteerAttachmentWiringTests
         Assert.Contains("var waiting = SteerMessage(text, attachments);", GuiSource.MethodBody(code, "ShowWaitingSteer"), StringComparison.Ordinal);
         Assert.Contains("AttachedPromptDisplay.Apply(message);", code, StringComparison.Ordinal);
         Assert.Contains("AgentSteerText.Split(text)", code, StringComparison.Ordinal);
-        string returned = GuiSource.MethodBody(code, "SendReturnedSteersAsync");
-        Assert.Contains("AttachedPromptText.Join(", returned, StringComparison.Ordinal);
-        Assert.Contains("ChatAttachmentPolicy.TakeImagesWithinTurnBound(images)", returned, StringComparison.Ordinal);
-        // The waiting copy left the tail already, so a turn that never starts must put the
-        // message back instead of losing it.
-        Assert.Contains("if (started) return true;", returned, StringComparison.Ordinal);
-        Assert.Contains("The message the run did not read is back in the box", returned, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Images_of_returned_steers_that_exceed_one_turn_are_cut_to_the_turn_bound()
-    {
-        var images = Enumerable.Range(0, 6)
-            .Select(index => new ImageAttachmentItem { FileName = $"{index}.png", IsImage = true, Base64Data = "AAAA" })
-            .ToList();
-
-        var kept = ChatAttachmentPolicy.TakeImagesWithinTurnBound(images);
-
-        Assert.Equal(images.Take(ChatAttachmentPolicy.MaxImageCount), kept);
+        // A message the run did not read is retained by the session: this window keeps its copy
+        // on screen and sends nothing again, so no resend path may come back.
+        Assert.DoesNotContain("SendReturnedSteersAsync", code, StringComparison.Ordinal);
+        Assert.Contains("RestoreWaitingSteerCopies();", code, StringComparison.Ordinal);
+        Assert.Contains("ShowRetainedSteerNotice();", code, StringComparison.Ordinal);
+        Assert.Contains("Ru did not read your message", GuiSource.MethodBody(code, "ShowRetainedSteerNotice"), StringComparison.Ordinal);
     }
 }
 

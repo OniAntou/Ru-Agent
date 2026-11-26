@@ -55,7 +55,8 @@ duplicate sessions, repeated cursors or exceeded bounds abort planning. Bulk
 planning preserves local workspace hints for open drafts whose Host summaries
 do not yet have workspace paths, without overriding known durable paths. Bulk
 deletion retains the UI context and returns an explicit navigation outcome when
-the active chat is deleted; a later user navigation takes precedence. A complete
+the active chat is deleted: the new-chat screen, unless a later user navigation
+takes precedence. A complete
 listing is checked again before unpinning: a failed delete, a new chat outside the
 confirmed plan, an unavailable listing or a failed preference write retains the
 workspace for retry. Named partial artifact cleanup stays visible in the result.
@@ -556,6 +557,10 @@ list selection, drag visuals, title waves and dialogs; it re-syncs selection on
 `Rendered` and supplies the delete confirmations through `ISessionDeletionPrompts`.
 A delete removes the row as soon as the Host confirms it, then refreshes with
 `RefreshLatestAsync`, which supersedes a poll that may hold the pre-delete list.
+Deleting the chat that is open returns the shell to the new-chat screen (one
+fresh draft session) instead of opening another chat in its place, so the
+conversation on screen changes only when the user chooses one; deleting a chat
+that is not open leaves the open chat and its screen unchanged.
 The workspace sidebar uses the paged Host listing without a dedicated search box,
 Load more sessions button or pagination notice. Host title/message search and
 cursor-based pagination remain available through the backend. Group expansion,
@@ -1094,7 +1099,8 @@ The conversation and history record owned by the Public Host in the shared
 `agent_harness.db` SQLite database (ADR-0013). The
 `DELETE /sessions/{sessionId}` route removes the session and its owned Harness
 artifacts only when the application envelope returns `status: "ok"`; an HTTP
-success status alone is not deletion proof.
+success status alone is not deletion proof. Deleting the open chat lands on the
+new-chat screen; no other chat is opened as its replacement.
 The WinUI workspace `+` creates and opens this record immediately. Its empty
 row is a UI draft named `New Session`, visible only while open. Leaving without
 sending hides the row; the first accepted chat keeps the same session ID and

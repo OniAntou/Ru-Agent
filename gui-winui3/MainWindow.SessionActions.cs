@@ -71,19 +71,11 @@ namespace RuApp
             if (!result.IsRemoved) return;
 
             _chatView?.ForgetSidePanelState(sessionId);
-            switch (result.FollowUp)
+            if (result.FollowUp is SessionDeletionFollowUp.StartNewChat)
             {
-                case SessionDeletionFollowUp.OpenSession open:
-                    SidebarSessionList.SelectedItem = open.Session;
-                    if (_chatView != null)
-                    {
-                        await _chatView.OpenSessionAsync(open.Session.Id, open.Session.Title);
-                    }
-
-                    break;
-                case SessionDeletionFollowUp.StartNewChat:
-                    OnNewChatClick(this, new RoutedEventArgs());
-                    break;
+                // The chat on screen is gone: show the new-chat screen. Opening another
+                // chat here would move the reader into one they did not pick.
+                await StartNewChatAsync();
             }
 
             // A partial result still deleted the chat: only its artifacts are left, so

@@ -105,18 +105,11 @@ namespace RuApp
                 }
 
                 var result = await Sidebar.DeleteWorkspaceSessionsAsync(plan);
-                switch (result.FollowUp)
+                if (result.FollowUp is SessionDeletionFollowUp.StartNewChat)
                 {
-                    case SessionDeletionFollowUp.OpenSession open:
-                        SidebarSessionList.SelectedItem = open.Session;
-                        if (_chatView is not null)
-                        {
-                            await _chatView.OpenSessionAsync(open.Session.Id, open.Session.Title);
-                        }
-                        break;
-                    case SessionDeletionFollowUp.StartNewChat:
-                        OnNewChatClick(NavNewChat, new RoutedEventArgs());
-                        break;
+                    // The chat on screen was among those deleted: go home instead of
+                    // opening a surviving chat the user did not pick.
+                    await StartNewChatAsync();
                 }
 
                 SetSessionActionError(result.Failed > 0

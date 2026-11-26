@@ -893,6 +893,16 @@ namespace RuApp
                 return;
             }
 
+            await StartNewChatAsync();
+        }
+
+        /// <summary>
+        /// Opens the new-chat screen. The New Chat button and a delete that removed the
+        /// open chat both land here, so the caller awaits it and a failure stays a
+        /// bounded status instead of a window that closes.
+        /// </summary>
+        private async Task StartNewChatAsync()
+        {
             if (_apiService == null || _chatView == null) return;
             try
             {
@@ -901,7 +911,6 @@ namespace RuApp
             }
             catch (Exception ex)
             {
-                // async void: an unhandled exception here tears the process down.
                 GuiDiagnosticWriter.AppendTraceLine($"[MainWindow] New chat failed: {ex.Message}");
                 Shell.ReportError("Could not create a new chat session");
             }

@@ -51,7 +51,7 @@ public sealed partial class SessionSidebarViewModelTests
     }
 
     [Fact]
-    public async Task Workspace_delete_returns_the_next_session_when_it_removes_the_active_chat()
+    public async Task Workspace_delete_goes_home_when_it_removes_the_active_chat()
     {
         var active = Session("a", "Deleted");
         active.WorkspacePath = @"D:\work\app";
@@ -66,8 +66,9 @@ public sealed partial class SessionSidebarViewModelTests
 
         var result = await viewModel.DeleteWorkspaceSessionsAsync(plan!);
 
-        var followUp = Assert.IsType<SessionDeletionFollowUp.OpenSession>(result.FollowUp);
-        Assert.Equal("b", followUp.Session.Id);
+        // The surviving chat is not opened in its place: the shell goes home.
+        Assert.IsType<SessionDeletionFollowUp.StartNewChat>(result.FollowUp);
+        Assert.Contains(viewModel.Sessions, row => row.Id == "b");
         Assert.Null(viewModel.ActiveSessionId);
     }
 

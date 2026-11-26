@@ -72,7 +72,7 @@ public sealed partial class SessionSidebarViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task Deleting_the_open_session_opens_the_newest_remaining_one()
+    public async Task Deleting_the_open_session_returns_to_the_new_chat_screen()
     {
         var backend = new FakeSessions(Session("a", "First"), Session("b", "Second"));
         var viewModel = NewViewModel(backend);
@@ -82,8 +82,9 @@ public sealed partial class SessionSidebarViewModelTests : IDisposable
 
         var result = await viewModel.DeleteAsync("a", openSessionId: "a", new FakePrompts());
 
-        var open = Assert.IsType<SessionDeletionFollowUp.OpenSession>(result.FollowUp);
-        Assert.Equal("b", open.Session.Id);
+        // Another chat is never opened in its place: the shell goes home.
+        Assert.IsType<SessionDeletionFollowUp.StartNewChat>(result.FollowUp);
+        Assert.Equal(["b"], viewModel.Sessions.Select(session => session.Id));
     }
 
     [Fact]

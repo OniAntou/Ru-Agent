@@ -152,11 +152,11 @@ public sealed partial class SessionSidebarViewModel
             if (remaining is null || remaining.SessionIds.Count == 0)
                 workspaceRemoved = TryRemoveWorkspacePin(plan);
         }
+        // The open chat is gone and no later navigation owns the screen: hand it back to
+        // the new-chat screen rather than opening a chat the user did not pick.
         SessionDeletionFollowUp followUp = activeDeletionGeneration == _navigationGeneration
             && ActiveSessionId is null
-            ? Sessions.Count > 0
-                ? new SessionDeletionFollowUp.OpenSession(Sessions[0])
-                : new SessionDeletionFollowUp.StartNewChat()
+            ? new SessionDeletionFollowUp.StartNewChat()
             : new SessionDeletionFollowUp.Nothing();
         return new WorkspaceDeletionResult(plan.SessionIds.Count, deleted, partial, failed, followUp, workspaceRemoved);
     }

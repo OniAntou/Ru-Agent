@@ -81,8 +81,7 @@ internal abstract record SessionDeletionFollowUp
 {
     internal sealed record Nothing : SessionDeletionFollowUp;
 
-    internal sealed record OpenSession(SessionInfo Session) : SessionDeletionFollowUp;
-
+    /// <summary>The open chat was deleted: show the new-chat screen, not another chat.</summary>
     internal sealed record StartNewChat : SessionDeletionFollowUp;
 }
 
@@ -695,6 +694,11 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
     /// confirms; an HTTP success alone is not deletion proof. A partial delete (chat gone,
     /// artifacts left) is reported as deleted with an offer to retry the cleanup.
     /// </summary>
+    /// <remarks>
+    /// Deleting the open chat hands the shell back to the new-chat screen. Another chat is
+    /// never opened in its place: the user did not pick it, and a delete should not move
+    /// the conversation on screen.
+    /// </remarks>
     internal async Task<SessionDeletionResult> DeleteAsync(
         string sessionId, string? openSessionId, ISessionDeletionPrompts prompts)
     {
@@ -717,9 +721,9 @@ public sealed partial class SessionSidebarViewModel : ObservableObject, IAsyncDi
         RemoveRow(sessionId);
         await RefreshLatestAsync();
 
-        SessionDeletionFollowUp followUp = wasOpen && Sessions.Count > 0
-            ? new SessionDeletionFollowUp.OpenSession(Sessions[0])
-            : Sessions.Count == 0 ? new SessionDeletionFollowUp.StartNewChat() : new SessionDeletionFollowUp.Nothing();
+        SessionDeletionFollowUp followUp = wasOpen
+            ? new SessionDeletionFollowUp.StartNewChat()
+            : new SessionDeletionFollowUp.Nothing();
         // The chat is gone either way; the cleanup offer comes after the shell moved on.
         return new(followUp, IsRemoved: true, outcome.Partial, outcome.Message);
     }

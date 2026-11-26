@@ -505,8 +505,10 @@ missing or failed deletes return `status: "error"` with bounded copy.
 Clients must inspect the application status instead of treating HTTP success as
 proof of deletion. WinUI asks for confirmation, refreshes the sidebar only
 after `status: "ok"`, and shows a bounded error without silently replacing the
-conversation when deletion fails. If the last session was deleted
-successfully, the UI creates one fresh session.
+conversation when deletion fails. Deleting the chat that is open always returns
+the UI to the new-chat screen by creating one fresh session, whether or not other
+chats remain; another chat is never opened in its place. Deleting a chat that is
+not open leaves the current conversation in place.
 
 ## Action execution kernel
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(gui)**: Deleting the chat that is open returns to the new-chat screen instead of
+  opening another chat. The newest remaining chat used to take its place, so a delete moved
+  the reader into a conversation they had not chosen; the welcome screen now comes back, as it
+  already did after deleting the last chat. Deleting a workspace whose chats include the open
+  one goes home the same way, and deleting a chat that is not open still leaves the open chat
+  and its screen untouched.
+
 - **feat(agent)**: A reopened chat shows the messages its runs never read. `GET
   /agent/v1/sessions/{sessionId}/steers` lists a session's returned steers, so Desktop draws
   them at the tail again — with the "Ru did not read your message" notice — after an app

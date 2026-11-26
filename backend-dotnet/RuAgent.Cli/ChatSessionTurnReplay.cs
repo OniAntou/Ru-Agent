@@ -126,10 +126,18 @@ internal static class ChatSessionTurnReplay
             .OrderBy(row => row.DurableSequence ?? long.MaxValue)
             .ToArray();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var transcript = older.Transcript.Concat(shown.Transcript)
-            .OrderBy(entry => entry.Sequence)
+        var joined = older.Transcript.Concat(shown.Transcript)
             .Where(entry => entry.ActivityId is not { } id || seen.Add(id))
-            .ToArray();
+            .ToList();
+        // A page without narration has no entries; once another page brings some, its rows
+        // would vanish from the transcript-ordered replay. Each row keeps an entry of its own.
+        if (joined.Count > 0)
+        {
+            joined.AddRange(rows.Where(row => row.DurableSequence is not null && seen.Add(row.ActivityId))
+                .Select(row => new AgentRunTranscriptEntry(row.DurableSequence!.Value, "activity", null, row.ActivityId)));
+        }
+
+        var transcript = joined.OrderBy(entry => entry.Sequence).ToArray();
         return new AgentRunActivityReplay(rows, transcript, older.HasMore, older.NextBeforeSequence, older.OlderCount);
     }
 

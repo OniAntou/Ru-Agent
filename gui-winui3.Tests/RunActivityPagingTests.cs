@@ -68,6 +68,41 @@ public sealed class RunActivityPagingTests
     }
 
     [Fact]
+    public void Rows_of_a_page_without_narration_stay_in_the_rebuilt_timeline()
+    {
+        // The older page's window held no narration, so it carries no transcript entries.
+        var shown = new ApiService.RunActivityReplay(
+            [Model("a40", 40)],
+            [new(39, "text", "Looking at the tail.", null), new(40, "activity", null, "a40")],
+            NextBeforeSequence: 40, OlderCount: 2);
+        var older = new ApiService.RunActivityReplay([Model("a10", 10), Model("a20", 20)], []);
+
+        var merged = RunActivityPageMerger.Merge(Replay(shown), older);
+        var built = AgentReplaySegmentBuilder.Build(merged.Activities, merged.Transcript, "Done.");
+
+        Assert.NotNull(built);
+        Assert.Equal(new[] { "a10", "a20", "a40" },
+            built!.Segments.OfType<ActivitySegment>().Select(segment => segment.ActivityId));
+    }
+
+    [Fact]
+    public async Task A_run_still_working_is_not_paged_back()
+    {
+        var page = Page(next: 40, older: 9, ("a40", 40));
+        var runs = await AgentActivityReplayLoader.LoadAsync("s",
+            (_, _) => Task.FromResult<IReadOnlyList<ApiService.SessionRunRef>?>(
+            [
+                new("done", true, "completed", null, null),
+                new("live", false, "running", null, null),
+            ]),
+            (_, _) => Task.FromResult<ApiService.RunActivityReplay?>(page),
+            CancellationToken.None);
+
+        Assert.True(runs.Single(run => run.RunId == "done").HasMore);
+        Assert.False(runs.Single(run => run.RunId == "live").HasMore);
+    }
+
+    [Fact]
     public void A_checklist_the_newest_page_led_with_keeps_one_copy_at_its_own_place()
     {
         AgentTodoWire[] todos = [new("Older task", "pending")];

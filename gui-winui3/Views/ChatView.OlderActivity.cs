@@ -71,12 +71,12 @@ namespace RuApp.Views
                 }
 
                 var answer = Messages[last];
+                if (!string.Equals(answer.Role, "assistant", StringComparison.Ordinal)) return;
                 var merged = RunActivityPageMerger.Merge(shown, page);
                 answer.Content = paging.PersistedText ?? string.Empty;
                 var parts = SessionTranscriptBuilder.ApplyReplayAndSplit(answer, merged, paging.PersistedText);
 
                 var scroller = ChatScrollViewer;
-                var offset = scroller?.VerticalOffset ?? 0;
                 var extent = scroller?.ExtentHeight ?? 0;
                 _holdOlderActivitySentinels = true;
                 for (var index = last; index >= first; index--) Messages.RemoveAt(index);
@@ -91,20 +91,24 @@ namespace RuApp.Views
                 _sidePanelEditsDirty = true;
                 RefreshSidePanelEdits();
 
-                // Everything new sits above what the reader sees: move down by what was added.
-                void KeepReaderInPlace()
+                // Rows were added above the reader, often while the wheel is still turning, so this
+                // cannot use RunAfterLayout (it stands down when the reader scrolls). It flushes
+                // layout itself, moves down by the added height, then lets sentinels fire again.
+                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
                 {
-                    if (ChatScrollViewer is not { } settled) return;
-                    var added = Math.Max(0, settled.ExtentHeight - extent);
-                    settled.ChangeView(null, Math.Min(offset + added, settled.ScrollableHeight), null, disableAnimation: true);
-                    _followOutput = false;
-                }
-
-                RunAfterLayout(KeepReaderInPlace);
-                // RunAfterLayout skips its action when the reader scrolls first; the hold is
-                // released either way, after it, from the same low-priority queue.
-                DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
-                    () => _holdOlderActivitySentinels = false);
+                    try
+                    {
+                        if (generation != _sessionOpenGeneration || ChatScrollViewer is not { } settled) return;
+                        ChatListView.UpdateLayout();
+                        var added = Math.Max(0, settled.ExtentHeight - extent);
+                        settled.ChangeView(null, Math.Min(settled.VerticalOffset + added, settled.ScrollableHeight), null, disableAnimation: true);
+                        _followOutput = false;
+                    }
+                    finally
+                    {
+                        _holdOlderActivitySentinels = false;
+                    }
+                });
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

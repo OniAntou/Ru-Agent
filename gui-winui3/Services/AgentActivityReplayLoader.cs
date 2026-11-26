@@ -56,8 +56,10 @@ internal static class AgentActivityReplayLoader
                             runId,
                             RunActivityPageMerger.Items(replay, runId),
                             replay.Transcript,
-                            replay.NextBeforeSequence,
-                            replay.OlderCount);
+                            // A run still working is drawn by its live feed; rebuilding it from
+                            // an older page would replace rows that arrived since the open.
+                            runs[slot].IsTerminal ? replay.NextBeforeSequence : null,
+                            runs[slot].IsTerminal ? replay.OlderCount : 0);
                 }
                 finally
                 {

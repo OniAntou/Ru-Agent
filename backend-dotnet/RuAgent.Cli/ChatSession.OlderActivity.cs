@@ -23,6 +23,9 @@ public sealed partial class AgentCommands
         // navigation moves the generation on, after which a redraw would erase newer rows.
         private int? replayedGeneration;
 
+        private static bool IsOlderCommand(string? line) =>
+            line?.TrimStart().Split(' ', 2)[0].Equals("/older", StringComparison.OrdinalIgnoreCase) == true;
+
         private void RememberReplayedTurns(string targetSessionId, ImmutableArray<ChatReplayTurn> turns,
             GetAgentRunResponse? retained, int? generation)
         {

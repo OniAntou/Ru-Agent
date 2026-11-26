@@ -13,6 +13,8 @@ public sealed partial class AgentCommands
             || status.Equals("cancelled", StringComparison.OrdinalIgnoreCase)
             || status.Equals("interrupted", StringComparison.OrdinalIgnoreCase));
 
+    internal static bool IsStateChangingSlashCommandForTests(string line) => IsStateChangingSlashCommand(line);
+
     private static bool IsStateChangingSlashCommand(string line)
     {
         var command = line.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
@@ -21,7 +23,7 @@ public sealed partial class AgentCommands
             return false;
         }
 
-        return command.ToLowerInvariant() is not ("/help" or "/sessions" or "/subagents" or "/older");
+        return command.ToLowerInvariant() is not ("/help" or "/sessions" or "/subagents");
     }
 
     private static bool IsParkedRunStatus(string? status) =>

@@ -31,10 +31,18 @@ internal static class RunActivityPageMerger
             .ToArray();
 
         var seenActivities = new HashSet<string>(StringComparer.Ordinal);
-        var transcript = older.Transcript.Concat(shown.Transcript)
-            .OrderBy(entry => entry.Sequence)
+        var joined = older.Transcript.Concat(shown.Transcript)
             .Where(entry => entry.ActivityId is not { } id || seenActivities.Add(id))
-            .ToArray();
+            .ToList();
+        // A page without narration has no entries; once another page brings some, the segment
+        // builder would drop its rows. Each row keeps an entry of its own.
+        if (joined.Count > 0)
+        {
+            joined.AddRange(activities.Where(item => item.ReplaySequence is not null && seenActivities.Add(item.ActivityId))
+                .Select(item => new ApiService.RunTranscriptEntry(item.ReplaySequence!.Value, "activity", null, item.ActivityId)));
+        }
+
+        var transcript = joined.OrderBy(entry => entry.Sequence).ToArray();
         return new SessionRunReplay(shown.RunId, activities, transcript, older.NextBeforeSequence, older.OlderCount);
     }
 }

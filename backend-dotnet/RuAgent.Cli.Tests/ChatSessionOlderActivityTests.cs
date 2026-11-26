@@ -36,6 +36,19 @@ public sealed class ChatSessionOlderActivityTests
     }
 
     [Fact]
+    public void Rows_of_a_page_without_narration_keep_a_transcript_entry()
+    {
+        var shown = new AgentRunActivityReplay([Row("a40", 40)],
+            [new(39, "text", "Looking at the tail.", null), new(40, "activity", null, "a40")], true, 40, 2);
+        var older = new AgentRunActivityReplay([Row("a10", 10), Row("a20", 20)], []);
+
+        var merged = ChatSessionTurnReplay.MergeOlder(shown, older);
+
+        Assert.Equal(new[] { "a10", "a20", "a40" },
+            merged.Transcript.Where(entry => entry.Kind == "activity").Select(entry => entry.ActivityId));
+    }
+
+    [Fact]
     public void A_still_older_page_keeps_the_cursor_it_was_given()
     {
         var shown = new AgentRunActivityReplay([Row("a40", 40)], [], true, 40, 900);
@@ -56,9 +69,11 @@ public sealed class ChatSessionOlderActivityTests
         Assert.Equal(expected, ChatSessionTurnReplay.OlderStepsNotice(older));
 
     [Fact]
-    public void Older_is_listed_and_does_not_change_session_state()
+    public void Older_is_listed_and_waits_for_a_working_turn_like_other_session_commands()
     {
         Assert.Contains(Tui.ChatCommandCatalog.KnownCommands, command => command.Command == "/older");
         Assert.Contains(Tui.ChatCommandCatalog.FindMatches("/ol"), command => command.Command == "/older");
+        // It redraws the transcript, so it must not run beside a live turn.
+        Assert.True(AgentCommands.IsStateChangingSlashCommandForTests("/older"));
     }
 }

@@ -450,6 +450,8 @@ namespace RuApp.Models
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            // Where the earlier-activity sentinel sits follows the layout the reply uses.
+            if (propertyName is nameof(HasSegments) or nameof(ShowLegacyActivityFeed)) OnOlderActivityLayoutChanged();
         }
     }
 

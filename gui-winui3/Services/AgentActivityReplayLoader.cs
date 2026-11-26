@@ -54,8 +54,10 @@ internal static class AgentActivityReplayLoader
                         ? EmptyReplay(runId)
                         : new SessionRunReplay(
                             runId,
-                            replay.Activities.Select(model => new AgentActivityItem(model) { OwnerRunId = runId }).ToArray(),
-                            replay.Transcript);
+                            RunActivityPageMerger.Items(replay, runId),
+                            replay.Transcript,
+                            replay.NextBeforeSequence,
+                            replay.OlderCount);
                 }
                 finally
                 {

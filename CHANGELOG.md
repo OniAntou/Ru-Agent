@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(gui)**: Scrolling up through a reopened long run loads its earlier activity. The
+  run's first reply shows "Loading N earlier steps…" above its activity; when that line comes
+  into view, the next older page is read and drawn above, in order, and the view keeps the
+  reader's place. Steers in the older page split the reply as they do on open.
+
 - **feat(host)**: A long run's activity replay is paged instead of cut at its newest 500 rows.
   `GET /agent/v1/runs/{runId}/activities` takes `before_sequence` and `limit` and answers
   `has_more`, `next_before_sequence` and `older_count`, so clients read older pages until none

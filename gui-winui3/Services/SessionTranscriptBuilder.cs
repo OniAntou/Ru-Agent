@@ -98,7 +98,13 @@ internal sealed class SessionHistoryPageCursor
 internal sealed record SessionRunReplay(
     string RunId,
     IReadOnlyList<AgentActivityItem> Activities,
-    IReadOnlyList<ApiService.RunTranscriptEntry> Transcript);
+    IReadOnlyList<ApiService.RunTranscriptEntry> Transcript,
+    long? NextBeforeSequence = null,
+    int OlderCount = 0)
+{
+    /// <summary>Older activity of this run is still unread on the Host.</summary>
+    public bool HasMore => NextBeforeSequence is not null;
+}
 
 /// <summary>Joins durable messages and run replay by identity, never by tail position.</summary>
 internal static class SessionTranscriptBuilder
@@ -141,8 +147,7 @@ internal static class SessionTranscriptBuilder
                 && (replay.Activities.Count > 0 || replay.Transcript.Count > 0))
             {
                 var item = new ChatMessageItem { Role = "assistant", SourceRunId = id };
-                ApplyReplay(item, replay);
-                messages.AddRange(TranscriptSteerSplitter.Split(item));
+                messages.AddRange(ApplyReplayAndSplit(item, replay));
                 applied.Add(id);
             }
             pendingUserRun = null;
@@ -185,7 +190,8 @@ internal static class SessionTranscriptBuilder
                 if (replay is not null && applied.Add(replay.RunId))
                 {
                     item.SourceRunId = replay.RunId;
-                    ApplyReplay(item, replay);
+                    messages.AddRange(ApplyReplayAndSplit(item, replay));
+                    continue;
                 }
                 // A steer the run read is drawn as the user's message between two replies.
                 messages.AddRange(TranscriptSteerSplitter.Split(item));
@@ -195,6 +201,28 @@ internal static class SessionTranscriptBuilder
         }
         if (completeHistory) AppendUnansweredRun();
         return messages;
+    }
+
+    /// <summary>
+    /// Draws a replayed run onto its reply and splits it around the steers it read. The first
+    /// reply part, which sits above everything else the run showed, carries the cursor to the
+    /// run's older activity when the Host has more. The reply's own persisted text is captured
+    /// before the replay rebuilds it, so a later page can rebuild around the same answer.
+    /// </summary>
+    internal static IReadOnlyList<ChatMessageItem> ApplyReplayAndSplit(
+        ChatMessageItem message, SessionRunReplay replay, string? persistedText = null)
+    {
+        persistedText ??= message.Content;
+        ApplyReplay(message, replay);
+        var parts = TranscriptSteerSplitter.Split(message);
+        foreach (var part in parts) part.OlderActivity = null;
+        if (replay.NextBeforeSequence is { } next
+            && parts.FirstOrDefault(part => part.Role == "assistant") is { } first)
+        {
+            first.OlderActivity = new RunActivityPaging(replay.RunId, next, replay.OlderCount, persistedText);
+        }
+
+        return parts;
     }
 
     private static void ApplyReplay(ChatMessageItem message, SessionRunReplay replay)

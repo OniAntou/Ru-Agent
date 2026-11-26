@@ -427,6 +427,19 @@
                         HeaderVisible="{x:Bind ShowProcessHeader, Mode=OneWay}"
                         IsExpanded="{x:Bind IsActivityDetailsExpanded, Mode=TwoWay}">
                         <controls:TurnProcessDisclosure.BodyContent>
+                            <StackPanel>
+                            <!--
+                              A long run replays its newest activity first. Scrolling this line
+                              into view reads the run's next older page (ChatView.OlderActivity).
+                            -->
+                            <TextBlock Tag="{x:Bind}"
+                                       Text="{x:Bind OlderActivityLabel, Mode=OneWay}"
+                                       Visibility="{x:Bind ShowOlderActivityInSegments, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                       EffectiveViewportChanged="OnOlderActivitySentinelViewportChanged"
+                                       AutomationProperties.AutomationId="OlderActivitySentinel"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       FontSize="12"
+                                       Margin="0,0,0,8" />
                             <ItemsControl AutomationProperties.AutomationId="AgentActivitySegments"
                                           AutomationProperties.Name="Agent Activity Timeline"
                                           ItemsSource="{x:Bind DisplayedSegments, Mode=OneWay}"
@@ -443,6 +456,7 @@
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                             </ItemsControl>
+                            </StackPanel>
                         </controls:TurnProcessDisclosure.BodyContent>
                     </controls:TurnProcessDisclosure>
                     <!--
@@ -454,6 +468,15 @@
                             BorderThickness="1,0,0,0"
                             Padding="12,2,0,2"
                             Visibility="{x:Bind ShowLegacyActivityFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                    <TextBlock Tag="{x:Bind}"
+                               Text="{x:Bind OlderActivityLabel, Mode=OneWay}"
+                               Visibility="{x:Bind ShowOlderActivityInLegacyFeed, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                               EffectiveViewportChanged="OnOlderActivitySentinelViewportChanged"
+                               AutomationProperties.AutomationId="OlderActivityFeedSentinel"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               FontSize="12"
+                               Margin="0,0,0,8" />
                     <ItemsControl AutomationProperties.AutomationId="AgentActivityFeed"
                                   AutomationProperties.Name="Agent Activity Feed"
                                   AutomationProperties.LiveSetting="Polite"
@@ -466,6 +489,7 @@
                             </ItemsPanelTemplate>
                         </ItemsControl.ItemsPanel>
                     </ItemsControl>
+                    </StackPanel>
                     </Border>
                     <controls:TypingDotsControl IsActive="{x:Bind ShowTypingDots, Mode=OneWay}" />
                     <controls:MarkdownBlock x:Name="AgentReplyTextBlock"

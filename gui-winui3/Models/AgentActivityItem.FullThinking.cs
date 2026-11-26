@@ -33,6 +33,12 @@ public sealed partial class AgentActivityItem
     /// <summary>The run whose payloads hold this row's reasoning; set by whoever built the feed.</summary>
     internal string? OwnerRunId { get; set; }
 
+    /// <summary>
+    /// The durable sequence a replayed row was rebuilt at, so rows from separately read
+    /// replay pages merge back into chronological order. Null for a live row.
+    /// </summary>
+    internal long? ReplaySequence { get; set; }
+
     /// <summary>Whether opening the block should read the whole reasoning now.</summary>
     internal bool NeedsFullThinking => IsThinking && ReasoningPayloadId is not null
         && _fullThinking is null && _thinkingLoad != ThinkingLoad.Loading;

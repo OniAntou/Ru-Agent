@@ -536,12 +536,23 @@ namespace RuApp.Services
             || string.Equals(status, "cancelled", StringComparison.Ordinal)
             || string.Equals(status, "interrupted", StringComparison.Ordinal);
 
-        public async Task<RunActivityReplay?> ListRunActivitiesAsync(string runId, CancellationToken cancellationToken)
+        public Task<RunActivityReplay?> ListRunActivitiesAsync(string runId, CancellationToken cancellationToken) =>
+            ListRunActivitiesAsync(runId, beforeSequence: null, cancellationToken);
+
+        /// <summary>
+        /// One page of a run's replay: the newest without <paramref name="beforeSequence"/>,
+        /// otherwise the page just older than that durable sequence.
+        /// </summary>
+        public async Task<RunActivityReplay?> ListRunActivitiesAsync(
+            string runId, long? beforeSequence, CancellationToken cancellationToken)
         {
             try
             {
+                var cursor = beforeSequence is > 0
+                    ? "?before_sequence=" + beforeSequence.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : string.Empty;
                 using var response = await _httpClient.GetAsync(
-                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/activities", cancellationToken);
+                    $"{_baseUrl}/agent/v1/runs/{Uri.EscapeDataString(runId)}/activities{cursor}", cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
                     return null;
@@ -591,7 +602,9 @@ namespace RuApp.Services
                         wire.ReasoningPayloadId));
                 }
 
-                return new RunActivityReplay(rows, ReadTranscript(document.RootElement));
+                return ReadPaging(document.RootElement) is { } paging
+                    ? new RunActivityReplay(rows, ReadTranscript(document.RootElement), paging.Next, paging.Older)
+                    : new RunActivityReplay(rows, ReadTranscript(document.RootElement));
             }
             catch (Exception ex)
             {
@@ -616,7 +629,32 @@ namespace RuApp.Services
         /// </summary>
         public sealed record RunActivityReplay(
             IReadOnlyList<AgentActivityModel> Activities,
-            IReadOnlyList<RunTranscriptEntry> Transcript);
+            IReadOnlyList<RunTranscriptEntry> Transcript,
+            long? NextBeforeSequence = null,
+            int OlderCount = 0)
+        {
+            /// <summary>Older activity remains; <see cref="NextBeforeSequence"/> reads it.</summary>
+            public bool HasMore => NextBeforeSequence is not null;
+        }
+
+        /// <summary>
+        /// The next older page, when the Host says one remains and names a usable cursor.
+        /// A host that predates paging, or a claim without a cursor, ends the replay here.
+        /// </summary>
+        private static (long Next, int Older)? ReadPaging(JsonElement root)
+        {
+            if (!root.TryGetProperty("has_more", out var more) || more.ValueKind != JsonValueKind.True
+                || !root.TryGetProperty("next_before_sequence", out var cursor)
+                || !cursor.TryGetInt64(out var next) || next <= 0)
+            {
+                return null;
+            }
+
+            var older = root.TryGetProperty("older_count", out var count) && count.TryGetInt32(out var rows) && rows > 0
+                ? rows
+                : 0;
+            return (next, older);
+        }
 
         private static IReadOnlyList<RunTranscriptEntry> ReadTranscript(JsonElement root)
         {

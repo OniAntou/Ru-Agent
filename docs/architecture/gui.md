@@ -766,6 +766,15 @@ Live SSE activity and delta queues retain separate bounded capacities, then
 merge by publication sequence before delivery. Queue priority must not reorder
 an activity ahead of preceding prose. The desktop replay builder joins adjacent
 text entries into one Markdown segment; only intervening activities divide it.
+A reopened run replays its newest activity page first. When the Host has older
+pages, the run's first reply part carries a `RunActivityPaging` cursor and shows
+a "Loading N earlier steps…" line at the top of its activity. When that line
+scrolls into view, `ChatView.OlderActivity` reads the next older page,
+`RunActivityPageMerger` joins it in durable order (the checklist the newest page
+led with keeps one copy, at its own place), and the run's bubbles are rebuilt
+around the persisted answer and re-split at its steers. The view moves down by
+the height added, so the reader's place holds, and a fresh sentinel cannot start
+the next page until that correction has run.
 Activity labels share transcript typography across plain and detail-toggle
 headers, including transitions that reveal reasoning or terminal output. Expanded
 reasoning stretches across the available reading column instead of a fixed

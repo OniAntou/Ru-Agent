@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using RuAgent.Cli.TerminalGui;
 using RuAgent.Client;
 using RuAgent.Protocol.Harness;
 using Xunit;
@@ -5,8 +7,9 @@ using Xunit;
 namespace RuAgent.Cli.Tests;
 
 /// <summary>
-/// A reopened long turn shows its newest steps and names how many earlier ones remain;
-/// /older joins the next page. These lock the join and the wording the user acts on.
+/// A reopened long turn shows its newest steps under an "earlier steps" line, and the native
+/// terminal loads the next older page when that line scrolls into view. No command exists for
+/// it. These lock the join, the wording, and how the transcript finds the line on screen.
 /// </summary>
 public sealed class ChatSessionOlderActivityTests
 {
@@ -62,18 +65,62 @@ public sealed class ChatSessionOlderActivityTests
     }
 
     [Theory]
-    [InlineData(0, "↑ earlier steps not shown · /older shows them")]
-    [InlineData(1, "↑ 1 earlier step not shown · /older shows it")]
-    [InlineData(1200, "↑ 1,200 earlier steps not shown · /older shows them")]
-    public void The_notice_names_what_remains_and_the_command(int older, string expected) =>
-        Assert.Equal(expected, ChatSessionTurnReplay.OlderStepsNotice(older));
+    [InlineData(0, true, "↑ earlier steps · loading as you scroll up")]
+    [InlineData(1, true, "↑ 1 earlier step · loading as you scroll up")]
+    [InlineData(1200, true, "↑ 1,200 earlier steps · loading as you scroll up")]
+    [InlineData(1200, false, "↑ 1,200 earlier steps not shown")]
+    public void The_line_says_what_happens_without_naming_a_command(int older, bool loadsOnScroll, string expected)
+    {
+        var notice = ChatSessionTurnReplay.OlderStepsNotice(older, loadsOnScroll);
+
+        Assert.Equal(expected, notice);
+        Assert.DoesNotContain("/", notice);
+    }
 
     [Fact]
-    public void Older_is_listed_and_waits_for_a_working_turn_like_other_session_commands()
+    public void No_slash_command_is_added_for_older_steps()
     {
-        Assert.Contains(Tui.ChatCommandCatalog.KnownCommands, command => command.Command == "/older");
-        Assert.Contains(Tui.ChatCommandCatalog.FindMatches("/ol"), command => command.Command == "/older");
-        // It redraws the transcript, so it must not run beside a live turn.
-        Assert.True(AgentCommands.IsStateChangingSlashCommandForTests("/older"));
+        Assert.DoesNotContain(Tui.ChatCommandCatalog.KnownCommands, command => command.Command == "/older");
+        Assert.Empty(Tui.ChatCommandCatalog.FindMatches("/older"));
+    }
+
+    [Fact]
+    public void Only_settled_turns_with_more_steps_draw_the_line_in_order()
+    {
+        var settled = Run("2026-11-26T00:00:01Z");
+        var more = new AgentRunActivityReplay([], [], true, 40, 5);
+        ImmutableArray<ChatReplayTurn> turns =
+        [
+            new("run_a", [], [], settled, more),
+            new("run_b", [], [], settled, new AgentRunActivityReplay([], [])),
+            new("run_c", [], [], Run(terminalAt: null), more),
+            new("run_d", [], [], settled, more),
+        ];
+
+        Assert.Equal(new[] { 0, 3 }, ChatSessionTurnReplay.TurnsWithOlderSteps(turns));
+    }
+
+    private static GetAgentRunResponse Run(string? terminalAt) => new("run_a", "s", "ws_test", terminalAt is null ? "running" : "completed",
+        null, "standard", 1, new string('a', 64), 2, 4, "2026-11-26T00:00:00Z", "2026-11-26T00:00:01Z", terminalAt, null);
+
+    [Fact]
+    public void The_transcript_names_which_marked_row_is_on_screen()
+    {
+        using var transcript = new TgTranscriptView { Frame = new System.Drawing.Rectangle(0, 0, 80, 4) };
+        transcript.Append("  · " + ChatSessionTurnReplay.OlderStepsNotice(9, true), TranscriptStyle.Meta);
+        for (var index = 0; index < 10; index++) transcript.Append($"older turn row {index}", TranscriptStyle.Prose);
+        transcript.Append("  · " + ChatSessionTurnReplay.OlderStepsNotice(3, true), TranscriptStyle.Meta);
+        for (var index = 0; index < 10; index++) transcript.Append($"newer turn row {index}", TranscriptStyle.Prose);
+
+        // Following the tail: neither line is on screen.
+        Assert.Null(transcript.FirstVisibleMatchOrdinal(ChatSessionTurnReplay.IsOlderStepsNotice));
+
+        var moves = 0;
+        transcript.ViewportMoved += () => moves++;
+        transcript.ScrollRows(-10);
+        Assert.Equal(1, transcript.FirstVisibleMatchOrdinal(ChatSessionTurnReplay.IsOlderStepsNotice));
+        transcript.ScrollRows(-100);
+        Assert.Equal(0, transcript.FirstVisibleMatchOrdinal(ChatSessionTurnReplay.IsOlderStepsNotice));
+        Assert.Equal(2, moves);
     }
 }

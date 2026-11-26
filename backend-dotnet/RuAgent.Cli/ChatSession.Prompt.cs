@@ -453,12 +453,6 @@ public sealed partial class AgentCommands
             }
             if (slashCmd is "/subagents" && !await RequireSavedSessionAsync().ConfigureAwait(false)) return true;
 
-            if (slashCmd == "/older")
-            {
-                await LoadOlderActivityAsync(cancellationToken).ConfigureAwait(false);
-                return true;
-            }
-
             if (slashCmd == "/tasks")
             {
                 await ShowTasksAsync(arg, cancellationToken).ConfigureAwait(false);

@@ -13,8 +13,6 @@ public sealed partial class AgentCommands
             || status.Equals("cancelled", StringComparison.OrdinalIgnoreCase)
             || status.Equals("interrupted", StringComparison.OrdinalIgnoreCase));
 
-    internal static bool IsStateChangingSlashCommandForTests(string line) => IsStateChangingSlashCommand(line);
-
     private static bool IsStateChangingSlashCommand(string line)
     {
         var command = line.TrimStart().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();

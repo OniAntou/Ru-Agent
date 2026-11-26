@@ -646,6 +646,33 @@ public sealed partial class TgTranscriptView : View
         _scrollTop = Math.Clamp(from + delta, 0, maxTop);
         SetFollowingTail(_scrollTop >= maxTop);
         SetNeedsDraw();
+        ViewportMoved?.Invoke();
+    }
+
+    /// <summary>Raised on the UI thread after the viewport moves.</summary>
+    internal event Action? ViewportMoved;
+
+    /// <summary>
+    /// The ordinal, among all rows <paramref name="match"/> accepts, of the first such row now on
+    /// screen; null when none is visible. Lets a caller find which of several marked rows the
+    /// reader has reached without the transcript knowing what the rows mean.
+    /// </summary>
+    internal int? FirstVisibleMatchOrdinal(Func<string, bool> match)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        EnsureWrapped();
+        var height = Math.Max(1, Viewport.Height);
+        var top = _followingTail ? Math.Max(0, _wrapped.Count + LiveRows - height) : _scrollTop;
+        var bottom = Math.Min(_wrapped.Count, top + height);
+        var ordinal = 0;
+        for (var index = 0; index < bottom; index++)
+        {
+            if (!match(_wrapped[index].Text)) continue;
+            if (index >= top) return ordinal;
+            ordinal++;
+        }
+
+        return null;
     }
 
     private void EnsureWrapped()

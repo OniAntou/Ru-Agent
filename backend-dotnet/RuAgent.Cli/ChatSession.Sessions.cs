@@ -50,8 +50,6 @@ public sealed partial class AgentCommands
                 $"↺ replayed the last {loaded.Length} {(loaded.Length == 1 ? "turn" : "turns")} from session {targetSessionId}",
                 Tui.TuiToken.Meta);
             RenderSessionTurns(loaded);
-            // Line mode prints once and cannot redraw; /older appends a turn's fuller record.
-            RememberReplayedTurns(targetSessionId, loaded, retained: null, generation: null);
         }
 
         private void RenderSessionTurns(ImmutableArray<ChatReplayTurn> loaded,
@@ -69,7 +67,8 @@ public sealed partial class AgentCommands
                 {
                     // A long run replays its newest steps; the rest load on request.
                     if (turn.Activity is { HasMore: true } activity)
-                        renderer.Note(ChatSessionTurnReplay.OlderStepsNotice(activity.OlderCount), Tui.TuiToken.Meta);
+                        renderer.Note(ChatSessionTurnReplay.OlderStepsNotice(activity.OlderCount, loadsOnScroll: tgMode && !cmd.Json),
+                            Tui.TuiToken.Meta);
                     renderer.BeginTurn();
                     renderer.Transcript.ReplayTurn(turn.Activity, turn.Replies,
                         ChatSessionTurnReplay.Time(run.CreatedAt), ChatSessionTurnReplay.Time(run.TerminalAt),

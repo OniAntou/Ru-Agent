@@ -17,7 +17,6 @@ public static class ChatCommandCatalog
         new("/new", "Start a new session", "/new"),
         new("/sessions", "Browse saved sessions and reopen by id", "/sessions [query|id:<session-id>]"),
         new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
-        new("/older", "Show earlier steps of a reopened long turn", "/older"),
         new("/tasks", "View, stop and read background terminal tasks", "/tasks [run-id] | /tasks kill <execution-id> | /tasks read <execution-id> [offset] [limit]"),
         new("/help", "Show every command", "/help"),
         new("/update", "Check or install a Ru update", "/update [--yes] [--channel stable|preview]"),

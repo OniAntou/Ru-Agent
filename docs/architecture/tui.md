@@ -141,12 +141,13 @@ replaces the current idle session; `/sessions` opens saved history in the same
 window. There are no concurrent session workers, tab strip, F6 navigation or
 Alt+N shortcut. Active or held/queued work must finish or be cancelled before
 changing sessions. A reopened turn replays the newest page of its run's activity;
-when the Host has older pages the turn starts with an `↑ N earlier steps not shown`
-note, and `/older` reads the next page of the newest such turn
-(`ChatSession.OlderActivity`, joined by `ChatSessionTurnReplay.MergeOlder`). While the
-native replay is still the whole transcript (no prompt or navigation since, tracked by
-the enrichment generation) the turns are redrawn in place; otherwise, and in line
-mode, the widened turn is printed again below. Opening saved history resolves its recorded workspace and
+when the Host has older pages the turn starts with an `↑ N earlier steps` note. There
+is no command for it: `TgTranscriptView` raises `ViewportMoved`, and when a note row is
+on screen `ChatSession.OlderActivity` reads that turn's next page, joins it with
+`ChatSessionTurnReplay.MergeOlder` and redraws the replay in place, keeping the reader's
+distance from the bottom. Loading happens only while the native replay is still the
+whole transcript (no prompt or navigation since, tracked by the enrichment
+generation); after that, and in line mode, the note just says the steps are not shown. Opening saved history resolves its recorded workspace and
 session preset before replacing current state. A missing recorded folder fails
 closed; one session's full-access choice does not become another session's default.
 

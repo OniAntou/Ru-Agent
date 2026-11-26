@@ -24,8 +24,7 @@ public sealed partial class AgentCommands
             loop.SetSubmissionOwnershipHandlers(
                 snapshot =>
                 {
-                    // /older widens the replay on screen; only real work invalidates it.
-                    if (!IsOlderCommand(snapshot.Prompt)) CancelSessionEnrichment();
+                    CancelSessionEnrichment();
                     submissions.Admit(snapshot);
                     RefreshAttachmentLabels();
                 },
@@ -41,7 +40,7 @@ public sealed partial class AgentCommands
             if (tgMode) loop.SetLocalCommandClassifier(IsLocalInputCommand);
             loop.SetSubmissionHandler(async (submission, ct) =>
             {
-                if (!IsOlderCommand(submission.Prompt)) CancelSessionEnrichment();
+                CancelSessionEnrichment();
                 if (submission.Prompt.TrimStart().StartsWith('/'))
                 {
                     await HandleSlashLineWithDocumentAsync(submission.Prompt, ct).ConfigureAwait(false);

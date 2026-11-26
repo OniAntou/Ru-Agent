@@ -65,7 +65,6 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 | `/new` | Start a new session |
 | `/sessions [query\|id:<session-id>]` | Browse saved sessions and reopen one by id |
 | `/subagents [run-id]` | See delegated tasks and read their results |
-| `/older` | Show earlier steps of a reopened long turn |
 | `/tasks [run-id]` / `/tasks kill <execution-id>` | View and stop background terminal tasks |
 | `/update [--yes] [--channel stable\|preview]` | Check for or install an update |
 | `/help`, `/exit` | List every command, quit |
@@ -91,8 +90,8 @@ Attachments travel with the next prompt.
 
 Each chat is a session. `/sessions` finds one and `/sessions id:<session-id>` reopens it, redrawing its
 newest turns as they looked live. The native terminal shows recent saved messages first, then fills in activity and timing.
-A long turn shows its newest steps under a line such as `↑ 1,200 earlier steps not shown · /older shows them`;
-each `/older` loads the next earlier page of the newest such turn. A run that hits an error, for example a payment or quota problem,
+A long turn shows its newest steps under a line such as `↑ 1,200 earlier steps · loading as you scroll up`;
+scrolling that line into view loads the next earlier page above what you were reading. A run that hits an error, for example a payment or quota problem,
 ends with that error; send a new message to keep going once it is fixed. Typing `Continue` reopens a
 run this session tracks that is still running or waiting on your approval or answer, and `Escape`
 interrupts a running turn. A run that is still going is attached from another terminal with

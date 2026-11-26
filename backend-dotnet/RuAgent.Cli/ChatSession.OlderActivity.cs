@@ -9,10 +9,11 @@ namespace RuAgent.Cli;
 public sealed partial class AgentCommands
 {
     /// <summary>
-    /// A reopened long run replays its newest steps; /older reads the next older page of the
-    /// newest turn that still has one. While the replay is still the whole native transcript the
-    /// turns are redrawn in place; otherwise (a prompt was sent since, or line mode) the turn's
-    /// fuller record is printed again below, so nothing already on screen is rewritten.
+    /// A reopened long run replays its newest steps under an "earlier steps" line. In the native
+    /// terminal, scrolling that line into view reads the run's next older page and redraws the
+    /// replay in place, keeping the reader's distance from the bottom so the older steps arrive
+    /// above what they were reading. No command is involved. Once a prompt or navigation follows
+    /// the replay, a redraw would erase newer rows, so loading stops and the line stays as it is.
     /// </summary>
     private sealed partial class ChatSession
     {
@@ -22,76 +23,85 @@ public sealed partial class AgentCommands
         // The enrichment generation the native replay was drawn under; any admission or
         // navigation moves the generation on, after which a redraw would erase newer rows.
         private int? replayedGeneration;
-
-        private static bool IsOlderCommand(string? line) =>
-            line?.TrimStart().Split(' ', 2)[0].Equals("/older", StringComparison.OrdinalIgnoreCase) == true;
+        private bool olderStepsWired;
+        private int olderStepsLoading;
 
         private void RememberReplayedTurns(string targetSessionId, ImmutableArray<ChatReplayTurn> turns,
-            GetAgentRunResponse? retained, int? generation)
+            GetAgentRunResponse? retained, int generation)
         {
             replayedTurns = turns;
             replayedSessionId = targetSessionId;
             replayedRetained = retained;
             replayedGeneration = generation;
+            if (!olderStepsWired && tgWindow is not null)
+            {
+                tgWindow.Transcript.ViewportMoved += OnTranscriptViewportMoved;
+                olderStepsWired = true;
+            }
         }
 
-        private async Task LoadOlderActivityAsync(CancellationToken ct)
+        // UI thread: the transcript raises this after every viewport move.
+        private void OnTranscriptViewportMoved()
         {
-            if (replayedTurns is not { } turns || !string.Equals(replayedSessionId, sessionId, StringComparison.Ordinal))
+            if (cmd.Json || replayedTurns is not { } turns || replayedGeneration is not { } drawn
+                || drawn != Volatile.Read(ref enrichmentGeneration)
+                || !string.Equals(replayedSessionId, sessionId, StringComparison.Ordinal)
+                || tgWindow!.Transcript.FirstVisibleMatchOrdinal(ChatSessionTurnReplay.IsOlderStepsNotice) is not { } ordinal)
             {
-                await ReportSessionNavigationAsync("no reopened turn has earlier steps").ConfigureAwait(false);
                 return;
             }
 
-            var index = -1;
-            for (var candidate = turns.Length - 1; candidate >= 0; candidate--)
+            var candidates = ChatSessionTurnReplay.TurnsWithOlderSteps(turns);
+            if (ordinal >= candidates.Length || Interlocked.Exchange(ref olderStepsLoading, 1) == 1) return;
+            var index = candidates[ordinal];
+            _ = Task.Run(async () =>
             {
-                if (turns[candidate] is { RunId: not null, Activity.NextBeforeSequence: not null })
+                try
                 {
-                    index = candidate;
-                    break;
+                    await LoadOlderStepsAsync(index, drawn).ConfigureAwait(false);
                 }
-            }
+                finally
+                {
+                    Volatile.Write(ref olderStepsLoading, 0);
+                }
+            });
+        }
 
-            if (index < 0)
+        private async Task LoadOlderStepsAsync(int index, int drawn)
+        {
+            if (replayedTurns is not { } turns || index >= turns.Length
+                || turns[index] is not { RunId: { } runId, Activity: { NextBeforeSequence: { } before } shown } turn)
             {
-                await ReportSessionNavigationAsync("every reopened turn already shows all of its steps").ConfigureAwait(false);
                 return;
             }
 
-            var turn = turns[index];
             AgentRunActivityReplay page;
             try
             {
-                page = await _agentClient.ListRunActivityReplayAsync(
-                    turn.RunId!, turn.Activity!.NextBeforeSequence, limit: null, ct).ConfigureAwait(false);
+                page = await _agentClient.ListRunActivityReplayAsync(runId, before, limit: null, cancellationToken)
+                    .ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                throw;
+                return;
             }
             catch (Exception ex)
             {
-                TuiDebug.Log("history", $"older activity unavailable: {ex.GetType().Name}");
-                await ReportSessionNavigationAsync("could not load earlier steps · try /older again").ConfigureAwait(false);
+                TuiDebug.Log("history", $"older steps unavailable: {ex.GetType().Name}");
                 return;
             }
 
-            var widened = turn with { Activity = ChatSessionTurnReplay.MergeOlder(turn.Activity!, page) };
-            turns = turns.SetItem(index, widened);
+            // A prompt or navigation that came in meanwhile owns the transcript now.
+            if (drawn != Volatile.Read(ref enrichmentGeneration)) return;
+            turns = turns.SetItem(index, turn with { Activity = ChatSessionTurnReplay.MergeOlder(shown, page) });
             replayedTurns = turns;
-
-            if (tgMode && !cmd.Json && replayedGeneration is { } drawn && drawn == Volatile.Read(ref enrichmentGeneration))
-            {
-                RedrawReplayedTurns(turns, replayedRetained, drawn);
-                return;
-            }
-
-            sessionRenderer.Note("↑ earlier steps of a reopened turn", TuiToken.Meta);
-            RenderSessionTurns([widened]);
+            RedrawReplayedTurns(turns, replayedRetained, drawn);
         }
 
-        /// <summary>Replaces the native replay with the widened turns in one UI batch.</summary>
+        /// <summary>
+        /// Replaces the native replay with the widened turns in one UI batch, keeping the reader's
+        /// distance from the bottom: the older steps land above what was on screen.
+        /// </summary>
         private void RedrawReplayedTurns(ImmutableArray<ChatReplayTurn> turns, GetAgentRunResponse? retained, int generation)
         {
             var batch = new List<Action>();
@@ -107,6 +117,7 @@ public sealed partial class AgentCommands
             RunOnTgUi(() =>
             {
                 if (generation != Volatile.Read(ref enrichmentGeneration)) return;
+                var rowsBelow = transcript.RowsBelowViewport;
                 transcript.DeferWrapping = true;
                 try
                 {
@@ -116,6 +127,7 @@ public sealed partial class AgentCommands
                 finally
                 {
                     transcript.DeferWrapping = false;
+                    if (rowsBelow > 0) transcript.ScrollRows(-rowsBelow);
                 }
             });
         }

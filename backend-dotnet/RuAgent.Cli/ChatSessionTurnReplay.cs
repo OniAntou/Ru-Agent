@@ -104,13 +104,41 @@ internal static class ChatSessionTurnReplay
         return turns.Select(turn => new ChatReplayTurn(turn.RunId, [.. turn.Prompts], [.. turn.Replies])).ToList();
     }
 
-    /// <summary>The line a reopened long turn shows above its newest steps.</summary>
-    internal static string OlderStepsNotice(int olderCount) => olderCount switch
+    /// <summary>The turns that drew an older-steps line, in the order they were drawn.</summary>
+    internal static int[] TurnsWithOlderSteps(ImmutableArray<ChatReplayTurn> turns)
     {
-        <= 0 => "↑ earlier steps not shown · /older shows them",
-        1 => "↑ 1 earlier step not shown · /older shows it",
-        _ => $"↑ {olderCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} earlier steps not shown · /older shows them",
-    };
+        var indices = new List<int>();
+        for (var index = 0; index < turns.Length; index++)
+        {
+            if (turns[index] is { RunId: not null, Run.TerminalAt: not null, Activity: { HasMore: true } })
+                indices.Add(index);
+        }
+
+        return [.. indices];
+    }
+
+    /// <summary>Every older-steps line starts with this, so the transcript can find it on screen.</summary>
+    internal const string OlderStepsMarker = "↑ ";
+
+    /// <summary>
+    /// The line a reopened long turn shows above its newest steps. The native terminal loads
+    /// them when this line scrolls into view; line mode can only say they exist.
+    /// </summary>
+    internal static string OlderStepsNotice(int olderCount, bool loadsOnScroll)
+    {
+        var count = olderCount switch
+        {
+            <= 0 => "earlier steps",
+            1 => "1 earlier step",
+            _ => olderCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " earlier steps",
+        };
+        return OlderStepsMarker + count + (loadsOnScroll ? " · loading as you scroll up" : " not shown");
+    }
+
+    /// <summary>True for the drawn row of an older-steps line (the transcript prefixes notes with "· ").</summary>
+    internal static bool IsOlderStepsNotice(string text) =>
+        text.Contains(OlderStepsMarker, StringComparison.Ordinal)
+        && text.Contains("earlier step", StringComparison.Ordinal);
 
     /// <summary>
     /// Joins an older replay page onto a turn's record: rows in durable order, the checklist

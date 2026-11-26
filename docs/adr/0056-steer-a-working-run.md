@@ -173,4 +173,13 @@ not read it, the TUI keeps its waiting hint, and the message reaches Ru with the
 message. `returned` therefore names a steer waiting for the session's next run, not work the
 client owes.
 
+## Amendment (2026-11-27): delivery precedes the step that reads it
+
+Delivery commits the note before the step's context is assembled, because the model must read
+the steer in the step that delivers it. A step that then cannot start — a refused budget, a
+context limit, a Stop — leaves the note in that run's history rather than a pending steer; the
+run fails or stops, and the session's next run inherits the note through the handoff (ADR 0023),
+which the handoff store test pins. Making delivery atomic with the step start would need the
+context assembled inside the delivery transaction, which the assembler does not support.
+
 

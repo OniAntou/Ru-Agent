@@ -3,6 +3,8 @@ using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Context;
 using RuAgent.Harness.Core.Persistence;
+using RuAgent.Harness.Core.Steering;
+using RuAgent.Harness.Persistence;
 using Xunit;
 
 namespace RuAgent.Harness.Persistence.Tests;
@@ -183,6 +185,45 @@ public sealed partial class SessionRunHandoffStoreTests
             target.Run.RunId, target.Run.SessionId, VisibleRunIds, default);
 
         Assert.Empty(context!.ObservedPaths);
+    }
+
+    [Fact]
+    public async Task A_steer_delivered_into_a_step_that_never_started_reaches_the_next_run()
+    {
+        await using var fixture = await HarnessStoreTestFixture.CreateAsync();
+        await fixture.RegisterWorkspaceAsync(1);
+        var request = fixture.NewRun(1, 1, 1, status: new HarnessRunStatus(HarnessRunState.Running));
+        var events = fixture.CreateEventStore();
+        Assert.Equal(CreateRunOutcome.Created, (await events.TryCreateRunAsync(request, default)).Outcome);
+
+        var steers = new SqliteRunSteerStore(fixture.Options, fixture.PayloadStore);
+        var steerId = "steer_" + new string('7', 32);
+        Assert.Equal(RunSteerAppendOutcome.Accepted,
+            await steers.AppendAsync(request.Run.RunId, steerId, "keep the parser API",
+                HarnessStoreTestFixture.Timestamp, default));
+        Assert.Single(await steers.DeliverAsync(request.Run.RunId, HarnessStoreTestFixture.Timestamp, default));
+
+        // A steer is delivered before the step's context is assembled. This run cannot start
+        // its step, so the note stays in its history and the run ends without reading it.
+        var current = (await events.GetRunAsync(request.Run.RunId, default))!;
+        var ended = HarnessStoreTestFixture.Timestamp.AddSeconds(1);
+        var terminal = new AgentRun(request.Run.RunId, request.Run.SessionId, request.Run.WorkspaceId,
+            new(HarnessRunState.Cancelled), current.Version + 1, current.LastSequence + 1,
+            current.BudgetWindow, current.ModelStepsInWindow, current.ToolCallsInWindow,
+            request.Run.Preset, 1, request.Run.PolicySnapshotSha256, request.Run.CreatedAt, ended,
+            terminalAt: ended, terminalErrorCode: "cancelled");
+        Assert.Equal(HarnessCommitOutcome.Committed, (await events.CommitAsync(new HarnessCommit(
+            request.Run.RunId, current.Version, terminal,
+            [new HarnessEventIntent(HarnessStoreTestFixture.Event(77), HarnessEventKind.RunStateChanged)], [], []), default)).Outcome);
+
+        var target = await CreateAsync(fixture, 2, 1, 1);
+        var handoff = await fixture.PayloadStore.ReadSessionRunHandoffAsync(
+            target.Run.RunId, target.Run.SessionId, VisibleRunIds, default);
+
+        // The session's next run inherits the message, so a step that never started does not
+        // lose it (ADR 0023 handoff carries the delivered note).
+        Assert.NotNull(handoff);
+        Assert.Contains("keep the parser API", handoff);
     }
 
     private static async Task<NewAgentRun> CreateAsync(HarnessStoreTestFixture fixture, int number, int session, int workspace)

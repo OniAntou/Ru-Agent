@@ -23,7 +23,7 @@ public enum AgentSteerAttempt
 /// <summary>A steer its run ended without reading, to be sent as the next turn.</summary>
 public readonly record struct AgentReturnedSteer(string SteerId, string Text);
 
-public readonly record struct AgentSteerOutcome(AgentSteerAttempt Attempt, string? ErrorCode = null, string? SteerId = null);
+public readonly record struct AgentSteerOutcome(AgentSteerAttempt Attempt, string? ErrorCode = null, string? SteerId = null, string? State = null);
 
 /// <summary>
 /// Steering (ADR 0056): a message the user sends into the run in hand. The controller
@@ -49,12 +49,15 @@ public sealed partial class AgentRunController
         var steerId = AgentSteerLimits.NewSteerId();
         try
         {
-            if (images is { Count: > 0 })
-                await _client.SteerAsync(runId, steerId, text, images, cancellationToken).ConfigureAwait(false);
-            else
-                await _client.SteerAsync(runId, steerId, text, cancellationToken).ConfigureAwait(false);
+            var sent = images is { Count: > 0 }
+                ? await _client.SteerAsync(runId, steerId, text, images, cancellationToken).ConfigureAwait(false)
+                : await _client.SteerAsync(runId, steerId, text, cancellationToken).ConfigureAwait(false);
+            // A retried send answers from the stored row: a steer the run already read needs no
+            // waiting copy, and one it never read is a message for the next turn.
+            if (sent.State == AgentSteerLimits.StateReturned)
+                return new AgentSteerOutcome(AgentSteerAttempt.NotSteerable, "steer_returned");
             lock (_steerGate) _sentSteers.Add((runId, steerId));
-            return new AgentSteerOutcome(AgentSteerAttempt.Sent, SteerId: steerId);
+            return new AgentSteerOutcome(AgentSteerAttempt.Sent, SteerId: steerId, State: sent.State);
         }
         catch (AgentApiException error) when (error.ErrorCode is "run_not_steerable" or "run_not_found")
         {

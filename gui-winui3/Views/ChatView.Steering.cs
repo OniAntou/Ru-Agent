@@ -104,6 +104,11 @@ namespace RuApp.Views
 
             switch (outcome.Attempt)
             {
+                case AgentSteerAttempt.Sent when outcome.State == AgentSteerLimits.StateDelivered:
+                    // A retried send answered with the steer already read: show the message here
+                    // instead of a waiting copy for a delivery that already happened.
+                    ContinueTurnAfterSteer(SteerMessage(steerText, sent.Attachments));
+                    break;
                 case AgentSteerAttempt.Sent when AgentSteerLimits.IsValidSteerId(outcome.SteerId):
                     ShowWaitingSteer(SteerActivityId(outcome.SteerId!), steerText, sent.Attachments);
                     break;

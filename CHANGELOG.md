@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(agent)**: A steer whose retried send answers `delivered` now shows where the run read
+  it instead of as a waiting message, and one answered `returned` goes back to the prompt for
+  the next turn instead of leaving a waiting copy that can never settle.
+
 - **fix(client)**: A steer whose response was lost in transit is retried with the same
   `steer_id`, so the Host replays the stored steer instead of the client putting the text back
   for a second send. A refusal, or a send the caller cancelled, is never retried.

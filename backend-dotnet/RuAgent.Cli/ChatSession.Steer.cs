@@ -26,8 +26,12 @@ public sealed partial class AgentCommands
             var steerId = AgentSteerLimits.NewSteerId();
             try
             {
-                await _agentClient.SteerAsync(runId, steerId, text,
+                var sent = await _agentClient.SteerAsync(runId, steerId, text,
                     images.IsEmpty ? null : images.Select(image => image.ToDataUrl()).ToArray(), cancellationToken).ConfigureAwait(false);
+                // A retried send answers from the stored row: a steer the run never read is a
+                // message for the next turn, and its images go back with it.
+                if (sent.State == AgentSteerLimits.StateReturned)
+                    return new SteerResult(SteerAttempt.NotSteerable);
                 lock (steerGate) sentSteers.Add((runId, steerId, sessionId, images));
                 // The Host holds the images now; only their in-memory copy is kept for a return.
                 ChatSubmissionState.Release(images);

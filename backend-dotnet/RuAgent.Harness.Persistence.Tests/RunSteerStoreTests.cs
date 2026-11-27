@@ -17,7 +17,7 @@ public sealed class RunSteerStoreTests
         var (events, steers, runId) = await RunningAsync(fixture);
 
         Assert.Equal(RunSteerAppendOutcome.Accepted,
-            await steers.AppendAsync(runId, SteerOne, "DÃ¹ng parser má»›i ðŸˆ", HarnessStoreTestFixture.Timestamp, default));
+            await steers.AppendAsync(runId, SteerOne, "Dùng parser mới 🐈", HarnessStoreTestFixture.Timestamp, default));
         Assert.True(await steers.HasPendingAsync(runId, default));
         Assert.Equal(0L, await BoundUserEntriesAsync(fixture, runId));
         Assert.Equal(RunSteerContract.StatePending, Assert.Single(await steers.ListAsync(runId, default)).State);
@@ -25,7 +25,7 @@ public sealed class RunSteerStoreTests
         var before = (await events.GetRunAsync(runId, default))!;
         var delivered = Assert.Single(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
         Assert.Equal(SteerOne, delivered.SteerId);
-        Assert.Equal("DÃ¹ng parser má»›i ðŸˆ", delivered.Text);
+        Assert.Equal("Dùng parser mới 🐈", delivered.Text);
         Assert.Empty(await steers.DeliverAsync(runId, HarnessStoreTestFixture.Timestamp, default));
         Assert.False(await steers.HasPendingAsync(runId, default));
 

@@ -41,9 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   live parent after a Host restart retains it too); a live parent's policy
   change, the child's own cancel, parent-session close and runtime disposal still revoke it.
   Later roots of the session see detached children in `run_state` and may `agent_wait`,
-  `agent_cancel` or `agent_apply` them (the Broker checks the retained parent is in the same
-  session and workspace); `agent_send` across roots is refused with
-  `subagent_detached_send_unsupported`. Explicit root cancel (or any root ending `cancelled`),
+  `agent_cancel`, `agent_send` or `agent_apply` them (the Broker checks the retained parent is
+  in the same session and workspace). Explicit root cancel (or any root ending `cancelled`),
   session deletion and Host exit still stop them, and recovery ends an interrupted one with `subagent_detached_interrupted`.
   A detached result cannot be applied after a Host restart (`subagent_apply_denied`). Schema
   v43 adds `agent_subagent_detached`; the HTTP subagent summary and SDK type report `detached`.

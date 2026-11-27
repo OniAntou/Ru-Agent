@@ -81,9 +81,26 @@ public sealed class Phase1RemediationTests
             expectedDecision: WorkspaceTrustDecision.Approve,
             expectedSource: "explicit");
 
-        using var getResp = await client.GetAsync($"/agent/v1/runs/{runId}");
-        var getJson = await getResp.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("user_before_first_step", getJson.GetProperty("history_wait_kind").GetString());
+        // Trust approval commits WaitingHistory with the user-before-first-step kind. The
+        // outbox dispatcher may append the prompt and acknowledge that history before this
+        // read, moving the run to Running; both outcomes are correct, but "waiting with no
+        // kind" is not. Poll briefly instead of racing the dispatcher on a loaded machine.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        string? status = null;
+        string? kind = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            using var getResp = await client.GetAsync($"/agent/v1/runs/{runId}");
+            Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+            var getJson = await getResp.Content.ReadFromJsonAsync<JsonElement>();
+            status = getJson.GetProperty("status").GetString();
+            kind = getJson.GetProperty("history_wait_kind").GetString();
+            if (status == "running" || kind == "user_before_first_step") break;
+            await Task.Delay(20);
+        }
+
+        Assert.True(status == "running" || kind == "user_before_first_step",
+            $"run status '{status}' history wait kind '{kind}' did not preserve the user handoff");
     }
 
     [Fact]

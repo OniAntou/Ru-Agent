@@ -145,7 +145,7 @@ public sealed class InProcessExecutionAuthorityTests : IDisposable
             name => name switch
             {
                 "RU_AGENT_BROKER_WEB_ENABLED" => "true",
-                "RU_AGENT_BROKER_WEB_MAX_RESPONSE_BYTES" => (4 * 1024 * 1024 + 1).ToString(),
+                "RU_AGENT_BROKER_WEB_MAX_RESPONSE_BYTES" => (16 * 1024 * 1024 + 1).ToString(),
                 _ => null,
             },
             NullLogger.Instance));

@@ -92,8 +92,13 @@ public sealed class IndexedChatToolCallTests
 
     [Fact]
     public async Task Argument_byte_limit_applies_to_the_whole_call_across_chunks() =>
-        await AssertRejectedAsync(Chunk(Call(0, "call-a", "files.read", new string('\u4e00', 12_000))),
-            Chunk(Call(0, null, null, new string('\u4e00', 12_000))));
+        // Five 220,000-byte chunks are over the 1 MiB whole-call bound while each
+        // individual SSE event stays under the 256 KiB provider event cap.
+        await AssertRejectedAsync(Chunk(Call(0, "call-a", "files.read", new string('a', 220_000))),
+            Chunk(Call(0, null, null, new string('a', 220_000))),
+            Chunk(Call(0, null, null, new string('a', 220_000))),
+            Chunk(Call(0, null, null, new string('a', 220_000))),
+            Chunk(Call(0, null, null, new string('a', 220_000))));
 
     [Fact]
     public async Task Done_marker_flushes_indexed_calls_without_a_finish_chunk()

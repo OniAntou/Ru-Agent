@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Show each model narration once during streaming and realign completed tool
+  rows when the terminal width changes or the Todos panel collapses.
+
 - **fix(tui)**: Native chat reads the model saved for the selected provider, including Custom
   OpenAI. Sending without a model keeps the draft and points to `/model`.
 

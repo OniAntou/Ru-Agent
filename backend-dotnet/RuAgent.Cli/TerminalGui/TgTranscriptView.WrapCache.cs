@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using RuAgent.Cli.Tui;
 
 namespace RuAgent.Cli.TerminalGui;
 
@@ -12,6 +13,7 @@ public sealed partial class TgTranscriptView
         int Width,
         TranscriptStyle Style,
         IReadOnlyList<TgSpan>? Spans,
+        TranscriptToolRow? Tool,
         IReadOnlyList<TgTranscriptRow> Rows);
 
     internal IReadOnlyList<TgTranscriptRow> WrappedLines
@@ -23,7 +25,7 @@ public sealed partial class TgTranscriptView
     private TgTranscriptRow? _tailPrefix;
 
     private int AppendWrapped(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans, int width,
-        bool continuesPrevious = false, bool replacingTail = false)
+        bool continuesPrevious = false, bool replacingTail = false, TranscriptToolRow? tool = null)
     {
         // Storage checkpoints are not paragraph breaks. Reflow only the preceding
         // visual row with the new chunk, leaving the settled viewport prefix cached.
@@ -40,10 +42,23 @@ public sealed partial class TgTranscriptView
         }
 
         if (!_wrapCache.TryGetValue(text, out var cached)
-            || cached.Width != width || cached.Style != style || !ReferenceEquals(cached.Spans, spans))
+            || cached.Width != width || cached.Style != style || !ReferenceEquals(cached.Spans, spans)
+            || !ReferenceEquals(cached.Tool, tool))
         {
             IReadOnlyList<TgTranscriptRow> rows;
-            if (spans is { Count: > 0 })
+            if (tool is not null)
+            {
+                // Tool rows retain their columns, so old rows re-align when the
+                // terminal resizes or Todos gives the transcript more room.
+                var fitted = TgTranscriptWriter.NativeRow(TuiToolRow.LayoutPresentation(tool, width));
+                if (width < TuiToolRow.MinWidth && fitted.Spans is { } fittedSpans)
+                {
+                    var first = TgAnsiPaint.HardWrapSpans(fitted.Text, fittedSpans, width).First();
+                    fitted = new TgTranscriptRow(first.Row, style, first.Spans);
+                }
+                rows = [fitted];
+            }
+            else if (spans is { Count: > 0 })
             {
                 var wrapped = proseLikeForSpans(text, style) || IsListRow(text, style)
                     ? TgAnsiPaint.WordWrapSpans(text, spans, width)
@@ -56,7 +71,7 @@ public sealed partial class TgTranscriptView
                     .Select(row => new TgTranscriptRow(row, style)).ToArray();
             }
 
-            cached = new WrappedLine(width, style, spans, rows);
+            cached = new WrappedLine(width, style, spans, tool, rows);
             _wrapCache.Remove(text);
             _wrapCache.Add(text, cached);
         }

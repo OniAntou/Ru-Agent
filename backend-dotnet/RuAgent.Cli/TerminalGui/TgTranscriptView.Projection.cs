@@ -27,7 +27,7 @@ public sealed partial class TgTranscriptView
             }
         }
 
-        foreach (var row in rows.Skip(unchangedPrefix)) Append(row.Text, row.Style, row.Spans, row.ContinuesPrevious);
+        foreach (var row in rows.Skip(unchangedPrefix)) Append(row);
         if (_lines.Count == 0) ContentCleared?.Invoke();
         SetNeedsDraw();
         return Math.Min(rows.Count, _lines.Count - (_historyTruncated ? 1 : 0));

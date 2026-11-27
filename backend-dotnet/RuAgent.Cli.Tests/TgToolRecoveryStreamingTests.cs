@@ -1,6 +1,7 @@
 using System.Text.Json;
 using RuAgent.Cli.TerminalGui;
 using RuAgent.Client;
+using RuAgent.Protocol.Harness;
 using Terminal.Gui.App;
 using Terminal.Gui.Drivers;
 using Xunit;
@@ -39,6 +40,53 @@ public sealed class TgToolRecoveryStreamingTests
             return false;
         });
         app.Run(window);
+    }
+
+    [Theory]
+    [InlineData("Kiểm tra bản 4200 trên máy mới.", false)]
+    [InlineData("Kiểm tra bản ", false)]
+    [InlineData("Kiểm tra bản 420 trên máy mới.", false)]
+    [InlineData("Kiểm tra bản 4200 trên máy mới.", true)]
+    public void Narration_is_shown_once_when_the_same_step_also_streams(string streamed, bool activityFirst)
+    {
+        using IApplication app = Application.Create();
+        using var view = new TgTranscriptView { Frame = new System.Drawing.Rectangle(0, 0, 90, 15) };
+        using var writer = new TgTranscriptWriter(app, view, dispatcher: action => action());
+        var renderer = AgentCommands.CreateSessionRenderer(writer);
+        const string narration = "Kiểm tra bản 4200 trên máy mới.";
+        renderer.BeginTurn();
+
+        if (activityFirst)
+        {
+            renderer.RenderFrame(Narration(Earlier, 1, narration));
+            renderer.RenderFrame(Delta(Earlier, 2, streamed));
+        }
+        else
+        {
+            renderer.RenderFrame(Delta(Earlier, 1, streamed));
+            renderer.RenderFrame(Narration(Earlier, 2, narration));
+        }
+        renderer.RenderFrame(Narration(Earlier, 3, narration));
+        renderer.Flush();
+
+        var lines = view.Lines.Select(row => row.Text).ToArray();
+        Assert.Single(lines, text => text.Contains("Kiểm tra bản", StringComparison.Ordinal));
+        Assert.Contains(lines, text => text.EndsWith(narration, StringComparison.Ordinal));
+
+        // Identical text from another model step is still a separate narration.
+        renderer.RenderFrame(Narration(Replacement, 4, narration));
+        renderer.Flush();
+        Assert.Equal(2, view.Lines.Count(row => row.Text.EndsWith(narration, StringComparison.Ordinal)));
+    }
+
+    private static SseFrame Narration(string step, long sequence, string text)
+    {
+        var activity = new AgentActivityWire(AgentActivityIdentity.NarrationForStep(step),
+            AgentActivityKind.Narration, AgentActivityState.Completed, Detail: text);
+        return new SseFrame(null, "transient", JsonSerializer.Serialize(new
+        {
+            kind = "agent.activity", data = AgentActivityWireCodec.Serialize(activity),
+        }), true, sequence);
     }
 
     private static SseFrame Delta(string step, long sequence, string text, bool reset = false)

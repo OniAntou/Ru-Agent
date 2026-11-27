@@ -1,6 +1,8 @@
 using System.Drawing;
 using RuAgent.Cli.TerminalGui;
 using RuAgent.Cli.Tui;
+using RuAgent.Client;
+using RuAgent.Protocol.Harness;
 using Terminal.Gui.App;
 using Terminal.Gui.Drawing;
 using Terminal.Gui.Drivers;
@@ -71,6 +73,42 @@ public sealed class TgTranscriptWrapCacheTests
             $"Updating the tail allocated {used / 1048576d:F2} MiB; unchanged history must reuse its layout.");
         Assert.EndsWith("0149" + new string('x', 110), view.Lines[^1].Text);
         if (expanded) Assert.Equal(["detail one", "detail two"], view.CollapsedRows.Select(row => row.Text));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Tool_rows_use_the_current_width_and_keep_metrics_on_the_same_line(bool replay)
+    {
+        using IApplication app = Application.Create();
+        using var view = new TgTranscriptView { Frame = new Rectangle(0, 0, 60, 12) };
+        using var writer = new TgTranscriptWriter(app, view, dispatcher: action => action());
+        var renderer = AgentCommands.CreateSessionRenderer(writer);
+        renderer.Width = view.Viewport.Width;
+        var tool = new AgentActivityModel("act_read", AgentActivityKind.Analyze, AgentActivityState.Completed,
+            "sample-long-activity-target-for-multiple-terminal-widths.txt",
+            null, null, null, null, null, null, 125, "ok", "Read", null, null);
+        renderer.BeginTurn();
+        if (replay)
+        {
+            renderer.Transcript.ReplayTurn(new AgentRunActivityReplay([tool], []), [],
+                null, null, TuiTurnOutcome.Completed, null);
+        }
+        else
+        {
+            renderer.Transcript.ApplyActivity(tool);
+            renderer.RenderEnvelope(new HarnessSafeEventEnvelope(1, "evt_1", "run_test", "session_test",
+                1, "tool.execution_completed", "", "succeeded", "ok"));
+        }
+
+        foreach (var width in new[] { 60, 160, 45, 110 })
+        {
+            view.Frame = new Rectangle(0, 0, width, 12);
+            var row = Assert.Single(view.WrappedLines, entry => entry.Style == TranscriptStyle.Tool);
+            Assert.Equal(width, TuiText.VisibleWidth(row.Text));
+            Assert.EndsWith("125ms", row.Text);
+            if (width == 160) Assert.Contains(tool.FileName!, row.Text);
+        }
     }
 
     [Fact]

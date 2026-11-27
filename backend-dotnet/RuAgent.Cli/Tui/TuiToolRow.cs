@@ -1,5 +1,8 @@
 namespace RuAgent.Cli.Tui;
 
+internal sealed record TranscriptToolRow(ToolLineStatus Status, string Display, string? Target, string? Metrics,
+    int Indent, int ActionColumnWidth);
+
 /// <summary>
 /// The inline tool row: a state glyph, the tool display name, its target and right-aligned
 /// metrics, indented as feed content rather than prose.
@@ -32,8 +35,15 @@ public static class TuiToolRow
         ToolLineStatus status, string display, string? target, string? meta, int width, int indent = Indent,
         int actionColumnWidth = 0)
     {
+        var tool = new TranscriptToolRow(status, display, target, meta, indent, actionColumnWidth);
+        return LayoutPresentation(tool, width) with { Tool = tool };
+    }
+
+    internal static TranscriptLine LayoutPresentation(TranscriptToolRow tool, int width)
+    {
         var builder = new TranscriptRunBuilder();
-        foreach (var segment in Layout(status, display, target, meta, width, indent, actionColumnWidth))
+        foreach (var segment in Layout(tool.Status, tool.Display, tool.Target, tool.Metrics, width,
+            tool.Indent, tool.ActionColumnWidth))
         {
             builder.Append(segment.Text, segment.Token);
         }

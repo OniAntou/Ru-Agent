@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using RuAgent.Client;
+using RuAgent.Protocol;
 using RuAgent.Protocol.Harness;
 
 namespace RuAgent.Cli.Tui;
@@ -15,6 +17,11 @@ public sealed class TuiSessionRenderer
     private readonly TuiSurface _surface;
     private readonly TuiStatusLine _status;
     private readonly TuiTranscript _transcript;
+    // A false entry means the step has streamed. A true entry means its narration is settled.
+    private readonly BoundedInsertionMap<string, bool> _narrationRows = new(64, StringComparer.Ordinal);
+    private readonly StringBuilder _stepText = new();
+    private string? _streamingStepId;
+    private string? _streamingNarrationId;
 
     public TuiSessionRenderer(TextWriter writer)
     {
@@ -46,6 +53,10 @@ public sealed class TuiSessionRenderer
 
     public void BeginTurn()
     {
+        _narrationRows.Clear();
+        _stepText.Clear();
+        _streamingStepId = null;
+        _streamingNarrationId = null;
         if (_surface.Writer is ITranscriptTurnRewriter screen) screen.BeginAssistantTurn();
         _transcript.BeginTurn();
         _status.SetState(_transcript.FullScreenCards ? TuiRunState.WaitingModel : TuiRunState.Thinking);
@@ -121,6 +132,7 @@ public sealed class TuiSessionRenderer
     {
         if (AgentAssistantDeltaModel.TryParse(frame, out var delta) && delta is not null)
         {
+            if (_surface.Presentation is not null && !TrackAssistantDelta(delta)) return;
             if (delta.IsReset)
             {
                 // A retried attempt supersedes the text this step already streamed: the
@@ -138,7 +150,10 @@ public sealed class TuiSessionRenderer
 
         if (AgentActivityModel.TryParse(frame, out var activity) && activity is not null)
         {
-            _transcript.ApplyActivity(activity);
+            if (_surface.Presentation is not null && activity.Kind == AgentActivityKind.Narration)
+                RenderNarration(activity);
+            else
+                _transcript.ApplyActivity(activity);
             return;
         }
 
@@ -146,6 +161,66 @@ public sealed class TuiSessionRenderer
         {
             _transcript.ApplySummary(summary);
         }
+    }
+
+    private bool TrackAssistantDelta(AgentAssistantDeltaModel delta)
+    {
+        if (_streamingStepId != delta.ModelStepId)
+        {
+            _streamingStepId = delta.ModelStepId;
+            _streamingNarrationId = AgentActivityIdentity.NarrationForStep(delta.ModelStepId);
+            _stepText.Clear();
+        }
+
+        var narrationId = _streamingNarrationId!;
+        var tracked = _narrationRows.TryGetValue(narrationId, out var settled);
+        if (settled) return false;
+        if (delta.IsReset)
+        {
+            _narrationRows.Remove(narrationId);
+            _stepText.Clear();
+            return true;
+        }
+
+        if (!tracked) _narrationRows[narrationId] = false;
+        var remaining = AgentActivityWireValidator.MaximumDetailLength - _stepText.Length;
+        if (remaining > 0)
+            _stepText.Append(delta.Text.AsSpan(0, Math.Min(remaining, delta.Text.Length)));
+        return true;
+    }
+
+    private void RenderNarration(AgentActivityModel activity)
+    {
+        var text = TuiText.SanitizeUntrusted(activity.Detail ?? string.Empty).Trim();
+        if (text.Length == 0) return;
+        var streamed = _narrationRows.TryGetValue(activity.ActivityId, out var settled);
+        if (settled) return;
+        _narrationRows[activity.ActivityId] = true;
+        if (streamed)
+        {
+            // Late activity for an earlier step cannot alter the current step's prose.
+            if (activity.ActivityId != _streamingNarrationId) return;
+            var received = TuiText.SanitizeUntrusted(_stepText.ToString()).TrimStart();
+            if (received.TrimEnd() == text
+                || text.EndsWith('…') && received.StartsWith(text[..^1].TrimEnd(), StringComparison.Ordinal))
+            {
+                _transcript.Flush();
+                return;
+            }
+
+            if (received.Length > 0 && text.StartsWith(received, StringComparison.Ordinal))
+            {
+                _transcript.AppendAssistant(text[received.Length..]);
+                _transcript.Flush();
+                return;
+            }
+
+            // A gap in the middle of the stream leaves no safe suffix to append.
+            // Replace this step's partial prose with the settled narration row.
+            _surface.RewindAssistantStep(_streamingStepId);
+            _transcript.DiscardAssistantTail();
+        }
+        _transcript.ApplyActivity(activity);
     }
 
     public void RenderEnvelope(HarnessSafeEventEnvelope envelope) => _transcript.ApplyDurable(envelope);

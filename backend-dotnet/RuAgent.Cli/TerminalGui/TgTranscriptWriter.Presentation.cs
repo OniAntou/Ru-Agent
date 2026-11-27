@@ -32,7 +32,7 @@ public sealed partial class TgTranscriptWriter
         // not acquire a synthetic span merely because it used the typed transport.
         return new(text, style,
             row.Runs.All(run => run.Token == TuiToken.Ink && !run.Bold && !run.Dim) ? null : spans)
-            { ContinuesPrevious = row.ContinuesPrevious };
+            { ContinuesPrevious = row.ContinuesPrevious, Tool = row.Tool };
     }
 
     public void PreviewPresentation(IReadOnlyList<TranscriptLine> rows) => ProjectPresentation(rows, false);
@@ -66,7 +66,7 @@ public sealed partial class TgTranscriptWriter
         try { Dispatch(() =>
         {
             if (row.Role == TranscriptRole.Tool) transcript.ClearLive();
-            transcript.Append(native.Text, native.Style, native.Spans);
+            transcript.Append(native);
         }); }
         catch (NotInitializedException) { }
     }
@@ -79,7 +79,7 @@ public sealed partial class TgTranscriptWriter
         try { Dispatch(() =>
         {
             if (append) transcript.AppendChunk(native.Text, native.Spans);
-            else transcript.Append(native.Text, native.Style, native.Spans);
+            else transcript.Append(native);
         }); }
         catch (NotInitializedException) { }
     }
@@ -93,8 +93,8 @@ public sealed partial class TgTranscriptWriter
             Dispatch(() =>
             {
                 transcript.ClearLive();
-                if (hidden is { Length: > 0 }) transcript.AppendCollapsed(native.Text, hidden, native.Style, native.Spans);
-                else transcript.Append(native.Text, native.Style, native.Spans);
+                if (hidden is { Length: > 0 }) transcript.AppendCollapsed(native, hidden);
+                else transcript.Append(native);
                 _toolRows[activityId] = (transcript.CommittedRowCount - 1, transcript.RetentionVersion);
             });
         }

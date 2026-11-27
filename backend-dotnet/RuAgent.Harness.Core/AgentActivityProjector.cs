@@ -68,7 +68,7 @@ public static class AgentActivityProjector
     /// </remarks>
     public static AgentActivity ProjectNarration(ModelStepId modelStepId, string text) =>
         new(
-            ActivityId(modelStepId.Value) + "_narration",
+            AgentActivityIdentity.NarrationForStep(modelStepId.Value),
             AgentActivityKind.Narration,
             AgentActivityState.Completed,
             ToolDisplay: null,
@@ -773,14 +773,7 @@ public static class AgentActivityProjector
     /// </summary>
     public static string ModelStepActivityId(ModelStepId modelStepId) => ActivityId(modelStepId.Value);
 
-    internal static string ActivityId(string sourceId)
-    {
-        var separator = sourceId.IndexOf('_');
-        var suffix = separator >= 0 && separator + 1 < sourceId.Length
-            ? sourceId[(separator + 1)..]
-            : sourceId;
-        return $"act_{suffix}";
-    }
+    internal static string ActivityId(string sourceId) => AgentActivityIdentity.FromSource(sourceId);
 
     private static string SafeCodeFor(AgentActivityState state, string? code) =>
         IsSafeCode(code)

@@ -25,6 +25,7 @@ internal sealed record TgTranscriptRow(string Text, TranscriptStyle Style, IRead
 {
     // Storage segments of one logical paragraph copy without an inserted newline.
     internal bool ContinuesPrevious { get; init; }
+    internal TranscriptToolRow? Tool { get; init; }
 }
 
 /// <summary>
@@ -141,7 +142,7 @@ public sealed partial class TgTranscriptView : View
         for (var index = _lines.Count - 1; index >= mark; index--)
             if (_lines[index].Style == TranscriptStyle.Prose) RemoveLine(index);
         _wrapWidth = -1;
-        foreach (var row in rows) Append(row.Text, TranscriptStyle.Prose, row.Spans, row.ContinuesPrevious);
+        foreach (var row in rows) Append(row with { Style = TranscriptStyle.Prose });
         SetNeedsDraw();
     }
 
@@ -280,20 +281,21 @@ public sealed partial class TgTranscriptView : View
 
     public void Append(string text, TranscriptStyle style) => Append(text, style, null);
 
-    public void Append(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans) => Append(text, style, spans, false);
+    public void Append(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans) =>
+        Append(new TgTranscriptRow(text, style, spans));
 
-    private void Append(string text, TranscriptStyle style, IReadOnlyList<TgSpan>? spans, bool continuesPrevious)
+    internal void Append(TgTranscriptRow row)
     {
         EnsureWrapped();
         var wasEmpty = _lines.Count == 0;
-        var bounded = BoundLine(text);
-        var fitted = PrepareRowSpans(spans, bounded, style);
+        var bounded = BoundLine(row.Text);
+        var fitted = PrepareRowSpans(row.Spans, bounded, row.Style);
 
-        _lines.Add(new TgTranscriptRow(bounded, style, fitted) { ContinuesPrevious = continuesPrevious });
+        _lines.Add(row with { Text = bounded, Spans = fitted });
         _retainedCharacters += CharacterCount(bounded);
         if (wasEmpty)
         {
-            TuiDebug.Log("transcript", $"first append hides landing (len={text.Length})");
+            TuiDebug.Log("transcript", $"first append hides landing (len={row.Text.Length})");
             FirstContentAppended?.Invoke();
         }
 

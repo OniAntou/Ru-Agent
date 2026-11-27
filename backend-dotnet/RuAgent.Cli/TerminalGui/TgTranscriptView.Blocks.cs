@@ -37,20 +37,23 @@ public sealed partial class TgTranscriptView
     /// All rows count toward the transcript's existing retention budget.
     /// </summary>
     public void AppendCollapsed(string summary, IReadOnlyList<string> hidden, TranscriptStyle style,
-        IReadOnlyList<TgSpan>? spans = null)
+        IReadOnlyList<TgSpan>? spans = null) =>
+        AppendCollapsed(new TgTranscriptRow(summary, style, spans), hidden);
+
+    internal void AppendCollapsed(TgTranscriptRow row, IReadOnlyList<string> hidden)
     {
-        ArgumentNullException.ThrowIfNull(summary);
+        ArgumentNullException.ThrowIfNull(row.Text);
         ArgumentNullException.ThrowIfNull(hidden);
         var wasEmpty = _lines.Count == 0;
-        var boundedSummary = BoundLine(summary);
-        _lines.Add(new TgTranscriptRow(boundedSummary, style, spans));
+        var boundedSummary = BoundLine(row.Text);
+        _lines.Add(row with { Text = boundedSummary });
         _retainedCharacters += CharacterCount(boundedSummary);
         if (wasEmpty)
         {
             FirstContentAppended?.Invoke();
         }
 
-        AddCollapsedBlock(hidden, style, hasSummary: true);
+        AddCollapsedBlock(hidden, row.Style, hasSummary: true);
     }
 
     private void UpdateToolDetails(int row, IReadOnlyList<string> hidden)

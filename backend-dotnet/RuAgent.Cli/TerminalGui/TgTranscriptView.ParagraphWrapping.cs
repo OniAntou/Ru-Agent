@@ -12,7 +12,7 @@ public sealed partial class TgTranscriptView
         if (row.Style != TranscriptStyle.Prose)
         {
             ResetWrapGroup();
-            return AppendWrapped(row.Text, row.Style, row.Spans, width);
+            return AppendWrapped(row.Text, row.Style, row.Spans, width, tool: row.Tool);
         }
         var continues = row.ContinuesPrevious && row.Style == TranscriptStyle.Prose
             && _wrapGroupStart >= 0 && _wrapGroupStart < index;

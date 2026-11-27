@@ -84,6 +84,21 @@ public sealed record AgentActivityWire(
     [property: JsonPropertyName("relative_path")] string? RelativePath = null,
     [property: JsonPropertyName("reasoning_payload_id")] string? ReasoningPayloadId = null);
 
+/// <summary>Stable row identities shared by activity publishers and their clients.</summary>
+public static class AgentActivityIdentity
+{
+    public static string FromSource(string sourceId)
+    {
+        var separator = sourceId.IndexOf('_');
+        var suffix = separator >= 0 && separator + 1 < sourceId.Length
+            ? sourceId[(separator + 1)..]
+            : sourceId;
+        return $"act_{suffix}";
+    }
+
+    public static string NarrationForStep(string modelStepId) => FromSource(modelStepId) + "_narration";
+}
+
 public static class AgentActivityWireCodec
 {
     private static readonly JsonSerializerOptions JsonOptions = new()

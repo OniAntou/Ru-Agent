@@ -84,3 +84,6 @@ rustup-init.exe
 /site/
 /docs-site/.build/
 .venv-docs/
+
+# Local scratch output (build logs, previews, staged docs) from agent sessions
+/TEMP/

@@ -55,6 +55,7 @@ FONTS = (
     "&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400"
     "&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
 )
+WORK_MARKER = ".ru-docs-work"
 
 LINK = re.compile(r"(?<!\!)\]\(([^)\s]+?)(\s+\"[^\"]*\")?\)")
 IMAGE = re.compile(r"\!\[[^\]]*\]\(([^)\s]+?)\)")
@@ -142,6 +143,27 @@ def convert_alerts(text: str) -> str:
     return "\n".join(out)
 
 
+def prepare_work_directory(work: Path) -> Path:
+    work = work.resolve()
+    destination = (work / "docs").resolve()
+    source_docs = (ROOT / "docs").resolve()
+    repository = ROOT.resolve()
+    script_directory = HERE.resolve()
+
+    if work in (repository, script_directory) or work in repository.parents or work in script_directory.parents:
+        raise ValueError("--work must name a dedicated scratch work directory, not the repository or its parent")
+    if destination == source_docs or source_docs in destination.parents:
+        raise ValueError("--work would replace the source documentation tree")
+
+    marker = work / WORK_MARKER
+    if destination.exists() and work != (script_directory / ".build").resolve() and not marker.is_file():
+        raise ValueError(f"work directory {work} does not own {destination}; choose a new --work directory")
+
+    work.mkdir(parents=True, exist_ok=True)
+    marker.write_text("ru-docs-site\n", encoding="utf-8")
+    return destination
+
+
 def stage(destination: Path) -> dict[str, int]:
     if destination.exists():
         shutil.rmtree(destination)
@@ -173,7 +195,7 @@ def revision() -> tuple[str, str]:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         short = "local"
-    return short, datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    return short, datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
 
 
 def page_url(relative: str) -> str:
@@ -195,13 +217,8 @@ def contents_html(nav: list) -> str:
         for index, child in enumerate(value, start=1):
             (page_title, page_path), = child.items()
             rows.append(
-                '<li><a href="{url}"><span class="contents__title">{title}</span>'
-                '<span class="contents__leader"></span><span class="contents__num">{ch}-{sec}</span></a></li>'.format(
-                    url=html.escape(page_url(page_path)),
-                    title=html.escape(page_title),
-                    ch=number,
-                    sec=index,
-                )
+                f'<li><a href="{html.escape(page_url(page_path))}"><span class="contents__title">{html.escape(page_title)}'
+                f'</span><span class="contents__leader"></span><span class="contents__num">{number}-{index}</span></a></li>'
             )
         wide = " contents__chapter--wide" if len(value) > 8 else ""
         chapters.append(
@@ -311,15 +328,15 @@ def write_config(staged_root: Path, config_path: Path, nav: list) -> None:
     config_path.write_text(yaml.safe_dump(base, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", default="site", help="directory MkDocs writes the finished site to")
     parser.add_argument("--work", default=str(HERE / ".build"), help="scratch directory for the staged copy")
     parser.add_argument("--stage-only", action="store_true", help="stage the documents and write the config only")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     work = Path(args.work).resolve()
-    staged_root = work / "docs"
+    staged_root = prepare_work_directory(work)
     report = stage(staged_root)
     nav = navigation(staged_root)
     write_cover(staged_root, nav)

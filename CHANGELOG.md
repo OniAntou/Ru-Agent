@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previous pretty-printed marker are recognized again, so update and reinstall no longer refuse
   a non-empty installation folder as belonging to another Ru product.
 
+- **fix(docs)**: The documentation-site builder refuses dangerous or unowned `--work`
+  destinations before deleting a staged copy, including the repository root and source `docs/`
+  tree. Current route and tool counts are corrected and guarded against the canonical contract
+  and Protocol catalog.
+
 - **feat(subagents)**: Detached background subagents ([ADR 0045](docs/adr/0045-detached-background-subagents.md),
   now accepted). When the user asks in their own words for work that keeps running after the
   answer, `agent_spawn` takes `detached=true` with `detached_request` quoting those words; the

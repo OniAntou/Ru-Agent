@@ -24,6 +24,9 @@ python -m venv .venv-docs
   and are not part of the project's Python tooling set.
 - `.github/workflows/docs.yml` deploys to GitHub Pages on a push to `dev` that touches a
   published document. Pages must be enabled once under Settings > Pages (Source: GitHub Actions).
+- `--work` must point to a dedicated scratch directory. The builder refuses the repository root,
+  the source `docs/` tree and an existing staged `docs/` directory it does not own; it records
+  ownership in `.ru-docs-work`. The default `docs-site/.build` remains supported.
 
 ## Look and feel
 

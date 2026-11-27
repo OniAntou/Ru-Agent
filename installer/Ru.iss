@@ -99,11 +99,16 @@ begin
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
-var Marker: AnsiString; Entry: TFindRec; Nonempty: Boolean;
+var Marker: AnsiString; CompactMarker: String; Entry: TFindRec; Nonempty: Boolean;
 begin
   Result := '';
   if LoadStringFromFile(ExpandConstant('{app}\ru-install.json'), Marker) then begin
-    if Pos('"Product": "{#LowerCase(Product)}"', String(Marker)) = 0 then begin
+    CompactMarker := String(Marker);
+    StringChangeEx(CompactMarker, ' ', '', True);
+    StringChangeEx(CompactMarker, #9, '', True);
+    StringChangeEx(CompactMarker, #13, '', True);
+    StringChangeEx(CompactMarker, #10, '', True);
+    if Pos('"Product":"{#LowerCase(Product)}"', CompactMarker) = 0 then begin
       Result := 'This folder belongs to another Ru product. Choose its own installation folder.'; Exit;
     end;
   end else if DirExists(ExpandConstant('{app}')) then begin

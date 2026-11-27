@@ -54,7 +54,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $repoRoot 'installer\apply-update.ps1') -Destination $package
         Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination $package
         Copy-Item -LiteralPath (Join-Path $repoRoot 'gui-winui3\Assets\AppIcon.ico') -Destination (Join-Path $package 'Ru.ico')
-        @{ Product=$product.ToLowerInvariant(); Version=$Version; Architecture='win-x64'; UpdateProtocol=1 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'ru-install.json') -Encoding utf8
+        @{ Product=$product.ToLowerInvariant(); Version=$Version; Architecture='win-x64'; UpdateProtocol=1 } | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $package 'ru-install.json') -Encoding utf8
         # The compiler embeds exactly this tree; no keys, settings or sessions.
         Get-ChildItem -LiteralPath $package -Recurse -File | ForEach-Object { $_.FullName.Substring($package.Length+1) } | Set-Content -LiteralPath (Join-Path $package 'ru-files.lst') -Encoding utf8
         & $compiler ('/DProduct=' + $product) ('/DReleaseVersion=' + $Version) ('/DPackageRoot=' + $package) ('/DOutputRoot=' + $releaseRoot) (Join-Path $repoRoot 'installer\Ru.iss')

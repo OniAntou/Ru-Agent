@@ -22,6 +22,21 @@ def test_installers_do_not_close_apps_or_delete_the_profile() -> None:
     assert "Get-FileHash" in helper
 
 
+def test_release_marker_is_compact_json() -> None:
+    package = (ROOT / "scripts/package_release.ps1").read_text(encoding="utf-8")
+    assert "ConvertTo-Json -Compress" in package
+
+
+def test_installer_product_check_ignores_marker_whitespace() -> None:
+    setup = (ROOT / "installer/Ru.iss").read_text(encoding="utf-8")
+    assert "CompactMarker" in setup
+    assert "StringChangeEx(CompactMarker, ' ', '', True)" in setup
+    assert "StringChangeEx(CompactMarker, #9, '', True)" in setup
+    assert "StringChangeEx(CompactMarker, #13, '', True)" in setup
+    assert "StringChangeEx(CompactMarker, #10, '', True)" in setup
+    assert "'\"Product\":\"{#LowerCase(Product)}\"'" in setup
+
+
 def test_native_installer_smoke_is_restricted_to_disposable_ci() -> None:
     smoke = (ROOT / "scripts/installer_smoke.ps1").read_text(encoding="utf-8")
     assert "$env:GITHUB_ACTIONS -ne 'true'" in smoke

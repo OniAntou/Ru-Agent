@@ -23,6 +23,8 @@ public sealed class SubagentLivePublisher(SqliteSubagentSnapshotReader snapshots
         {
             agent_id = a.Agent.AgentId,
             canceled = a.Agent.Canceled,
+            // A live UI labels a child that keeps running after the root answers (ADR 0045).
+            detached = a.Agent.Detached,
             attempts = a.Attempts.Select(t => new { attempt_run_id = t.Attempt.Run.RunId.Value,
                 attempt_number = t.Attempt.AttemptNumber, version = t.Attempt.Run.Version,
                 status = AgentV1Shared.MapRunState(t.Attempt.Run.Status) }).ToArray(),

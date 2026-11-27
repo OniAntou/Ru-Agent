@@ -13,7 +13,8 @@ public static class SubagentPresenter
         foreach (var agent in snapshot.Agents)
         {
             var attempt = agent.Attempts.LastOrDefault();
-            yield return $"  {agent.AgentId} · {agent.Role} · {attempt?.Status ?? "unavailable"} · {attempt?.Model ?? "model unavailable"}"
+            var background = agent.Detached ? " · background" : "";
+            yield return $"  {agent.AgentId} · {agent.Role}{background} · {attempt?.Status ?? "unavailable"} · {attempt?.Model ?? "model unavailable"}"
                 + (string.IsNullOrWhiteSpace(agent.Profile) ? "" : $" · profile {agent.Profile}");
             if (agent.Task is not null) yield return "    " + agent.Task;
             if (attempt?.Approval is { } approval)

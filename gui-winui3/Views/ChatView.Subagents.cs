@@ -12,6 +12,9 @@ public sealed partial class ChatView
 
     private void OnSubagentsChanged(object? sender, EventArgs e) => UpdateSubagentPeek();
 
+    private void OnSidePanelBackgroundResultReady(object? sender, string title) =>
+        BackgroundResultReady?.Invoke(this, title);
+
     /// <summary>The root's live hint: the observer re-reads its durable snapshot now.</summary>
     private void OnAgentSubagentsChanged(object? sender, string rootRunId)
     {

@@ -11,6 +11,7 @@ using RuBackend.Providers;
 using RuBackend.Harness.Policy;
 using RuBackend.Harness.Prompting;
 using RuBackend.Harness.Reconciliation;
+using RuBackend.Harness.Subagents;
 using RuBackend.Harness.Workspace;
 
 namespace RuBackend.Harness;
@@ -178,6 +179,7 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             advisorSelected = metadata.AdvisorSelected;
         }
         var subagentStore = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentStore(_sqliteOptions, _payloadStore);
+        var subagentResults = new RuAgent.Harness.Persistence.Subagents.SqliteSubagentResultStore(_sqliteOptions, _payloadStore);
         var internalRun = storedRun is not null && await subagentStore.IsInternalSessionAsync(storedRun.SessionId, cancellationToken).ConfigureAwait(false);
         if (internalRun && agentSessionId != storedRun!.SessionId.Value)
             throw new HarnessStoreException("subagent_runtime_unavailable");
@@ -282,17 +284,20 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                 string? detached = null;
                 if (inherited.Count > 0)
                 {
-                    var described = new List<string>();
-                    foreach (var record in inherited.Take(8))
+                    var facts = new List<SubagentRunStateFact>();
+                    foreach (var record in inherited.Take(SubagentRunStateNote.MaxFacts))
                     {
                         var attempt = await subagentStore.GetLatestAttemptAsync(record.RootRunId, record.AgentId, ct).ConfigureAwait(false);
                         var state = record.Canceled ? "cancelled"
                             : attempt is null ? "unknown"
                             : attempt.Run.State.IsTerminal() ? attempt.Run.State.ToString().ToLowerInvariant() : "working";
-                        described.Add($"{record.AgentId} ({record.Role}, {state})");
+                        // A settled child can still be collecting its result; name the result
+                        // version so a later root knows what agent_apply can integrate.
+                        var results = await subagentResults.ListAsync(record.RootRunId, record.AgentId, ct).ConfigureAwait(false);
+                        var latest = results.Count > 0 ? results[results.Count - 1] : null;
+                        facts.Add(new(record.AgentId, record.Role, state, latest?.Version, latest?.State));
                     }
-                    detached = "detached from earlier runs in this session: " + string.Join(", ", described)
-                        + (inherited.Count > 8 ? ", …" : string.Empty);
+                    detached = SubagentRunStateNote.Describe(facts, inherited.Count > facts.Count);
                 }
                 subagentsValue = owned is null ? detached : detached is null ? owned : owned + "; " + detached;
             }

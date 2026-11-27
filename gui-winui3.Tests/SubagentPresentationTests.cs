@@ -5,10 +5,11 @@ using Xunit;
 namespace RuApp.Tests;
 public sealed class SubagentPresentationTests
 {
-    private static SubagentSummary Agent(string status, string? code = null, bool publish = true) =>
+    private static SubagentSummary Agent(string status, string? code = null, bool publish = true, bool detached = false) =>
         new("agent_one", "coding", "Fix the parser. Keep existing behavior.", false,
             [new("run_child", 1, status, 3, "provider", "model", "chat_completions", null, null)],
-            publish ? [new(1, "run_child", status, code, null, null, false, null)] : []);
+            publish ? [new(1, "run_child", status, code, null, null, false, null)] : [],
+            Detached: detached);
 
     [Theory]
     [InlineData("running", null, true, SubagentGroup.Working, "Working")]
@@ -126,5 +127,28 @@ public sealed class SubagentPresentationTests
         var rows = new[] { SubagentPresentation.Row(Agent("completed")),
             SubagentPresentation.Row(Agent("cancelled") with { AgentId = "agent_two" }) };
         Assert.Equal("1 done · 1 stopped", SubagentPresentation.Summary(rows));
+    }
+
+    [Fact]
+    public void A_detached_result_is_labelled_background_and_stays_ready_until_it_is_applied()
+    {
+        var pending = SubagentPresentation.Row(Agent("completed", detached: true));
+        Assert.True(pending.Detached);
+        Assert.True(pending.ResultReady);
+        Assert.Equal("Coding · background · Done · result ready", pending.Subtitle);
+        Assert.Contains("result ready", pending.AutomationLabel, StringComparison.Ordinal);
+
+        var applied = Agent("completed", detached: true) with
+        {
+            Results = [new(1, "run_child", "completed", null, "applied", 3, false, null)],
+        };
+        var row = SubagentPresentation.Row(applied);
+        Assert.True(row.Detached);
+        Assert.False(row.ResultReady);
+        Assert.Equal("Coding · background · Done", row.Subtitle);
+
+        var snapshot = new SubagentListResponse("root_run", "completed", "snapshot",
+            [Agent("completed", detached: true)], [], 0, new(0, 0, null, null, null, false));
+        Assert.Contains("1 result ready", SubagentPresentation.ObserverSummary(snapshot, false), StringComparison.Ordinal);
     }
 }

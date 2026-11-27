@@ -116,6 +116,16 @@ public sealed partial class MainWindow
         if (!string.Equals(session.Id, _chatView?.CurrentSessionId, StringComparison.Ordinal)) Deliver(notification);
     }
 
+    /// <summary>
+    /// A detached child finished while the chat was open. This is a workflow notification, not a
+    /// run finish: the root already answered, and the result is waiting to be applied.
+    /// </summary>
+    private void OnBackgroundResultReady(object? sender, string title)
+    {
+        if (_chatView?.CurrentSessionId is { } sessionId && !string.IsNullOrWhiteSpace(title))
+            Deliver(new AgentNotification(AgentNotificationKind.Finished, sessionId, "Background task finished", title));
+    }
+
     private void Deliver(AgentNotification? notification)
     {
         var preferences = _notificationPreferences;

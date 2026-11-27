@@ -371,6 +371,9 @@ namespace RuApp.Views
 
         public event EventHandler<SessionOpenedEventArgs>? SessionOpened;
 
+        /// <summary>A detached subagent finished with an unapplied result (ADR 0045).</summary>
+        public event EventHandler<string>? BackgroundResultReady;
+
         public event EventHandler<SessionStartedEventArgs>? SessionStarted;
 
         public event EventHandler<SessionPresetAdoptedEventArgs>? SessionPresetAdopted;

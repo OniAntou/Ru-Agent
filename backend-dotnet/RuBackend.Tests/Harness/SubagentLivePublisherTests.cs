@@ -24,7 +24,7 @@ public sealed class SubagentLivePublisherTests
         var agents = new SqliteSubagentStore(fixture.Options, fixture.PayloadStore);
         await agents.CreateAsync(new("agent_one", root.RunId, "spawn_one", SubagentRole.Review,
             new(child, [new(new("evt_" + new string('b', 32)), HarnessEventKind.RunStateChanged, safeCode: "subagent_queued")], [], [],
-                new(new string('b', 64), new string('c', 64), 1))), default);
+                new(new string('b', 64), new string('c', 64), 1)), Detached: true), default);
         var hub = new HarnessLiveEventHub();
         var publisher = new SubagentLivePublisher(new(fixture.Options, fixture.PayloadStore), agents, new(fixture.Options), hub);
         await using var rootFeed = hub.Subscribe(root.RunId);
@@ -35,6 +35,7 @@ public sealed class SubagentLivePublisherTests
         using var data = JsonDocument.Parse(first.Data);
         var entry = Assert.Single(data.RootElement.GetProperty("agents").EnumerateArray());
         Assert.Equal("agent_one", entry.GetProperty("agent_id").GetString());
+        Assert.True(entry.GetProperty("detached").GetBoolean());
         Assert.Equal(child.RunId.Value, Assert.Single(entry.GetProperty("attempts").EnumerateArray()).GetProperty("attempt_run_id").GetString());
         Assert.False(otherFeed.TryReadNext(out _));
         await publisher.PublishAsync(root.RunId, default);

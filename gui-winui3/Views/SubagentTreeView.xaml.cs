@@ -13,6 +13,8 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
 {
     private readonly SubagentTreeModel _model = new();
     private readonly DispatcherQueueTimer _timer;
+    private readonly HashSet<string> _readyNotified = new(StringComparer.Ordinal);
+    private bool _readyBaselinePending;
     private CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _detailRead;
     private ISubagentClient? _client;
@@ -28,6 +30,7 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
     public SubagentListResponse? Snapshot => _model.Snapshot;
     public bool RefreshFailed => _refreshFailed;
     public event EventHandler? SnapshotChanged;
+    public event EventHandler<string>? BackgroundResultReady;
     public event EventHandler? CloseRequested;
 
     public SubagentTreeView()
@@ -53,6 +56,8 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
         _root = root;
         _client = client;
         _model.Bind(root, reset: true);
+        _readyNotified.Clear();
+        _readyBaselinePending = true;
         ResetDetailRead();
         ClearChildActivity();
         _exporting = false;
@@ -203,6 +208,28 @@ public sealed partial class SubagentTreeView : UserControl, IDisposable
         ProfileIssues.Visibility = diagnostics.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ListBody.Visibility = _model.SelectedAgentId is null ? Visibility.Visible : Visibility.Collapsed;
         DetailBody.Visibility = _model.SelectedAgentId is null ? Visibility.Collapsed : Visibility.Visible;
+        NotifyReadyDetachedResults(snapshot);
+    }
+
+    /// <summary>
+    /// A detached child that finished with an unapplied result is a handoff the user can act on.
+    /// Raise one event per agent/result version; a refresh with the same snapshot stays silent.
+    /// </summary>
+    private void NotifyReadyDetachedResults(SubagentListResponse? snapshot)
+    {
+        if (snapshot is null) return;
+        // The first snapshot after binding is the baseline: a result that was already ready
+        // before this chat opened is not a new finish and must not toast again.
+        var baseline = _readyBaselinePending;
+        _readyBaselinePending = false;
+        foreach (var agent in snapshot.Agents)
+        {
+            if (!agent.Detached) continue;
+            var result = agent.Results.LastOrDefault();
+            if (result is null || result.Status != "completed" || !string.IsNullOrEmpty(result.ApplyStatus)) continue;
+            if (_readyNotified.Add(agent.AgentId + ":" + result.ResultVersion) && !baseline)
+                BackgroundResultReady?.Invoke(this, SubagentPresentation.Title(agent.Task, agent.Role));
+        }
     }
 
     private static void Reconcile(ObservableCollection<SubagentRow> target, SubagentRow[] rows)

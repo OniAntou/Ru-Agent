@@ -314,6 +314,7 @@ namespace RuApp
                 _chatView.SessionOpened += OnChatSessionOpened;
                 _chatView.SessionStarted += OnChatSessionStarted;
                 _chatView.SessionPresetAdopted += OnChatSessionPresetAdopted;
+                _chatView.BackgroundResultReady += OnBackgroundResultReady;
                 // A failure message that offers to open provider settings needs the
                 // window: the settings surface belongs to it, not to the transcript.
                 _chatView.ProviderSettingsRequested += OnProviderSettingsRequested;
@@ -784,6 +785,7 @@ namespace RuApp
                 _chatView.SessionOpened -= OnChatSessionOpened;
                 _chatView.SessionStarted -= OnChatSessionStarted;
                 _chatView.SessionPresetAdopted -= OnChatSessionPresetAdopted;
+                _chatView.BackgroundResultReady -= OnBackgroundResultReady;
                 DisposeSafely("chat view", _chatView.Dispose);
             }
 

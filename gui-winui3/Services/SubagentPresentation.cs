@@ -16,6 +16,10 @@ public sealed record SubagentRow(string AgentId, string Role, string Title, stri
     public string Status { get; } = Status;
     public SubagentGroup Group { get; } = Group;
     public string Tone { get; } = Tone;
+    /// <summary>ADR 0045: the child keeps running after its root answers.</summary>
+    public bool Detached { get; set; }
+    /// <summary>A detached child's completed result is waiting for the user to integrate.</summary>
+    public bool ResultReady { get; set; }
     /// <summary>
     /// Elapsed time, steps and tokens. Mutable so a ticking duration updates the bound
     /// row in place instead of replacing the list item (which would drop keyboard focus).
@@ -32,13 +36,16 @@ public sealed record SubagentRow(string AgentId, string Role, string Title, stri
             PropertyChanged?.Invoke(this, new(nameof(AutomationLabel)));
         }
     }
-    public string Subtitle => Meta.Length == 0 ? $"{RoleLabel} · {Status}" : $"{RoleLabel} · {Status} · {Meta}";
-    public string AutomationLabel => Meta.Length == 0 ? $"{Title}, {RoleLabel}, {Status}" : $"{Title}, {RoleLabel}, {Status}, {Meta}";
+    public string Subtitle => (Meta.Length == 0 ? $"{RoleLabel} · {Status}" : $"{RoleLabel} · {Status} · {Meta}")
+        + (ResultReady ? " · result ready" : "");
+    public string AutomationLabel => (Meta.Length == 0 ? $"{Title}, {RoleLabel}, {Status}" : $"{Title}, {RoleLabel}, {Status}, {Meta}")
+        + (ResultReady ? ", result ready" : "");
     public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>Everything but <see cref="Meta"/>; record equality would also compare subscribers.</summary>
     public bool SameState(SubagentRow other) => AgentId == other.AgentId && Role == other.Role && Title == other.Title
-        && RoleLabel == other.RoleLabel && Status == other.Status && Group == other.Group && Tone == other.Tone;
+        && RoleLabel == other.RoleLabel && Status == other.Status && Group == other.Group && Tone == other.Tone
+        && Detached == other.Detached && ResultReady == other.ResultReady;
 }
 
 /// <summary>Presentation truth, independent of controls and API transport.</summary>
@@ -95,8 +102,17 @@ public static class SubagentPresentation
         };
         var role = agent.Role == "coding" ? "Coding" : "Review";
         var label = string.IsNullOrWhiteSpace(agent.Profile) ? role : $"{role} ({agent.Profile})";
+        if (agent.Detached) label += " · background";
+        // Only a detached child hands its result back through the task list; an attached child's
+        // result is read by the waiting parent, so it is not a pending integration.
+        var resultReady = agent.Detached && result is { Status: "completed" }
+            && string.IsNullOrEmpty(result.ApplyStatus);
         return new(agent.AgentId, agent.Role, Title(agent.Task, role), label, status, group, tone)
-        { Meta = Meta(attempt, group == SubagentGroup.Working ? now : null) };
+        {
+            Meta = Meta(attempt, group == SubagentGroup.Working ? now : null),
+            Detached = agent.Detached,
+            ResultReady = resultReady,
+        };
     }
 
     /// <summary>"4m 12s · 12 steps · 34.5k tokens"; each part only when the contract supplies it.</summary>
@@ -148,6 +164,7 @@ public static class SubagentPresentation
         void Add(int count, string label) { if (count > 0) parts.Add($"{count} {label}"); }
         Add(rows.Count(r => r.Group == SubagentGroup.Working), "working");
         Add(rows.Count(r => r.Group == SubagentGroup.Attention), "need attention");
+        Add(rows.Count(r => r.ResultReady), "result ready");
         Add(rows.Count(r => r.Status == "Done"), "done");
         Add(rows.Count(r => r.Status == "Stopped"), "stopped");
         return parts.Count == 0 ? "No subagents yet" : string.Join(" · ", parts);
@@ -157,8 +174,13 @@ public static class SubagentPresentation
     {
         var working = rows.Count(r => r.Group == SubagentGroup.Working);
         var attention = rows.Count(r => r.Group == SubagentGroup.Attention);
-        if (working > 0) return $"{working} working" + (attention > 0 ? $" · {attention} waiting" : "");
-        return attention > 0 ? $"{attention} need attention" : Summary(rows);
+        var ready = rows.Count(r => r.ResultReady);
+        if (working > 0)
+            return $"{working} working" + (attention > 0 ? $" · {attention} waiting" : "")
+                + (ready > 0 ? $" · {ready} result ready" : "");
+        if (attention > 0)
+            return $"{attention} need attention" + (ready > 0 ? $" · {ready} result ready" : "");
+        return ready > 0 ? $"{ready} result ready" : Summary(rows);
     }
 
     public static string Usage(SubagentUsageSummary? usage) => usage?.TotalTokens is { } tokens

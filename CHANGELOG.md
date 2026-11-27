@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(subagents)**: Detached children are visible as background work. The live
+  `subagent.changed` hint carries `detached`, `/subagents` and the GUI task list label the child
+  `background`, the side panel reports an unapplied detached result as **result ready**, and a
+  later root's `run_state` names the child's result version (`agent_x (Coding, completed, result
+  v2 completed)`) so the model can `agent_apply` without inspecting the task tree first.
+
 - **fix(broker)**: `read` no longer refuses PDF and Office files over 20 MiB; the whole-file bound is now the largest managed array. The 10 s parse budget and the per-part XML and archive-entry bounds still apply.
 - **feat(broker)**: Document, search and time bounds are looser. A document read stops at 200,000 characters (was 60,000) and takes up to 100 PDF pages per call (was 20; the tool description still says 20); the parse budget is 120 s and the search, list and glob budget 60 s (were 10 s and 5 s); grep searches files up to 64 MiB (was 1 MiB); an Office part may hold 256 MiB of XML and 65,536 archive entries. Result counts, the 50000 grep offset, write and edit sizes and the journal bound are unchanged.
 - **feat(tools)**: Schema and size bounds are looser. `write_file`, `edit_file` and `apply_patch` accept 8 MiB (was 4 MiB); `grep` and `glob` take up to 512 results (default stays 128), `list` up to 2048 entries (default stays 512), and the grep `offset` reaches 1,000,000 (was 50000); the file-mutation journal holds 32 MiB, the rollback preimage 64 MiB, and a web download may be configured up to 16 MiB. The model-facing schemas changed, so their golden digests were regenerated. Read and tool output stay at 4 MiB (the context window is the real bound), and the 16 MiB journal and payload bounds in the store are unchanged.

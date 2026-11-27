@@ -42,6 +42,12 @@ stops it. A detached child gets no extra permission: it keeps the policy it was
 spawned with and fails closed on anything needing approval. A coding result's read-only
 change review and bounded patch export work the same way for detached children.
 
+A detached child is labelled `background` in `/subagents` and the GUI task list, and the live
+`subagent.changed` hint carries `detached`. A later turn's `run_state` names the child's result
+version (`agent_x (Coding, completed, result v2 completed)`), so the model can act without
+inspecting the task tree first. The side panel reports a completed detached result that has not
+been applied as **result ready**.
+
 Subagent controls do not use the generic `ReconciliationRequired` park. If a control's
 outcome is uncertain (partial apply, cancel cleanup, workspace/IO failure), the model
 receives a failed receipt with `sideEffectsPossible=true` and decides whether to inspect,

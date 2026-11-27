@@ -8,6 +8,8 @@ public sealed partial class AgentSidePanelControl
 {
     private bool _subagentsChipHovered;
     public event EventHandler? SubagentsChanged;
+    /// <summary>A detached child finished with an unapplied result (ADR 0045).</summary>
+    public event EventHandler<string>? BackgroundResultReady;
     public bool HasSubagents => SubagentBrowser.RefreshFailed || (SubagentBrowser.Snapshot is { } snapshot &&
         (snapshot.Agents.Count > 0 || snapshot.Preparations.Count > 0 || snapshot.UnavailableAttempts > 0));
     public string SubagentSummary { get; private set; } = "No subagents yet";
@@ -15,8 +17,11 @@ public sealed partial class AgentSidePanelControl
     private void InitializeSubagents()
     {
         SubagentBrowser.SnapshotChanged += OnSubagentSnapshotChanged;
+        SubagentBrowser.BackgroundResultReady += OnBackgroundResultReady;
         SubagentBrowser.CloseRequested += OnSubagentCloseRequested;
     }
+
+    private void OnBackgroundResultReady(object? sender, string title) => BackgroundResultReady?.Invoke(this, title);
 
     public void BindSubagents(ISubagentClient? client, string? root) => SubagentBrowser.Bind(client, root);
     /// <summary>The chat's message templates, so a subagent's conversation reads like the main one.</summary>
@@ -47,6 +52,7 @@ public sealed partial class AgentSidePanelControl
     public void DisposeSubagents()
     {
         SubagentBrowser.SnapshotChanged -= OnSubagentSnapshotChanged;
+        SubagentBrowser.BackgroundResultReady -= OnBackgroundResultReady;
         SubagentBrowser.CloseRequested -= OnSubagentCloseRequested;
         SubagentBrowser.Dispose();
     }

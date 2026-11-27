@@ -415,7 +415,7 @@ Follow returned cursors rather than adding the requested limit to the offset.
 per call. Without `pages`, a document of at most ten pages is read whole; a
 longer one returns its first ten pages and a `notice` naming the next range.
 Extraction stops at 60,000 characters; image-only or scanned PDFs report that no
-text was extractable; encrypted, malformed, oversized (over 20 MiB), or
+text was extractable; encrypted, malformed, oversized (beyond what fits in memory), or
 timed-out documents fail by name.
 
 Office Open XML (`.docx`, `.xlsx`, `.pptx` and their macro/template variants) and
@@ -423,7 +423,7 @@ OpenDocument (`.odt`, `.ods`, `.odp`) files return `kind: "document"` with
 `format`, `unit` (`paragraph`, `row` or `slide`), `part_count` and `pages`; a
 spreadsheet row carries its sheet name on the sheet's first row. `pages="120-400"`
 selects a part range, text stops at 60,000 characters, and a `notice` names the
-next range. Password-protected, damaged, oversized (over 20 MiB) or timed-out
+next range. Password-protected, damaged, oversized (beyond what fits in memory) or timed-out
 documents fail by name. Legacy `.doc`/`.xls`/`.ppt` and iWork files fail as
 `document_unsupported` with a conversion command; other binary files fail as
 `binary_file_unsupported` with what the bytes look like (archive, executable,

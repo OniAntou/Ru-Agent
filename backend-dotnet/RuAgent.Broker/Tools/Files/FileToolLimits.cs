@@ -11,10 +11,12 @@ public static class FileToolLimits
     public const int MaxPathLength = 4096;
 
     /// <summary>
-    /// Largest file that document extraction reads whole (PDF path). The windowed text read
-    /// keeps <see cref="MaxReadBytes"/>; a document parser needs the complete container.
+    /// Largest file that document extraction reads whole (PDF and Office path). There is no
+    /// product size policy: the bound is the largest managed array, so the buffer plus its
+    /// one-byte growth probe always fits. The windowed text read keeps <see cref="MaxReadBytes"/>;
+    /// a document parser needs the complete container.
     /// </summary>
-    public const int MaxDocumentBytes = 20 * 1024 * 1024;
+    public const int MaxDocumentBytes = 0x7FFFFFC7 - 1;
 
     /// <summary>Parsing a document is slower than hashing a text window.</summary>
     public const int MaxDocumentTimeMs = 10_000;

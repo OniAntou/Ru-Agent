@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(broker)**: `read` no longer refuses PDF and Office files over 20 MiB; the whole-file bound is now the largest managed array. The 10 s parse budget and the per-part XML and archive-entry bounds still apply.
+
 - **feat(subagents)**: Detached background subagents ([ADR 0045](docs/adr/0045-detached-background-subagents.md),
   now accepted). When the user asks in their own words for work that keeps running after the
   answer, `agent_spawn` takes `detached=true` with `detached_request` quoting those words; the

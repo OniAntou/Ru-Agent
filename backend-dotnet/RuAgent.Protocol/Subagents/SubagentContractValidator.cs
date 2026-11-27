@@ -28,7 +28,7 @@ public static class SubagentContractValidator
         if (arguments.ValueKind != JsonValueKind.Object) return false;
         string[] fields = toolId switch
         {
-            "agent_spawn" => ["role", "task", "context", "model", "provider_id", "profile"],
+            "agent_spawn" => ["role", "task", "context", "model", "provider_id", "profile", "detached", "detached_request"],
             "agent_send" => ["agent_id", "message"],
             "agent_wait" => ["agent_ids", "timeout_ms"],
             "agent_cancel" => ["agent_id"],
@@ -50,7 +50,8 @@ public static class SubagentContractValidator
                 && (!arguments.TryGetProperty("model", out _) || Text(arguments, "model", 256, out _))
                 && (!arguments.TryGetProperty("provider_id", out _) || Text(arguments, "provider_id", 128, out _) && Text(arguments, "model", 256, out _))
                 && (!arguments.TryGetProperty("profile", out _)
-                    || Text(arguments, "profile", 32, out var profile) && IsValidProfileId(profile)),
+                    || Text(arguments, "profile", 32, out var profile) && IsValidProfileId(profile))
+                && Detached(arguments),
             "agent_send" => AgentId(arguments) && Text(arguments, "message", SubagentLimits.MaxTaskCharacters, out _),
             "agent_wait" => Wait(arguments),
             "agent_cancel" => AgentId(arguments),
@@ -67,6 +68,17 @@ public static class SubagentContractValidator
     public static bool IsValidProfileId(string? id) => id is { Length: > 0 and <= 32 }
         && char.IsAsciiLetterOrDigit(id[0])
         && id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
+
+    // detached=true needs the user's own words; detached_request never travels without it.
+    private static bool Detached(JsonElement arguments)
+    {
+        var hasFlag = arguments.TryGetProperty("detached", out var flag);
+        if (hasFlag && flag.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return false;
+        var detached = hasFlag && flag.ValueKind == JsonValueKind.True;
+        var hasRequest = arguments.TryGetProperty("detached_request", out _);
+        if (!detached) return !hasRequest;
+        return hasRequest && Text(arguments, "detached_request", SubagentLimits.MaxDetachedRequestCharacters, out _);
+    }
 
     private static bool AgentId(JsonElement arguments) =>
         Text(arguments, "agent_id", 128, out var id) && IsValidId(id);

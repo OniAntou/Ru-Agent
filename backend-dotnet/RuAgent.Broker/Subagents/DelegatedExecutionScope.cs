@@ -10,4 +10,10 @@ public sealed record DelegatedExecutionScope(string ParentRunId, string ChildRun
 {
     internal RuAgent.Broker.Runtime.BrokerRunLifetime? ParentLifetime { get; init; }
     internal RuAgent.Broker.Runtime.BrokerRunLifetime? ChildLifetime { get; init; }
+    /// <summary>
+    /// Detached (ADR 0045): the child outlives a normal close of its parent's lease and is then
+    /// held to the parent snapshot retained while that lease was live. Explicit child cancel,
+    /// parent-session close and runtime disposal still revoke it.
+    /// </summary>
+    internal bool Detached { get; init; }
 }

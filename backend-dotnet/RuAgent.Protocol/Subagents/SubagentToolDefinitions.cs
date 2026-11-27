@@ -14,7 +14,8 @@ public static class SubagentToolDefinitions
 
     internal static JsonObject SpawnSchema() => Object(["role", "task"], ("role", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("coding", "review") }),
         ("task", Text(SubagentLimits.MaxTaskCharacters)), ("context", Text(SubagentLimits.MaxContextBytes, 0)),
-        ("model", Text(256)), ("provider_id", Text(128)), ("profile", Text(32)));
+        ("model", Text(256)), ("provider_id", Text(128)), ("profile", Text(32)),
+        ("detached", new JsonObject { ["type"] = "boolean" }), ("detached_request", Text(SubagentLimits.MaxDetachedRequestCharacters)));
 
     internal static JsonObject SendSchema() => Object(["agent_id", "message"], ("agent_id", Text(128)), ("message", Text(SubagentLimits.MaxTaskCharacters)));
 

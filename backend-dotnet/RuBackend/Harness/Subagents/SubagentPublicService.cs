@@ -241,5 +241,6 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
         Results: entry.Results.Select(r => new SubagentResultSummary(r.Result.Version, r.Result.RunId.Value,
             AgentV1Shared.MapRunState(new(r.Result.State)), r.Result.Code, r.Apply?.Status.ToString().ToLowerInvariant(),
             r.Apply?.AppliedFiles, r.Acknowledged,
-            actions.SingleOrDefault(a => a.AgentId == entry.Agent.AgentId && a.Version == r.Result.Version) is { } action ? MapAction(action) : null)).ToArray());
+            actions.SingleOrDefault(a => a.AgentId == entry.Agent.AgentId && a.Version == r.Result.Version) is { } action ? MapAction(action) : null)).ToArray(),
+        Detached: entry.Agent.Detached);
 }

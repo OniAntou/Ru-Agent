@@ -22,12 +22,12 @@ public sealed partial class SqliteHarnessEventStore
         {
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = """
+            command.CommandText = $"""
                 SELECT v.result_version,v.run_id,o.state,o.code,v.payload_id,a.attempt_number,r.state
                 FROM agent_subagent_results v JOIN agent_subagents s ON s.agent_id=v.agent_id JOIN agent_runs r ON r.run_id=v.run_id
                 LEFT JOIN agent_subagent_result_outcomes o ON o.agent_id=v.agent_id AND o.run_id=v.run_id
                 LEFT JOIN agent_subagent_attempts a ON a.agent_id=v.agent_id AND a.run_id=v.run_id
-                WHERE s.root_run_id=$root AND s.agent_id=$agent AND v.delivered=0 ORDER BY v.result_version LIMIT 1
+                WHERE {Subagents.SqliteSubagentStore.VisibleToRoot} AND s.agent_id=$agent AND v.delivered=0 ORDER BY v.result_version LIMIT 1
                 """;
             command.Parameters.AddWithValue("$root", rootId.Value);
             command.Parameters.AddWithValue("$agent", agentId);

@@ -27,16 +27,19 @@ public sealed class SubagentControlDispatcher(IHarnessEventStore events, SqliteS
             throw new SubagentControlRejectedException("subagent_root_inactive");
         // A family may spawn any number of children, so a spawn needs no ownership check here.
         if (proposal.ToolId == "agent_spawn") return;
-        var owned = await agents.ListAsync(root.RunId, ct).ConfigureAwait(false);
         var ids = proposal.ToolId == "agent_wait"
             ? proposal.Arguments.GetProperty("agent_ids").EnumerateArray().Select(v => v.GetString()!).ToArray()
             : [proposal.Arguments.GetProperty("agent_id").GetString()!];
         foreach (var id in ids)
         {
-            var child = owned.SingleOrDefault(a => a.AgentId == id)
+            // Owned children, or detached children an earlier root of this session spawned.
+            var child = await agents.FindVisibleAsync(root.RunId, id, ct).ConfigureAwait(false)
                 ?? throw new SubagentControlRejectedException("subagent_not_found");
             if (proposal.ToolId == "agent_send" && child.Canceled)
                 throw new SubagentControlRejectedException("subagent_canceled");
+            // A continuation runs under its creating root's family budget and lease.
+            if (proposal.ToolId == "agent_send" && child.RootRunId != root.RunId)
+                throw new SubagentControlRejectedException("subagent_detached_send_unsupported");
         }
     }
 
@@ -69,7 +72,9 @@ public sealed class SubagentControlDispatcher(IHarnessEventStore events, SqliteS
                 return Receipt("subagent_message_queued", new { agent_id = agent, accepted = true });
             case "agent_cancel":
                 var canceled = intent.Arguments.GetProperty("agent_id").GetString()!;
-                await cancellation.CancelAsync(root.RunId, canceled, ct).ConfigureAwait(false);
+                var target = await agents.FindVisibleAsync(root.RunId, canceled, ct).ConfigureAwait(false)
+                    ?? throw new SubagentControlRejectedException("subagent_not_found");
+                await cancellation.CancelAsync(target.RootRunId, canceled, ct).ConfigureAwait(false);
                 return Receipt("subagent_canceled", new { agent_id = canceled, canceled = true });
             case "agent_wait":
                 return ToolExecutionReceipt.DeferredSubagentWait(prepared.ExecutionId, prepared.ToolCallId);

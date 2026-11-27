@@ -269,12 +269,32 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             try
             {
                 var records = await subagentStore.ListAsync(brokerRunId, ct).ConfigureAwait(false);
-                subagentsValue = records.Count == 0
+                var owned = records.Count == 0
                     ? null
                     : $"{records.Count} known subagent(s): "
                         + string.Join(", ", records.Take(8).Select(record =>
-                            $"{record.AgentId} ({record.Role}{(record.Canceled ? ", cancelled" : string.Empty)})"))
+                            $"{record.AgentId} ({record.Role}{(record.Detached ? ", detached" : string.Empty)}{(record.Canceled ? ", cancelled" : string.Empty)})"))
                         + (records.Count > 8 ? ", …" : string.Empty);
+                // Detached children of earlier roots in this session (ADR 0045): the parent may
+                // agent_wait for their results, agent_cancel them, or agent_apply a coding result
+                // when the user asks.
+                var inherited = await subagentStore.ListInheritedDetachedAsync(brokerRunId, 9, ct).ConfigureAwait(false);
+                string? detached = null;
+                if (inherited.Count > 0)
+                {
+                    var described = new List<string>();
+                    foreach (var record in inherited.Take(8))
+                    {
+                        var attempt = await subagentStore.GetLatestAttemptAsync(record.RootRunId, record.AgentId, ct).ConfigureAwait(false);
+                        var state = record.Canceled ? "cancelled"
+                            : attempt is null ? "unknown"
+                            : attempt.Run.State.IsTerminal() ? attempt.Run.State.ToString().ToLowerInvariant() : "working";
+                        described.Add($"{record.AgentId} ({record.Role}, {state})");
+                    }
+                    detached = "detached from earlier runs in this session: " + string.Join(", ", described)
+                        + (inherited.Count > 8 ? ", …" : string.Empty);
+                }
+                subagentsValue = owned is null ? detached : detached is null ? owned : owned + "; " + detached;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

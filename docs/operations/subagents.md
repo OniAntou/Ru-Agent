@@ -8,12 +8,39 @@ anything: the main agent remains the only actor allowed to call `agent_apply`. A
 also copy a bounded unified patch for the user's own Git/PR flow; Ru never pushes, commits or
 opens a pull request automatically. Send, Stop-child,
 Apply and child approval controls are not exposed to users. Ask the main agent to change a child
-task. Stopping the parent still stops its family.
+task. Stopping the parent still stops its family, including detached children.
 
-[ADR 0045](../adr/0045-detached-background-subagents.md) proposes detached background
-children and manual PR export; detached execution is **not enabled** in this version.
-A normal root still cancels its family, and the GUI remains observation-only. A coding
-result's read-only change review and bounded patch export are available today.
+## Detached background children
+
+[ADR 0045](../adr/0045-detached-background-subagents.md). Ask for background work in your
+own words, for example "review the parser and keep that running in the background after
+you answer". The parent then spawns with `detached=true` and quotes your words in
+`detached_request`; the Host refuses the spawn with `subagent_detached_user_request_required`
+unless those words occur, as whole words in order, in your prompt for that turn. The Host
+only checks where the words came from; the main agent decides whether you really asked for
+background work. There is no setting or command to
+turn this on, and workspace files, tool output or the model's own text cannot ask for it.
+
+When the parent finishes normally, a detached child keeps running; ordinary children are
+still stopped. A later turn in the same chat sees detached children in its run state and can
+`agent_wait` for them, `agent_cancel` them, or `agent_apply` a coding result when you ask.
+The applying turn's own permissions and approvals govern the write. Errors:
+
+- `subagent_detached_user_request_required`: your prompt does not contain the quoted words.
+- `subagent_detached_unavailable`: the Broker could not retain the parent's policy.
+- `subagent_delegation_capacity`: too many retained parents are still in use.
+- `subagent_detached_send_unsupported`: a later turn cannot send a follow-up to an earlier
+  turn's detached child; spawn a new child instead.
+- `subagent_detached_interrupted`: the Host exited while the child was running after its
+  parent had finished. Detached children do not survive a Host exit.
+- `subagent_apply_denied`: after a Host restart a later turn can still read a detached result
+  but can no longer apply it; the review and **Copy patch** remain available.
+
+Asking the main agent to cancel a detached child, cancelling the parent run (the cancel
+endpoint also accepts a parent that already finished), deleting the chat, or exiting the Host
+stops it. A detached child gets no extra permission: it keeps the policy it was
+spawned with and fails closed on anything needing approval. A coding result's read-only
+change review and bounded patch export work the same way for detached children.
 
 Subagent controls do not use the generic `ReconciliationRequired` park. If a control's
 outcome is uncertain (partial apply, cancel cleanup, workspace/IO failure), the model
@@ -202,7 +229,7 @@ stops once the root and every attempt are terminal (Refresh still works).
 HTTP exposes only `GET /agent/v1/runs/{runId}/subagents`,
 `GET /agent/v1/runs/{runId}/subagents/{agentId}` (optional `result_version`, `offset`, `limit`)
 and the read-only `GET /agent/v1/runs/{runId}/subagents/{agentId}/changes?result_version=N`.
-Each attempt carries `created_at`, `admitted_at` and, once terminal, `ended_at`; these are
+Each child reports `detached`. Each attempt carries `created_at`, `admitted_at` and, once terminal, `ended_at`; these are
 fixed instants, so an idle snapshot keeps its `snapshot_id`. In a change review a deleted
 file has `proposed_text: null` (an empty string means an existing empty file).
 Generic run approval/input/cancel/compact/command/reconcile/trust writes reject

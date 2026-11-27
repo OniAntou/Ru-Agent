@@ -31,7 +31,7 @@ public sealed partial class SqliteSubagentStore
     {
         await using var connection = await Options.OpenConnectionAsync(ct).ConfigureAwait(false);
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT agent_id,root_run_id,internal_session_id,role,canceled FROM agent_subagents WHERE internal_session_id=$session";
+        command.CommandText = $"SELECT {RecordColumns} FROM agent_subagents s WHERE s.internal_session_id=$session";
         command.Parameters.AddWithValue("$session", sessionId.Value);
         using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         return await reader.ReadAsync(ct).ConfigureAwait(false) ? Read(reader) : null;
@@ -46,9 +46,11 @@ public sealed partial class SqliteSubagentStore
         command.CommandText = """
             SELECT s.root_run_id FROM agent_subagents s JOIN agent_subagent_families f ON f.root_run_id=s.root_run_id
             JOIN agent_runs r ON r.run_id=s.root_run_id
-            WHERE s.agent_id=$agent AND s.canceled=0 AND f.canceled=0 AND r.terminal_at_utc IS NULL
+            WHERE s.agent_id=$agent AND s.canceled=0 AND f.canceled=0 AND (r.terminal_at_utc IS NULL
+                OR r.state<>$cancelled AND EXISTS(SELECT 1 FROM agent_subagent_detached d WHERE d.agent_id=s.agent_id))
             """;
         command.Parameters.AddWithValue("$agent", agentId);
+        command.Parameters.AddWithValue("$cancelled", (int)HarnessRunState.Cancelled);
         if (await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is not string rootId) return false;
         var attempt = await ReadLatestAttemptAsync(connection, transaction, new RunId(rootId), agentId, ct).ConfigureAwait(false);
         if (attempt is null || attempt.AdmittedAt is not null || attempt.Run.State != HarnessRunState.Created
@@ -100,8 +102,8 @@ public sealed partial class SqliteSubagentStore
         using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
-            command.CommandText = """
-                SELECT s.agent_id,s.root_run_id,s.internal_session_id,s.role,s.canceled,
+            command.CommandText = $"""
+                SELECT {RecordColumns},
                     a.attempt_number,a.run_id,a.created_at_utc,a.admitted_at_utc,a.deadline_at_utc
                 FROM agent_subagents s JOIN agent_subagent_attempts a ON a.agent_id=s.agent_id
                 WHERE s.root_run_id=$root AND s.agent_id=$agent ORDER BY a.attempt_number DESC LIMIT 1
@@ -111,11 +113,11 @@ public sealed partial class SqliteSubagentStore
             using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
             if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return null;
             agent = Read(reader);
-            attempt = reader.GetInt32(5);
-            runId = new RunId(reader.GetString(6));
-            created = DateTimeOffset.Parse(reader.GetString(7), System.Globalization.CultureInfo.InvariantCulture);
-            admitted = reader.IsDBNull(8) ? null : DateTimeOffset.Parse(reader.GetString(8), System.Globalization.CultureInfo.InvariantCulture);
-            deadline = reader.IsDBNull(9) ? null : DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture);
+            attempt = reader.GetInt32(6);
+            runId = new RunId(reader.GetString(7));
+            created = DateTimeOffset.Parse(reader.GetString(8), System.Globalization.CultureInfo.InvariantCulture);
+            admitted = reader.IsDBNull(9) ? null : DateTimeOffset.Parse(reader.GetString(9), System.Globalization.CultureInfo.InvariantCulture);
+            deadline = reader.IsDBNull(10) ? null : DateTimeOffset.Parse(reader.GetString(10), System.Globalization.CultureInfo.InvariantCulture);
         }
         var run = await HarnessSqliteQueries.GetRunAsync(connection, transaction, runId, ct).ConfigureAwait(false);
         return run is null ? null : new(agent, run, attempt, created, admitted, deadline);

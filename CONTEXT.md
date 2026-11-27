@@ -210,6 +210,11 @@ A delegated internal run owned and controlled by the main agent, with bounded fa
 Implementation: [harness](docs/architecture/harness.md#subagent).
 _Avoid_: a new execution authority, a user conversation, or an OS sandbox
 
+**Detached Subagent**:
+A subagent the user asked, in their own words, to keep running after the main agent answers. It belongs to the chat session: later turns may wait for, cancel or apply it; an explicit stop, chat deletion or Host exit ends it.
+Implementation: [ADR 0045](docs/adr/0045-detached-background-subagents.md), [operations](docs/operations/subagents.md#detached-background-children).
+_Avoid_: a cloud or background service, a setting the model can enable, or extra permission for the child
+
 
 **Evolution Run** (proposed, not implemented):
 An ordinary `standard` run, off by default, that works in a private worktree of one user-named Ru source checkout and ends in an Evolution Candidate: a local `evolve/<id>` branch with an evidence report. A deterministic scope guard and a receipt-based fitness gate decide whether the candidate is kept; the owner reviews and merges it. It never merges, pushes, updates an installed product or writes the checkout's working tree.

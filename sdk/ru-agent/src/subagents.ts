@@ -41,6 +41,8 @@ export interface SubagentSummary {
   results: SubagentResult[];
   /** The `.ru/subagents.json` profile id the parent passed to `agent_spawn`, if any. */
   profile?: string | null;
+  /** True for a detached child (ADR 0045) that keeps running after its creating root ends normally. */
+  detached?: boolean;
 }
 export interface SubagentList {
   root_run_id: string;

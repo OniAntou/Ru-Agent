@@ -61,7 +61,7 @@ implementation](https://github.com/dotnet/efcore/blob/v10.0.11/src/Microsoft.Dat
 disposes the reader in `ExecuteNonQuery`, which can suppress errors from later
 batch statements. Release migration tests build the original released v18 DDL and frozen
 development DDL independently of current schema creation. The selected upgrade suffix commits atomically
-at v42. Version 29 consolidated earlier development changes; v30
+at v43. Version 29 consolidated earlier development changes; v30
 normalizes retained conversation history and source receipts. Version 31 adds
 context mutation fences and indexed compaction/intent lookup; v32 indexes exact
 execution-request provenance. The schema keeps this index, but verification no longer reads the
@@ -85,10 +85,11 @@ unbound encrypted payload until delivery at a step boundary (ADR 0056). Version 
 `UserImage` payloads with derived ids when the steer is delivered. Version 42 adds
 `agent_run_steer_carries`: a steer the run ended without reading is retained for the session,
 and the next root run that reads it records itself here so a reopened chat still attributes
-the steer's images to it (ADR 0056 amendment).
+the steer's images to it (ADR 0056 amendment). Version 43 adds `agent_subagent_detached`:
+a child that keeps running after its creating root ends normally (ADR 0045).
 Versions below v18 fail with
 `harness_schema_incompatible` before any owned data is changed. Development
-v19-v41 databases remain eligible sources; adding a migration extends one ordered
+v19-v42 databases remain eligible sources; adding a migration extends one ordered
 catalog instead of every historical branch. Fresh installs use the same released
 baseline and upgrade batch. Tests cover every retained source, identical schema,
 rollback/retry, restored FKs and two simultaneous initializer processes.
@@ -780,6 +781,13 @@ clients fetch snapshots on attach/reconnect and deduplicate by snapshot/attempt 
 Historical user-apply records remain in v29 for receipt/reconciliation integrity.
 Unexecuted legacy user actions are cancelled by the root drive; already executing actions
 are reconciled without replay. New integrations only originate from the parent's `agent_apply` tool.
+A detached child ([ADR 0045](../adr/0045-detached-background-subagents.md), schema v43
+`agent_subagent_detached`) needs the user's own words in the root prompt. A normal root end
+cancels only attached children; the scheduler admits and drives detached ones without a live
+parent, and the Broker holds them to the parent snapshot retained at spawn. Explicit root
+cancel, session deletion and Host exit still stop them; recovery ends an interrupted one with
+`subagent_detached_interrupted`. Later roots of the session may wait for, cancel or apply them;
+results and journals stay keyed by the creating root.
 See [ADR 0022](../adr/0022-delegated-subagent-runs.md) and the
 [implementation evidence](../operations/verification.md).
 _Avoid_: a new execution authority, a user conversation, or an OS sandbox

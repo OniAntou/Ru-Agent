@@ -45,13 +45,16 @@ public sealed partial class SubagentApplyService(IHarnessEventStore events, Sqli
             throw new HarnessStoreException("subagent_apply_ownership_denied");
         var agentId = proposal.Arguments.GetProperty("agent_id").GetString()!;
         var version = proposal.Arguments.GetProperty("result_version").GetInt64();
-        var owner = (await agents.ListAsync(root.RunId, ct).ConfigureAwait(false)).SingleOrDefault(a => a.AgentId == agentId);
+        // An owned child, or a detached child of an earlier root in this session (ADR 0045).
+        // Its result and journal stay keyed by the creating root; the applying root's own
+        // policy and approval still govern the write.
+        var owner = await agents.FindVisibleAsync(root.RunId, agentId, ct).ConfigureAwait(false);
         if (owner is null || owner.Role != SubagentRole.Coding)
             throw new HarnessStoreException("subagent_apply_ownership_denied");
-        var result = (await results.ListAsync(root.RunId, agentId, ct).ConfigureAwait(false)).SingleOrDefault(r => r.Version == version);
+        var result = (await results.ListAsync(owner.RootRunId, agentId, ct).ConfigureAwait(false)).SingleOrDefault(r => r.Version == version);
         if (result is null || result.State != HarnessRunState.Completed || result.Code is not null)
             throw new HarnessStoreException("subagent_apply_result_unavailable");
-        var frozen = await changes.GetAsync(root.RunId, agentId, result.RunId, ct).ConfigureAwait(false)
+        var frozen = await changes.GetAsync(owner.RootRunId, agentId, result.RunId, ct).ConfigureAwait(false)
             ?? throw new HarnessStoreException("subagent_changes_missing");
         if (frozen.ResultVersion != version) throw new HarnessStoreException("subagent_apply_result_unavailable");
         return frozen;

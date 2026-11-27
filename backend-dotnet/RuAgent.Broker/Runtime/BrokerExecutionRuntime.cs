@@ -131,6 +131,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             // leave consumable approvals behind.
             var runIds = _session.RunIdsForSession(sessionId);
             foreach (var runId in runIds) RevokeDelegatedExecutions(runId);
+            ReleaseDetachedParents(sessionId);
             _session.Close(sessionId);
             ReleaseSessionDelegations(sessionId);
             foreach (var runId in runIds)
@@ -208,6 +209,7 @@ public sealed partial class BrokerExecutionRuntime : IDisposable
             scope.ChildLifetime?.Revoke();
         }
         _delegations.Clear();
+        _detachedParents.Clear();
         _runCancellations.CancelAll();
     }
 

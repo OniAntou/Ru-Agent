@@ -27,7 +27,8 @@ public sealed partial class SqliteHarnessEventStore
             throw new HarnessStoreException("subagent_root_inactive");
         foreach (var agentId in wait.AgentIds)
         {
-            command.CommandText = "SELECT EXISTS(SELECT 1 FROM agent_subagents WHERE root_run_id=$root AND agent_id=$agent)";
+            // Owned children, or detached children of an earlier root in this session (ADR 0045).
+            command.CommandText = $"SELECT EXISTS(SELECT 1 FROM agent_subagents s WHERE s.agent_id=$agent AND {Subagents.SqliteSubagentStore.VisibleToRoot})";
             command.Parameters.AddWithValue("$agent", agentId);
             var owned = (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) == 1;
             command.Parameters.RemoveAt("$agent");

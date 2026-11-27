@@ -139,10 +139,30 @@ public sealed partial class SubagentCodingPublicationTests
                 [new(new("rule_" + new string('d', 32)), PolicyRuleScope.Project, PolicyDecision.Ask,
                     new(ToolId: "write"), 1, null)], DateTimeOffset.UtcNow);
         await execution.Factory.CreateAsync(repo, policy, root.RunId, root.SessionId.Value, default);
+        var applying = root.RunId;
+        if (scenario == "apply_detached")
+        {
+            // ADR 0045: the creating root ends normally; a later root of the same session
+            // applies the detached child's result under its own lease and policy.
+            await using (var connection = await storage.Options.OpenConnectionAsync(default))
+            {
+                using var mark = connection.CreateCommand();
+                mark.CommandText = "INSERT INTO agent_subagent_detached(agent_id) VALUES($agent)";
+                mark.Parameters.AddWithValue("$agent", agent.AgentId);
+                await mark.ExecuteNonQueryAsync();
+            }
+            await execution.Factory.RetainDetachedParentAsync(root.RunId, default);
+            await CompleteAsync(storage, (await storage.EventStore.GetRunAsync(root.RunId, default))!);
+            await execution.Factory.CloseRunAsync(root.RunId.Value);
+            var later = await storage.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+                "run_" + new string('f', 32), root.SessionId.Value, repo, idempotencySha256: new string('e', 64));
+            await execution.Factory.CreateAsync(repo, policy, later.Run.RunId, root.SessionId.Value, default);
+            applying = later.Run.RunId;
+        }
         using var apply = new SubagentApplyService(storage.EventStore, agents, results, changes, journal, execution.Factory);
         var arguments = System.Text.Json.JsonSerializer.SerializeToElement(new
             { agent_id = scenario == "apply_foreign" ? "agent_foreign" : agent.AgentId, result_version = 1 });
-        var proposal = new ToolProposal(root.RunId, new("step_" + new string('b', 32)),
+        var proposal = new ToolProposal(applying, new("step_" + new string('b', 32)),
             new("call_" + new string('c', 32)), "provider_apply", 1, "agent_apply", "1.0.0", arguments);
         async Task<SubagentApplyOutcome> Execute(ToolProposalDecision decision)
         {
@@ -177,9 +197,9 @@ public sealed partial class SubagentCodingPublicationTests
                 {
                     Assert.Equal(PolicyDecision.Ask, evaluated.Decision);
                     Assert.Equal("subagent_apply_approval_required", evaluated.SafeCode);
-                    Assert.False((await execution.Factory.RespondApprovalAsync(root.RunId.Value,
+                    Assert.False((await execution.Factory.RespondApprovalAsync(applying.Value,
                         evaluated.ApprovalId!.Value.Value, "allow_always", default)).Authorized);
-                    Assert.True((await execution.Factory.RespondApprovalAsync(root.RunId.Value,
+                    Assert.True((await execution.Factory.RespondApprovalAsync(applying.Value,
                         evaluated.ApprovalId!.Value.Value, "allow_once", default)).Authorized);
                     evaluated = await apply.EvaluateAsync(proposal, default);
                 }

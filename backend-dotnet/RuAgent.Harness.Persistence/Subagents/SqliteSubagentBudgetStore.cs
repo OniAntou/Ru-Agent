@@ -11,7 +11,7 @@ public sealed class SqliteSubagentBudgetStore(HarnessSqliteOptions options)
         ReserveAmountAsync(rootRunId, window, invocationId, kind, 1, priorRootModelSteps, priorRootToolCalls, ct);
 
     public async Task<bool> ReserveAmountAsync(RunId rootRunId, int window, string invocationId, SubagentBudgetKind kind, int amount,
-        int priorRootModelSteps, int priorRootToolCalls, CancellationToken ct)
+        int priorRootModelSteps, int priorRootToolCalls, CancellationToken ct, bool allowTerminalRoot = false)
     {
         if (window < 1 || !SubagentContractValidator.IsValidId(invocationId) || !Enum.IsDefined(kind)
             || priorRootModelSteps < 0 || priorRootToolCalls < 0 || amount < 1 || amount > AgentBudgetPolicy.ToolCallLimit
@@ -19,7 +19,7 @@ public sealed class SqliteSubagentBudgetStore(HarnessSqliteOptions options)
         await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction(deferred: false);
         var root = await HarnessSqliteQueries.GetRunAsync(connection, transaction, rootRunId, ct).ConfigureAwait(false);
-        if (root is null || root.Status.State.IsTerminal() || root.BudgetWindow != window) return false;
+        if (root is null || root.Status.State.IsTerminal() && !allowTerminalRoot || root.BudgetWindow != window) return false;
         priorRootModelSteps = Math.Max(priorRootModelSteps, root.ModelStepsInWindow);
         priorRootToolCalls = Math.Max(priorRootToolCalls, root.ToolCallsInWindow);
         using var command = connection.CreateCommand();

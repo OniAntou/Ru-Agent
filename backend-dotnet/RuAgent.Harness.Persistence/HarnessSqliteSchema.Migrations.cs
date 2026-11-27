@@ -80,6 +80,7 @@ public static partial class HarnessSqliteSchema
             new(39, 40, RunSteerMigration),
             new(40, 41, RunSteerImageMigration),
             new(41, 42, RunSteerCarryMigration),
+            new(42, 43, SubagentDetachedMigration),
         ];
     }
 }

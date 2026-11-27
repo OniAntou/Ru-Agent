@@ -5,6 +5,8 @@ namespace RuAgent.Protocol.Subagents;
 public static class SubagentLimits
 {
     public const int MaxTaskCharacters = 16_384;
+    /// <summary>Bound for the verbatim user words that ask for a detached child.</summary>
+    public const int MaxDetachedRequestCharacters = 256;
     public const int MaxContextBytes = 64 * 1024;
     public const int MaxInlineResultBytes = 32 * 1024;
     public const int MaxApprovalPreviewBytes = 8 * 1024;
@@ -36,7 +38,13 @@ public sealed record SubagentSpawnRequest(
     [property: JsonPropertyName("context")] string? Context = null,
     [property: JsonPropertyName("model"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Model = null,
     [property: JsonPropertyName("provider_id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ProviderId = null,
-    [property: JsonPropertyName("profile"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Profile = null);
+    [property: JsonPropertyName("profile"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Profile = null,
+    [property: JsonPropertyName("detached"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Detached = null,
+    [property: JsonPropertyName("detached_request"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DetachedRequest = null)
+{
+    /// <summary>A detached child outlives its creating root (ADR 0045); only an explicit user request can ask for it.</summary>
+    [JsonIgnore] public bool IsDetached => Detached == true;
+}
 
 public readonly record struct SubagentValidationResult(bool IsValid, string? ErrorCode)
 {

@@ -39,7 +39,7 @@ public sealed partial class SqliteSubagentStore(
         if (existing is string previous)
         {
             if (previous != hash) throw new HarnessStoreException("idempotency_conflict");
-            command.CommandText = "SELECT agent_id,root_run_id,internal_session_id,role,canceled FROM agent_subagents WHERE root_run_id=$root AND invocation_id=$invocation";
+            command.CommandText = $"SELECT {RecordColumns} FROM agent_subagents s WHERE s.root_run_id=$root AND s.invocation_id=$invocation";
             using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
             await reader.ReadAsync(ct).ConfigureAwait(false);
             return Read(reader);
@@ -73,7 +73,7 @@ public sealed partial class SqliteSubagentStore(
             INSERT INTO agent_subagents(agent_id,root_run_id,internal_session_id,role,invocation_id,request_hash)
             VALUES($agent,$root,$child_session,$role,$invocation,$hash);
             INSERT INTO agent_subagent_attempts(agent_id,attempt_number,run_id,created_at_utc) VALUES($agent,1,$run,$created);
-            """;
+            """ + (request.Detached ? "INSERT INTO agent_subagent_detached(agent_id) VALUES($agent);" : "");
         command.Parameters.AddWithValue("$window", root.BudgetWindow);
         command.Parameters.AddWithValue("$steps", root.ModelStepsInWindow);
         command.Parameters.AddWithValue("$tools", root.ToolCallsInWindow);
@@ -84,14 +84,14 @@ public sealed partial class SqliteSubagentStore(
         command.Parameters.AddWithValue("$created", request.ChildRun.Run.CreatedAt.ToString("O"));
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         await transaction.CommitAsync(ct).ConfigureAwait(false);
-        return new(request.AgentId, request.RootRunId, request.ChildRun.Run.SessionId, request.Role, false);
+        return new(request.AgentId, request.RootRunId, request.ChildRun.Run.SessionId, request.Role, false, request.Detached);
     }
 
     public async Task<IReadOnlyList<SubagentRecord>> ListAsync(RunId rootRunId, CancellationToken ct)
     {
         await using var connection = await options.OpenConnectionAsync(ct).ConfigureAwait(false);
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT agent_id,root_run_id,internal_session_id,role,canceled FROM agent_subagents WHERE root_run_id=$root ORDER BY agent_id";
+        command.CommandText = $"SELECT {RecordColumns} FROM agent_subagents s WHERE s.root_run_id=$root ORDER BY s.agent_id";
         command.Parameters.AddWithValue("$root", rootRunId.Value);
         var result = new List<SubagentRecord>();
         using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
@@ -124,8 +124,12 @@ public sealed partial class SqliteSubagentStore(
         await transaction.CommitAsync(ct).ConfigureAwait(false);
     }
 
+    // Column order Read expects; queries alias agent_subagents as s.
+    internal const string RecordColumns = "s.agent_id,s.root_run_id,s.internal_session_id,s.role,s.canceled,"
+        + "EXISTS(SELECT 1 FROM agent_subagent_detached d WHERE d.agent_id=s.agent_id)";
+
     private static SubagentRecord Read(SqliteDataReader reader) => new(reader.GetString(0), new RunId(reader.GetString(1)),
-        new SessionId(reader.GetString(2)), (SubagentRole)reader.GetInt32(3), reader.GetInt32(4) != 0);
+        new SessionId(reader.GetString(2)), (SubagentRole)reader.GetInt32(3), reader.GetInt32(4) != 0, reader.GetInt64(5) != 0);
 
     private static string CreationHash(string agentId, SubagentRole role, string requestHash) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(

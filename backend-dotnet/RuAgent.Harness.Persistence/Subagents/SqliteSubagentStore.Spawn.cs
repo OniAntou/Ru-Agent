@@ -59,15 +59,15 @@ public sealed partial class SqliteSubagentStore
     {
         await using var connection = await Options.OpenConnectionAsync(ct).ConfigureAwait(false);
         using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT agent_id,root_run_id,internal_session_id,role,canceled,request_hash FROM agent_subagents
-            WHERE root_run_id=$root AND invocation_id=$invocation
+        command.CommandText = $"""
+            SELECT {RecordColumns},s.request_hash FROM agent_subagents s
+            WHERE s.root_run_id=$root AND s.invocation_id=$invocation
             """;
         command.Parameters.AddWithValue("$root", root.Value);
         command.Parameters.AddWithValue("$invocation", invocationId);
         using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
         if (!await reader.ReadAsync(ct).ConfigureAwait(false)) return null;
-        if (reader.GetString(5) != CreationHash(agentId, role, normalizedRequestHash))
+        if (reader.GetString(6) != CreationHash(agentId, role, normalizedRequestHash))
             throw new HarnessStoreException("idempotency_conflict");
         return Read(reader);
     }

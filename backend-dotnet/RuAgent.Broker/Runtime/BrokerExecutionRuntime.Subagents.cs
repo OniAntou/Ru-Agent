@@ -14,16 +14,24 @@ public sealed partial class BrokerExecutionRuntime
 
     /// <summary>In-process Host seam. No model-visible envelope can bind authority.</summary>
     public async Task BindDelegationAsync(string parentRunId, string childRunId, SubagentRole role, CancellationToken ct,
-        SubagentParentPolicyIdentity? expectedParentPolicy = null, BrokerPolicySnapshotWire? parentCeiling = null)
+        SubagentParentPolicyIdentity? expectedParentPolicy = null, BrokerPolicySnapshotWire? parentCeiling = null,
+        bool detached = false)
     {
         await _lifecycleGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            // A detached child admitted after its parent closed binds to the parent snapshot
+            // retained while that lease was live; only a ceiling-bound bind may use it.
+            var parent = LiveParent(parentRunId);
+            var live = parent is not null;
+            if (parent is null && detached && parentCeiling is not null
+                && _detachedParents.TryGetValue(parentRunId, out var retained) && _session.Owns(retained.SessionId))
+                parent = retained;
             if (!Enum.IsDefined(role) || parentRunId == childRunId || _delegations.ContainsKey(parentRunId)
-                || !_session.TryGetRunLease(parentRunId, out var parent) || parent is null || parent.IsExpired(DateTimeOffset.UtcNow)
+                || parent is null
                 || !_session.TryGetRunLease(childRunId, out var child) || child is null || child.IsExpired(DateTimeOffset.UtcNow)
-                || parent.Lifetime.IsRevoked || child.Lifetime.IsRevoked
+                || child.Lifetime.IsRevoked
                 || parent.SessionId == child.SessionId || parent.Preset != child.Preset
                 || role == SubagentRole.Coding && parent.Preset == "plan")
                 throw new AgentProtocolException("subagent_delegation_denied");
@@ -40,7 +48,10 @@ public sealed partial class BrokerExecutionRuntime
             var scope = new DelegatedExecutionScope(parentRunId, childRunId, parent.SessionId, child.SessionId,
                 parent.CanonicalRoot, child.CanonicalRoot, ceiling?.Version ?? parent.SnapshotVersion,
                 ceiling?.Sha256 ?? parent.SnapshotHash, role, ceiling)
-                { ParentLifetime = parent.Lifetime, ChildLifetime = child.Lifetime };
+                { ParentLifetime = parent.Lifetime, ChildLifetime = child.Lifetime, Detached = detached };
+            // A detached child bound to a live parent (also after a Host restart, when nothing
+            // was retained at spawn) must outlive that parent's close.
+            if (detached && live && !_delegations.ContainsKey(childRunId)) RetainDetachedParentCore(parentRunId, parent);
             if (!_delegations.TryAdd(childRunId, scope)
                 && (_delegations[childRunId] with { ParentCeiling = null }) != (scope with { ParentCeiling = null }))
                 throw new AgentProtocolException("subagent_delegation_stale");
@@ -60,6 +71,10 @@ public sealed partial class BrokerExecutionRuntime
         return DelegationPolicyEvaluator.Evaluate(scope, parent!, context, DateTimeOffset.UtcNow);
     }
 
+    private BrokerRunLease? LiveParent(string parentRunId) =>
+        _session.TryGetRunLease(parentRunId, out var parent) && parent is not null
+            && !parent.IsExpired(DateTimeOffset.UtcNow) && !parent.Lifetime.IsRevoked ? parent : null;
+
     private bool TryGetDelegatingParent(DelegatedExecutionScope scope, out BrokerRunLease? parent)
     {
         parent = null;
@@ -69,6 +84,10 @@ public sealed partial class BrokerExecutionRuntime
             && !parent.IsExpired(DateTimeOffset.UtcNow) && parent.SessionId == scope.ParentSessionId
             && string.Equals(parent.CanonicalRoot, scope.ParentRoot, StringComparison.OrdinalIgnoreCase)
             && ParentPolicyCompatible(parent, scope);
+        // A live parent always governs, including a policy change that revokes the child.
+        // Only once that lease is closed does a detached child fall back to the retained snapshot.
+        if (!valid && scope.Detached && LiveParent(scope.ParentRunId) is null)
+            valid = TryGetRetainedParent(scope, out parent);
         if (valid && scope.ParentCeiling is { } ceiling)
             parent = parent! with { Snapshot = ceiling, SnapshotVersion = ceiling.Version, SnapshotHash = ceiling.Sha256 };
         return valid;
@@ -92,7 +111,9 @@ public sealed partial class BrokerExecutionRuntime
     {
         if (_session.TryGetRunLease(runId, out var lease)) lease?.Lifetime.Revoke();
         if (_delegations.TryGetValue(runId, out var delegated)) delegated.ChildLifetime?.Revoke();
-        foreach (var scope in _delegations.Values.Where(s => s.ParentRunId == runId))
+        // Closing a parent leaves its detached children alone; the Host cancels them by
+        // their own run when the user cancels the family or deletes the session.
+        foreach (var scope in _delegations.Values.Where(s => s.ParentRunId == runId && !s.Detached))
         {
             scope.ChildLifetime?.Revoke();
             _runCancellations.CancelRun(scope.ChildRunId);

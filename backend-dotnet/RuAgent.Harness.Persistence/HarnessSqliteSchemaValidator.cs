@@ -15,6 +15,7 @@ internal static class HarnessSqliteSchemaValidator
             ["agent_subagent_result_outcomes"] = ["agent_id", "run_id", "state", "code"],
             ["agent_internal_runs"] = ["run_id", "root_run_id"],
             ["agent_subagent_families"] = ["root_run_id", "canceled"],
+            ["agent_subagent_detached"] = ["agent_id"],
             ["agent_subagent_scopes"] = ["run_id", "protection_version", "nonce", "ciphertext", "authentication_tag"],
             ["agent_subagent_waits"] = ["root_run_id", "invocation_id", "arguments_payload_id", "deadline_at_utc", "delivered"],
             ["agent_subagent_apply_operations"] = ["root_run_id", "agent_id", "result_version", "fingerprint", "status", "applied_files", "code"],

@@ -21,7 +21,8 @@ public sealed partial class SqliteSubagentStore : ISubagentInbox
             JOIN agent_subagent_families f ON f.root_run_id=s.root_run_id
             JOIN agent_runs root ON root.run_id=s.root_run_id
             JOIN agent_subagent_attempts a ON a.agent_id=s.agent_id
-            WHERE a.run_id=$run AND s.canceled=0 AND f.canceled=0 AND root.terminal_at_utc IS NULL
+            WHERE a.run_id=$run AND s.canceled=0 AND f.canceled=0
+            AND (root.terminal_at_utc IS NULL OR EXISTS(SELECT 1 FROM agent_subagent_detached d WHERE d.agent_id=s.agent_id))
             AND a.attempt_number=(SELECT max(latest.attempt_number) FROM agent_subagent_attempts latest WHERE latest.agent_id=s.agent_id)
             """;
         if (await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is not string agent) return 0;

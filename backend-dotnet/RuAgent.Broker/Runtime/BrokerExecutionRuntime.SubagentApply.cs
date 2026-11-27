@@ -20,7 +20,7 @@ public sealed partial class BrokerExecutionRuntime
     {
         var root = SubagentApplyRoot(sessionId, runId);
         using var handle = DirectoryHandleLease.Open(root.CanonicalRoot, requireCanonicalPath: true);
-        var preparation = SubagentApplyPreparation.Create(root, changes);
+        var preparation = SubagentApplyPreparation.Create(root, changes, IsDetachedOwner(root, changes));
         var decision = EvaluateSubagentFiles(root, preparation);
         if (decision.Decision == "deny")
             return new ToolEvaluateResult(null, DecisionReply("deny", decision.ReasonCode, decision.MatchedRuleId));
@@ -74,7 +74,7 @@ public sealed partial class BrokerExecutionRuntime
             {
                 root = SubagentApplyRoot(sessionId, runId);
                 rootHandle = DirectoryHandleLease.Open(root.CanonicalRoot, requireCanonicalPath: true);
-                preparation = SubagentApplyPreparation.Create(root, changes);
+                preparation = SubagentApplyPreparation.Create(root, changes, IsDetachedOwner(root, changes));
                 if (EvaluateSubagentFiles(root, preparation).Decision == "deny")
                     throw new AgentProtocolException("subagent_apply_denied");
                 var intent = SubagentApplyIntent(root, preparation, rootHandle.Identity);

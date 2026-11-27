@@ -23,7 +23,9 @@ public sealed record SubagentSummary(
     [property: JsonPropertyName("canceled")] bool Canceled,
     [property: JsonPropertyName("attempts")] IReadOnlyList<SubagentAttemptSummary> Attempts,
     [property: JsonPropertyName("results")] IReadOnlyList<SubagentResultSummary> Results,
-    [property: JsonPropertyName("profile")] string? Profile = null);
+    [property: JsonPropertyName("profile")] string? Profile = null,
+    // ADR 0045: keeps running after the creating root ends normally.
+    [property: JsonPropertyName("detached")] bool Detached = false);
 
 public sealed record SubagentAttemptSummary(
     [property: JsonPropertyName("run_id")] string RunId,

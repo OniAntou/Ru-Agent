@@ -28,9 +28,14 @@ public sealed partial class SubagentScheduler(IHarnessEventStore events, SqliteS
         await CloseInternalSessionBeforeReleaseAsync(rootId, ct).ConfigureAwait(false);
         var owned = await agents.ListOwnedRunIdsAsync(rootId, ct).ConfigureAwait(false);
         if (owned.Count == 0) return;
-        await agents.CancelFamilyAsync(rootId, ct).ConfigureAwait(false);
+        // A normal end of the root stops the children it owned and leaves detached
+        // children running (ADR 0045); an explicit cancel already canceled the family.
+        var keep = await DetachedRunsToKeepAsync(rootId, ct).ConfigureAwait(false);
+        if (keep.Count == 0) await agents.CancelFamilyAsync(rootId, ct).ConfigureAwait(false);
+        else await agents.CancelAttachedAsync(rootId, ct).ConfigureAwait(false);
         foreach (var childRunId in owned)
         {
+            if (keep.Contains(childRunId.Value)) continue;
             var child = await events.GetRunAsync(childRunId, ct).ConfigureAwait(false);
             if (child is null || child.State.IsTerminal())
                 await cleanup.CancelAndRemoveRunAsync(childRunId, ct).ConfigureAwait(false);
@@ -56,7 +61,13 @@ public sealed partial class SubagentScheduler(IHarnessEventStore events, SqliteS
                 var parent = await events.GetRunAsync(rootId, ct).ConfigureAwait(false);
                 var inactive = parent is null || parent.State.IsTerminal();
                 var parentAuthorityRestored = false;
-                if (inactive && parent is not null) await agents.CancelFamilyAsync(rootId, ct).ConfigureAwait(false);
+                if (inactive && parent is not null)
+                {
+                    // A canceled root is an explicit stop even if its family row was not marked.
+                    if (parent.State == HarnessRunState.Cancelled || await agents.IsFamilyCanceledAsync(rootId, ct).ConfigureAwait(false))
+                        await agents.CancelFamilyAsync(rootId, ct).ConfigureAwait(false);
+                    else await agents.CancelAttachedAsync(rootId, ct).ConfigureAwait(false);
+                }
                 foreach (var agent in await agents.ListAsync(rootId, ct).ConfigureAwait(false))
                 {
                     var attempt = await agents.GetLatestAttemptAsync(rootId, agent.AgentId, ct).ConfigureAwait(false);
@@ -66,35 +77,33 @@ public sealed partial class SubagentScheduler(IHarnessEventStore events, SqliteS
                     var expired = attempt.AdmittedAt is null
                         ? now - attempt.CreatedAt >= SubagentLimits.AttemptTimeout
                         : attempt.DeadlineAt is null || now >= attempt.DeadlineAt;
-                    if (inactive || agent.Canceled || expired)
+                    // A detached child survives its root's normal end; a deleted root
+                    // or an explicit cancel (agent.Canceled) still stops it.
+                    var stopped = agent.Canceled || inactive && (parent is null || !agent.Detached);
+                    if (stopped || expired)
                     {
-                        await TerminateAsync(attempt.Run.RunId, inactive || agent.Canceled,
-                            inactive || agent.Canceled ? "subagent_parent_canceled"
+                        await TerminateAsync(attempt.Run.RunId, stopped,
+                            stopped ? "subagent_parent_canceled"
                                 : attempt.AdmittedAt is null ? "subagent_admission_timeout" : "subagent_attempt_timeout", cleanup, ct).ConfigureAwait(false);
+                        continue;
+                    }
+                    if (inactive)
+                    {
+                        // No live parent to restore: the Broker holds the detached child to
+                        // the parent snapshot it retained at spawn.
+                        if (roots.TryGetRoot(attempt.Run.RunId, out _) || !IsUndispatched(attempt)) continue;
+                        if (await ReadScopeAsync(attempt, cleanup, ct).ConfigureAwait(false) is not { } detached) continue;
+                        if (attempt.AdmittedAt is null && !await agents.TryAdmitAsync(agent.AgentId, now, ct).ConfigureAwait(false)) continue;
+                        roots.Register(attempt.Run.RunId, detached.Scope.WorkspaceRoot, detached.Policy);
                         continue;
                     }
                     if (!roots.TryGetRoot(rootId, out var parentRoot) || parentRoot is null
                         || !roots.TryGetPolicySnapshot(rootId, out var parentPolicy) || parentPolicy is null
                         || parentPolicy.Sha256 != parent!.PolicySnapshotSha256) continue;
                     if (roots.TryGetRoot(attempt.Run.RunId, out _)) continue;
-                    // An interrupted dispatched attempt belongs to recovery; never restart it here.
-                    if (attempt.Run.State != HarnessRunState.Created
-                        && (attempt.Run.State != HarnessRunState.Running || attempt.Run.ModelStepsInWindow != 0
-                            || attempt.Run.ToolCallsInWindow != 0)) continue;
-                    SubagentRuntimeScope? scope;
-                    RuAgent.Harness.Core.Policy.PolicySnapshot childPolicy;
-                    try
-                    {
-                        scope = await scopes.GetAsync(attempt.Run.RunId, ct).ConfigureAwait(false);
-                        if (scope is null) continue; // preparation can still be committing
-                        var wire = BrokerPolicyContracts.ReadSnapshot(JsonNode.Parse(scope.PolicySnapshotJson)!.AsObject());
-                        childPolicy = PolicySnapshotMapper.FromWire(wire);
-                    }
-                    catch (Exception error) when (error is HarnessStoreException or AgentProtocolException or JsonException or ArgumentException)
-                    {
-                        await TerminateAsync(attempt.Run.RunId, false, "subagent_scope_invalid", cleanup, ct).ConfigureAwait(false);
-                        continue;
-                    }
+                    if (!IsUndispatched(attempt)) continue;
+                    if (await ReadScopeAsync(attempt, cleanup, ct).ConfigureAwait(false) is not { } read) continue;
+                    var (scope, childPolicy) = read;
                     if (!parentAuthorityRestored && gateways is not null)
                     {
                         // A recovered waiting parent has no coordinator to open
@@ -119,6 +128,43 @@ public sealed partial class SubagentScheduler(IHarnessEventStore events, SqliteS
             _afterRootId = families.Count == SqliteSubagentStore.FamilyPageSize ? families[^1].Value : null;
         }
         finally { _tick.Release(); }
+    }
+
+    // An interrupted dispatched attempt belongs to recovery; never restart it here.
+    private static bool IsUndispatched(SubagentAttempt attempt) =>
+        attempt.Run.State == HarnessRunState.Created
+        || attempt.Run.State == HarnessRunState.Running && attempt.Run.ModelStepsInWindow == 0 && attempt.Run.ToolCallsInWindow == 0;
+
+    private async Task<(SubagentRuntimeScope Scope, RuAgent.Harness.Core.Policy.PolicySnapshot Policy)?> ReadScopeAsync(
+        SubagentAttempt attempt, IAgentRuntimeRunCleanup cleanup, CancellationToken ct)
+    {
+        try
+        {
+            var scope = await scopes.GetAsync(attempt.Run.RunId, ct).ConfigureAwait(false);
+            if (scope is null) return null; // preparation can still be committing
+            var wire = BrokerPolicyContracts.ReadSnapshot(JsonNode.Parse(scope.PolicySnapshotJson)!.AsObject());
+            return (scope, PolicySnapshotMapper.FromWire(wire));
+        }
+        catch (Exception error) when (error is HarnessStoreException or AgentProtocolException or JsonException or ArgumentException)
+        {
+            await TerminateAsync(attempt.Run.RunId, false, "subagent_scope_invalid", cleanup, ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
+    /// <summary>Runs of uncanceled detached children, unless the family was explicitly canceled.</summary>
+    private async Task<HashSet<string>> DetachedRunsToKeepAsync(RunId rootId, CancellationToken ct)
+    {
+        var keep = new HashSet<string>(StringComparer.Ordinal);
+        if (await agents.IsFamilyCanceledAsync(rootId, ct).ConfigureAwait(false)
+            || (await events.GetRunAsync(rootId, ct).ConfigureAwait(false))?.State == HarnessRunState.Cancelled) return keep;
+        foreach (var agent in await agents.ListAsync(rootId, ct).ConfigureAwait(false))
+        {
+            if (!agent.Detached || agent.Canceled) continue;
+            foreach (var runId in await agents.ListAttemptRunIdsAsync(agent.AgentId, ct).ConfigureAwait(false))
+                keep.Add(runId.Value);
+        }
+        return keep;
     }
 
     private async Task TerminateAsync(RunId runId, bool canceled, string code, IAgentRuntimeRunCleanup cleanup, CancellationToken ct)

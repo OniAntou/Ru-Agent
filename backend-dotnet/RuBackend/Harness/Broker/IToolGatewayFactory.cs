@@ -57,6 +57,17 @@ public interface IToolGatewayFactory : IAsyncDisposable
         RuAgent.Protocol.Harness.BrokerPolicySnapshotWire? parentCeiling = null) =>
         Task.FromException(new InvalidOperationException("subagent_delegation_unavailable"));
 
+    /// <summary>Binds a detached child (ADR 0045), which may outlive a normal close of its parent's lease.</summary>
+    Task BindDetachedDelegationAsync(RunId parentRunId, RunId childRunId,
+        RuAgent.Protocol.Subagents.SubagentRole role,
+        RuAgent.Protocol.Subagents.SubagentParentPolicyIdentity expectedParentPolicy,
+        RuAgent.Protocol.Harness.BrokerPolicySnapshotWire parentCeiling, CancellationToken cancellationToken) =>
+        Task.FromException(new InvalidOperationException("subagent_delegation_unavailable"));
+
+    /// <summary>Retains the live parent's snapshot so a detached child can still bind after the parent closes.</summary>
+    Task RetainDetachedParentAsync(RunId parentRunId, CancellationToken cancellationToken) =>
+        Task.FromException(new InvalidOperationException("subagent_delegation_unavailable"));
+
     /// <summary>
     /// Opens (or reuses) the run's gateway against the authority. The runtime
     /// open is awaited, so cancellation of the creating run propagates instead

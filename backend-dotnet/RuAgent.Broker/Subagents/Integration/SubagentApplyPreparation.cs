@@ -11,9 +11,13 @@ namespace RuAgent.Broker.Subagents.Integration;
 /// <summary>One bounded immutable copy shared by authorization, journal and mutation.</summary>
 internal sealed record SubagentApplyPreparation(SubagentChangeSet Changes, string Fingerprint)
 {
-    public static SubagentApplyPreparation Create(BrokerRunLease root, SubagentChangeSet changes)
+    /// <param name="detachedOwner">
+    /// The result's parent is an earlier root of <paramref name="root"/>'s session whose detached
+    /// child produced it (ADR 0045); the runtime decides this from its own retained records.
+    /// </param>
+    public static SubagentApplyPreparation Create(BrokerRunLease root, SubagentChangeSet changes, bool detachedOwner = false)
     {
-        if (root.RunId != changes.ParentRunId || root.IsExpired(DateTimeOffset.UtcNow) || root.Preset == "plan"
+        if (root.RunId != changes.ParentRunId && !detachedOwner || root.IsExpired(DateTimeOffset.UtcNow) || root.Preset == "plan"
             || !string.Equals(root.CanonicalRoot, changes.ParentRoot, StringComparison.OrdinalIgnoreCase)
             || !SubagentContractValidator.IsValidId(changes.AgentId)
             || !SubagentContractValidator.IsValidId(changes.SnapshotId)

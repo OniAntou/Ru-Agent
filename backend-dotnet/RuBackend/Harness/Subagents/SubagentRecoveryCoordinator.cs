@@ -41,6 +41,15 @@ public sealed class SubagentRecoveryCoordinator(IHarnessEventStore events, Sqlit
         if (roots.TryGetRoot(runId, out _)) return true;
         var attempt = await agents.GetLatestAttemptAsync(owner.RootRunId, owner.AgentId, ct).ConfigureAwait(false);
         var parent = await events.GetRunAsync(owner.RootRunId, ct).ConfigureAwait(false);
+        // Detached children do not survive a Host exit (ADR 0045): with the root already
+        // ended there is no parent lease to restore, so the interrupted child ends by name
+        // and its family stays uncanceled for its siblings' results.
+        if (owner.Detached && !owner.Canceled && parent is not null && parent.State.IsTerminal()
+            && parent.State != HarnessRunState.Cancelled)
+        {
+            await EndAsync(runId, false, "subagent_detached_interrupted", ct).ConfigureAwait(false);
+            return true;
+        }
         if (owner.Canceled || parent is null || parent.State.IsTerminal())
         {
             if (parent is not null) await agents.CancelFamilyAsync(parent.RunId, ct).ConfigureAwait(false);

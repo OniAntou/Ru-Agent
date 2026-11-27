@@ -58,7 +58,7 @@ Task-oriented pages for people using Ru; start here before the reference materia
 - [No Continue gate; a deny settles the call, not the run](adr/0048-no-continue-gate.md)
 - [Advisor: the main model consults a second pinned model on any provider](adr/0047-advisor-consultation.md) (proposed)
 - [Self-evolution runs: Ru proposes changes to its own source](adr/0046-self-evolution-runs.md) (proposed)
-- [Detached background subagents and manual PR integration](adr/0045-detached-background-subagents.md) (proposed)
+- [Detached background subagents and manual PR integration](adr/0045-detached-background-subagents.md)
 - [Advisory verification of declared checks](adr/0039-advisory-verification.md)
 - [Tool descriptor table](adr/0038-tool-descriptor-table.md)
 - [Broker-owned language-server tools](adr/0037-language-server-tools.md)

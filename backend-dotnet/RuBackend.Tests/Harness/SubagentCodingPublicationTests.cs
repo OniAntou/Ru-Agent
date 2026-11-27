@@ -45,6 +45,8 @@ public sealed partial class SubagentCodingPublicationTests
     [InlineData("apply_native_conflict")]
     [InlineData("apply_native_receipt_failure")]
     [InlineData("apply_native_finish_failure")]
+    [InlineData("apply_detached")]
+    [InlineData("apply_native_detached")]
     public async Task Coding_result_is_collected_once_from_owned_worktree_and_permanent_failures_publish_once(string scenario)
     {
         await using var storage = await BackendHarnessTestFixture.CreateAsync();

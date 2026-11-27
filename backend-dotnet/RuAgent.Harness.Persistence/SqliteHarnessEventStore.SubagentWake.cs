@@ -88,14 +88,14 @@ public sealed partial class SqliteHarnessEventStore
         foreach (var agentId in stored.Intent.AgentIds)
         {
             agentParameter.Value = agentId;
-            command.CommandText = """
+            command.CommandText = $"""
                 SELECT EXISTS(SELECT 1 FROM agent_subagent_results v JOIN agent_subagents s ON s.agent_id=v.agent_id
-                    WHERE s.root_run_id=$root AND v.agent_id=$agent AND v.delivered=0)
+                    WHERE {Subagents.SqliteSubagentStore.VisibleToRoot} AND v.agent_id=$agent AND v.delivered=0)
                 """;
             hasResult |= (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
-            command.CommandText = """
+            command.CommandText = $"""
                 SELECT a.run_id FROM agent_subagent_attempts a JOIN agent_subagents s ON s.agent_id=a.agent_id
-                WHERE s.root_run_id=$root AND a.agent_id=$agent ORDER BY a.attempt_number DESC LIMIT 1
+                WHERE {Subagents.SqliteSubagentStore.VisibleToRoot} AND a.agent_id=$agent ORDER BY a.attempt_number DESC LIMIT 1
                 """;
             if (await command.ExecuteScalarAsync(ct).ConfigureAwait(false) is string attemptRun)
                 attempts.Add((agentId, new RunId(attemptRun)));

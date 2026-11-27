@@ -17,7 +17,7 @@ namespace RuBackend.Harness.Subagents;
 public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagentStore agents,
     SqliteAgentRunProviderSelectionStore selections, HarnessPayloadStore payloads, SqliteSubagentScopeStore scopes,
     IAgentRuntimeRootRegistry roots, ISubagentModelSelectionProvider models, ISubagentWorkspaceFactory workspaces,
-    ITimeProvider time) : IDisposable
+    ITimeProvider time, IToolGatewayFactory? gateways = null) : IDisposable
 {
     // Bound workspace preparation memory and serialize duplicate invocations in this Host.
     private readonly SemaphoreSlim _prepare = new(1, 1);
@@ -57,6 +57,7 @@ public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagent
                 return replay;
             }
 
+            if (request.IsDetached) await AdmitDetachedAsync(rootId, request.DetachedRequest, ct).ConfigureAwait(false);
             var profile = ResolveProfile(parentRoot, role, request.Profile);
             byte[] brief;
             try
@@ -87,7 +88,7 @@ public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagent
                 [new(new EventId("evt_" + identity), HarnessEventKind.RunStateChanged, payloadId: promptId)],
                 [new(promptId, HarnessPayloadKind.UserPrompt, HarnessPayloadAudience.AuthenticatedClient | HarnessPayloadAudience.ModelContext,
                     HarnessPayloadEncoding.Utf8Text, brief.Length, brief)], [], new(Hash(Encoding.UTF8.GetBytes(invocationId)), requestHash, 1));
-            var record = await agents.CreateAsync(new(agentId, rootId, invocationId, role, create), ct).ConfigureAwait(false);
+            var record = await agents.CreateAsync(new(agentId, rootId, invocationId, role, create, request.IsDetached), ct).ConfigureAwait(false);
             await selections.PinAsync(child.RunId, selection, ct).ConfigureAwait(false);
             await payloads.CaptureBaseContextAsync(child.RunId, [], now, ct).ConfigureAwait(false);
             var scope = new SubagentRuntimeScope(parentRoot, workspace.Root, new(parentPolicy.Version, parentPolicy.Sha256),
@@ -97,6 +98,31 @@ public sealed class SubagentRunFactory(IHarnessEventStore events, SqliteSubagent
             return record;
         }
         finally { _prepare.Release(); }
+    }
+
+    /// <summary>
+    /// Refuses a detached spawn without the user's own words in the root prompt, then has the
+    /// Broker retain the live parent's snapshot. Both happen before any workspace or durable
+    /// child exists, so a refusal is a known one, never an uncertain write.
+    /// </summary>
+    private async Task AdmitDetachedAsync(RunId rootId, string? quote, CancellationToken ct)
+    {
+        var prompt = "";
+        var ids = await payloads.ListPayloadIdsAsync(rootId, HarnessPayloadKind.UserPrompt, ct).ConfigureAwait(false);
+        if (ids.Count > 0)
+        {
+            var content = await payloads.ReadForModelAsync(rootId, ids[0], ct).ConfigureAwait(false);
+            prompt = Encoding.UTF8.GetString(content.Plaintext.Span);
+        }
+        if (!SubagentDetachedRequest.OccursInPrompt(prompt, quote))
+            throw new SubagentControlRejectedException("subagent_detached_user_request_required");
+        if (gateways is null) throw new SubagentControlRejectedException("subagent_detached_unavailable");
+        try { await gateways.RetainDetachedParentAsync(rootId, ct).ConfigureAwait(false); }
+        catch (Exception error) when (error is RuAgent.Protocol.AgentProtocolException or InvalidOperationException)
+        {
+            throw new SubagentControlRejectedException(error is RuAgent.Protocol.AgentProtocolException { Code: "subagent_delegation_capacity" }
+                ? "subagent_delegation_capacity" : "subagent_detached_unavailable");
+        }
     }
 
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();

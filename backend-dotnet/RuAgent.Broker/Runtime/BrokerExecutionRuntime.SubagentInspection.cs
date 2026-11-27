@@ -14,7 +14,7 @@ public sealed partial class BrokerExecutionRuntime
             var root = SubagentApplyRoot(sessionId, runId);
             using var operation = _runCancellations.Register(runId, ct);
             using var handle = DirectoryHandleLease.Open(root.CanonicalRoot, requireCanonicalPath: true);
-            var preparation = SubagentApplyPreparation.Create(root, changes);
+            var preparation = SubagentApplyPreparation.Create(root, changes, IsDetachedOwner(root, changes));
             var inspection = await SubagentApplyInspector.InspectAsync(root, handle.Identity, preparation, journal,
                 operation.Token).ConfigureAwait(false);
             operation.Token.ThrowIfCancellationRequested();

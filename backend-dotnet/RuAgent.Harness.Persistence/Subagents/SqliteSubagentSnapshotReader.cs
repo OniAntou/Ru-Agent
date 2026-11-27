@@ -18,7 +18,11 @@ public sealed partial class SqliteSubagentSnapshotReader(HarnessSqliteOptions op
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.Parameters.AddWithValue("$root", root.Value);
-        command.CommandText = "SELECT agent_id,internal_session_id,role,canceled,invocation_id FROM agent_subagents WHERE root_run_id=$root ORDER BY agent_id";
+        command.CommandText = """
+            SELECT s.agent_id,s.internal_session_id,s.role,s.canceled,s.invocation_id,
+                EXISTS(SELECT 1 FROM agent_subagent_detached d WHERE d.agent_id=s.agent_id)
+            FROM agent_subagents s WHERE s.root_run_id=$root ORDER BY s.agent_id
+            """;
         var identities = new List<(SubagentRecord Agent, string Invocation)>();
         using (var rows = await command.ExecuteReaderAsync(ct).ConfigureAwait(false))
         {
@@ -26,7 +30,7 @@ public sealed partial class SqliteSubagentSnapshotReader(HarnessSqliteOptions op
             {
                 var role = (SubagentRole)rows.GetInt32(2);
                 if (!Enum.IsDefined(role) || !SubagentContractValidator.IsValidId(rows.GetString(0))) Invalid();
-                identities.Add((new(rows.GetString(0), root, new(rows.GetString(1)), role, rows.GetInt32(3) != 0), rows.GetString(4)));
+                identities.Add((new(rows.GetString(0), root, new(rows.GetString(1)), role, rows.GetInt32(3) != 0, rows.GetInt64(5) != 0), rows.GetString(4)));
             }
         }
         var agents = new List<SubagentSnapshotEntry>();

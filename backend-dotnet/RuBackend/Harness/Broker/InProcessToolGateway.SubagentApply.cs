@@ -69,7 +69,9 @@ public sealed partial class InProcessToolGateway
 
     private void ValidateSubagentApply(ToolProposal proposal, SubagentChangeSet changes)
     {
-        if (proposal.RunId.Value != _runId || changes.ParentRunId != _runId || proposal.ToolId != "agent_apply"
+        // A result from another root is a detached child's (ADR 0045); the Broker accepts it
+        // only while it retains that parent in this root's session and workspace.
+        if (proposal.RunId.Value != _runId || string.IsNullOrEmpty(changes.ParentRunId) || proposal.ToolId != "agent_apply"
             || proposal.ToolVersion != "1.0.0" || !SubagentContractValidator.Validate(proposal.ToolId, proposal.Arguments).IsValid
             || proposal.Arguments.GetProperty("agent_id").GetString() != changes.AgentId
             || proposal.Arguments.GetProperty("result_version").GetInt64() != changes.ResultVersion)

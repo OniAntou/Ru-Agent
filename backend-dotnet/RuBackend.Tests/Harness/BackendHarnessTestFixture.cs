@@ -125,7 +125,8 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
         string sessionId,
         string? workspaceRoot = null,
         IReadOnlyList<HarnessPayloadIntent>? payloads = null,
-        IReadOnlyList<ConversationOutboxIntent>? outbox = null)
+        IReadOnlyList<ConversationOutboxIntent>? outbox = null,
+        string? idempotencySha256 = null)
     {
         workspaceRoot ??= Path.Combine(RootPath, "workspace-" + runId);
         Directory.CreateDirectory(workspaceRoot);
@@ -162,7 +163,7 @@ internal sealed class BackendHarnessTestFixture : IAsyncDisposable
                 payloadId: payloads?.FirstOrDefault(payload => payload.Kind == HarnessPayloadKind.UserPrompt)?.PayloadId)],
             payloads ?? [],
             outbox ?? [],
-            new RunCreationIdentity(new string('c', 64), new string('d', 64), 1));
+            new RunCreationIdentity(idempotencySha256 ?? new string('c', 64), new string('d', 64), 1));
         var result = await EventStore.TryCreateRunAsync(request, CancellationToken.None);
         Assert.Equal(CreateRunOutcome.Created, result.Outcome);
         return request;

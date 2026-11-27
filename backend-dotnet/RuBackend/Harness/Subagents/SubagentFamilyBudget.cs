@@ -35,12 +35,15 @@ public sealed class SubagentFamilyBudget(
                 || attempt.DeadlineAt is null || time.UtcNow >= attempt.DeadlineAt) return false;
         }
         var root = await events.GetRunAsync(rootId, ct).ConfigureAwait(false);
-        if (root is null || root.Status.State.IsTerminal()) return false;
+        // A detached child keeps recording into its family's last window after the
+        // root ends normally (ADR 0045); an explicit cancel still refuses it.
+        var detached = owner is { Detached: true } && root?.State != HarnessRunState.Cancelled;
+        if (root is null || root.Status.State.IsTerminal() && !detached) return false;
         // Reserve the complete tool batch once, before dispatch. First spawn seeds
         // the pool with the parent's already-reserved counters, including its batch.
         var key = (kind == SubagentBudgetKind.ModelStep ? "model_" : "tools_") + step.Value;
         return await budgets.ReserveAmountAsync(rootId, root.BudgetWindow, key, kind, amount,
-            root.ModelStepsInWindow, root.ToolCallsInWindow, ct).ConfigureAwait(false);
+            root.ModelStepsInWindow, root.ToolCallsInWindow, ct, allowTerminalRoot: detached).ConfigureAwait(false);
 
         bool CanReserve(AgentRun candidate) => candidate.State == HarnessRunState.Running
             || allowParked && candidate.State is HarnessRunState.WaitingUser or HarnessRunState.WaitingApproval

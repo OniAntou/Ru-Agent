@@ -21,7 +21,10 @@ public sealed class SubagentRuntimeBinder(IHarnessEventStore events, SqliteSubag
         if (owner is null) return false;
         var attempt = await agents.GetLatestAttemptAsync(owner.RootRunId, owner.AgentId, ct).ConfigureAwait(false);
         var root = await events.GetRunAsync(owner.RootRunId, ct).ConfigureAwait(false);
-        if (owner.Canceled || attempt?.Run.RunId != runId || run.State.IsTerminal() || root is null || root.State.IsTerminal())
+        // A detached child keeps binding after its root ended normally; an explicit
+        // cancel marks it canceled, which ends it like any other child.
+        if (owner.Canceled || attempt?.Run.RunId != runId || run.State.IsTerminal() || root is null
+            || root.State.IsTerminal() && (!owner.Detached || root.State == HarnessRunState.Cancelled))
             throw new HarnessStoreException("subagent_root_inactive");
         var scope = await scopes.GetAsync(runId, ct).ConfigureAwait(false)
             ?? throw new HarnessStoreException("subagent_scope_missing");
@@ -35,7 +38,10 @@ public sealed class SubagentRuntimeBinder(IHarnessEventStore events, SqliteSubag
         var currentIdentity = await new Workspace.WindowsWorkspaceIdentityResolver().ResolveAsync(workspaceRoot, ct).ConfigureAwait(false);
         if (currentIdentity != policy.Workspace) throw new HarnessStoreException("subagent_workspace_identity_changed");
         var parentCeiling = BrokerPolicyContracts.ReadSnapshot(JsonNode.Parse(scope.ParentPolicySnapshotJson)!.AsObject());
-        await gateways.BindDelegationAsync(owner.RootRunId, runId, owner.Role, scope.ParentPolicy, ct, parentCeiling).ConfigureAwait(false);
+        if (owner.Detached)
+            await gateways.BindDetachedDelegationAsync(owner.RootRunId, runId, owner.Role, scope.ParentPolicy, parentCeiling, ct).ConfigureAwait(false);
+        else
+            await gateways.BindDelegationAsync(owner.RootRunId, runId, owner.Role, scope.ParentPolicy, ct, parentCeiling).ConfigureAwait(false);
         return true;
     }
 }

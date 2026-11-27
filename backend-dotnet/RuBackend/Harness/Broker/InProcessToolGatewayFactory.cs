@@ -94,6 +94,16 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
         RuAgent.Protocol.Harness.BrokerPolicySnapshotWire? parentCeiling = null) =>
         Runtime.BindDelegationAsync(parentRunId.Value, childRunId.Value, role, cancellationToken, expectedParentPolicy, parentCeiling);
 
+    public Task BindDetachedDelegationAsync(RunId parentRunId, RunId childRunId,
+        RuAgent.Protocol.Subagents.SubagentRole role,
+        RuAgent.Protocol.Subagents.SubagentParentPolicyIdentity expectedParentPolicy,
+        RuAgent.Protocol.Harness.BrokerPolicySnapshotWire parentCeiling, CancellationToken cancellationToken) =>
+        Runtime.BindDelegationAsync(parentRunId.Value, childRunId.Value, role, cancellationToken, expectedParentPolicy,
+            parentCeiling, detached: true);
+
+    public Task RetainDetachedParentAsync(RunId parentRunId, CancellationToken cancellationToken) =>
+        Runtime.RetainDetachedParentAsync(parentRunId.Value, cancellationToken);
+
     public async Task<IToolGateway> CreateAsync(
         string workspaceRoot,
         PolicySnapshot policySnapshot,

@@ -55,6 +55,37 @@ public sealed class SubagentContractTests
         Assert.False(schema["properties"]!["agent_ids"]!.AsObject().ContainsKey("maxItems"));
     }
 
+    [Theory]
+    [InlineData("{\"role\":\"review\",\"task\":\"inspect\",\"detached\":true,\"detached_request\":\"keep checking in the background\"}", true)]
+    [InlineData("{\"role\":\"coding\",\"task\":\"fix\",\"detached\":false}", true)]
+    [InlineData("{\"role\":\"review\",\"task\":\"inspect\",\"detached\":true}", false)]
+    [InlineData("{\"role\":\"review\",\"task\":\"inspect\",\"detached_request\":\"run it in the background\"}", false)]
+    [InlineData("{\"role\":\"review\",\"task\":\"inspect\",\"detached\":false,\"detached_request\":\"run it in the background\"}", false)]
+    [InlineData("{\"role\":\"review\",\"task\":\"inspect\",\"detached\":\"true\",\"detached_request\":\"run it in the background\"}", false)]
+    [InlineData("{\"role\":\"review\",\"task\":\"inspect\",\"detached\":true,\"detached_request\":\" \"}", false)]
+    public void Detached_spawn_needs_the_flag_and_the_users_words_together(string json, bool valid)
+    {
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(valid, SubagentContractValidator.Validate("agent_spawn", document.RootElement).IsValid);
+    }
+
+    [Fact]
+    public void Detached_request_is_bounded()
+    {
+        var quote = new string('x', SubagentLimits.MaxDetachedRequestCharacters + 1);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
+            { role = "review", task = "inspect", detached = true, detached_request = quote }));
+        Assert.False(SubagentContractValidator.Validate("agent_spawn", document.RootElement).IsValid);
+    }
+
+    [Fact]
+    public void A_non_detached_spawn_request_hashes_as_before()
+    {
+        // Detached fields are omitted when absent, so replaying an older spawn keeps its request hash.
+        var json = JsonSerializer.Serialize(new SubagentSpawnRequest("review", "inspect"));
+        Assert.DoesNotContain("detached", json, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void A_bounded_profile_id_is_valid_wire_arguments()
     {

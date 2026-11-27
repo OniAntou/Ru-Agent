@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(subagents)**: Detached background subagents ([ADR 0045](docs/adr/0045-detached-background-subagents.md),
+  now accepted). When the user asks in their own words for work that keeps running after the
+  answer, `agent_spawn` takes `detached=true` with `detached_request` quoting those words; the
+  Host refuses it (`subagent_detached_user_request_required`) unless they occur as whole
+  words in the authenticated root prompt; the main agent still judges intent. A normal root end cancels only attached children; detached ones
+  keep running, are admitted without a live parent and keep recording into the family's last
+  budget window. The Broker retains the spawning parent's lease snapshot and, after that lease
+  closes normally, evaluates the child against it and the spawn ceiling (a detached rebind to a
+  live parent after a Host restart retains it too); a live parent's policy
+  change, the child's own cancel, parent-session close and runtime disposal still revoke it.
+  Later roots of the session see detached children in `run_state` and may `agent_wait`,
+  `agent_cancel` or `agent_apply` them (the Broker checks the retained parent is in the same
+  session and workspace); `agent_send` across roots is refused with
+  `subagent_detached_send_unsupported`. Explicit root cancel (or any root ending `cancelled`),
+  session deletion and Host exit still stop them, and recovery ends an interrupted one with `subagent_detached_interrupted`.
+  A detached result cannot be applied after a Host restart (`subagent_apply_denied`). Schema
+  v43 adds `agent_subagent_detached`; the HTTP subagent summary and SDK type report `detached`.
+
 - **fix(harness)**: A tool step that loses its commit race no longer shows its narration
   twice. The narration row is published only after the step commit lands, because a
   swallowed conflict re-drives the pass and durable replay keeps no copy of the discarded

@@ -29,7 +29,7 @@ in-process without adding a service.
 
 - `read` keeps its byte-paged UTF-8 text behavior and image behavior.
 - A `.pdf` file returns bounded extracted text from PdfPig. A `pages` argument
-  selects a 1-based page or range (`"5"`, `"5-12"`) with at most 20 pages per
+  selects a 1-based page or range (`"5"`, `"5-12"`) with at most 100 pages per
   call. Without `pages`, a document of at most ten pages is read whole; a longer
   document returns its first ten pages and a notice naming the next range.
   Extraction stops at 60,000 characters per page range; a PDF larger than 20 MiB,

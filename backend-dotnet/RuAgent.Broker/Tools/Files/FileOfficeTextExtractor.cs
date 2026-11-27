@@ -40,8 +40,8 @@ internal static class FileOfficeTextExtractor
     /// One XML part's bound. XDocument.Load cannot be cancelled mid-part, so the parse
     /// deadline is checked between parts; this bound keeps a single part's load short.
     /// </summary>
-    private const int MaxXmlPartCharacters = 16 * 1024 * 1024;
-    private const int MaxArchiveEntries = 4_096;
+    private const int MaxXmlPartCharacters = 256 * 1024 * 1024;
+    private const int MaxArchiveEntries = 65_536;
 
     /// <summary>Empty columns a sparse row may pad before a cell, so columns stay aligned.</summary>
     private const int MaxColumnGap = 64;

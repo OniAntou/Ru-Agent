@@ -19,11 +19,11 @@ public static class FileToolLimits
     public const int MaxDocumentBytes = 0x7FFFFFC7 - 1;
 
     /// <summary>Parsing a document is slower than hashing a text window.</summary>
-    public const int MaxDocumentTimeMs = 10_000;
+    public const int MaxDocumentTimeMs = 120_000;
     public const int MaxPatternLength = 512;
     public const int MaxQueryLength = 2048;
-    public const int MaxSearchFileSize = 1 * 1024 * 1024;
-    public const int MaxTimeMs = 5000;
+    public const int MaxSearchFileSize = 64 * 1024 * 1024;
+    public const int MaxTimeMs = 60_000;
     public const int DefaultMaxEntries = 512;
     public const int DefaultMaxResults = 128;
     public const int DefaultReadLimit = 1024 * 1024;

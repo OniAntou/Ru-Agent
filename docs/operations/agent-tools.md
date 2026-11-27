@@ -134,7 +134,7 @@ effective for policy preservation, but do not restore those tools as callable
 identities. Profiles do not widen authority. `read` takes `path` with
 optional `offset`/`limit` (source bytes, default 1 MiB, maximum 4 MiB) and reads
 one file. A `.pdf` file returns bounded extracted text; optional `pages`
-(`"1-10"`, at most 20 pages per call) selects a 1-based range, and a long
+(`"1-10"`, at most 100 pages per call) selects a 1-based range, and a long
 document read without it returns its first 10 pages plus the next range. Office
 Open XML and OpenDocument files return text by part (paragraphs, rows or slides),
 with `pages` as a part range. Legacy Office files fail as `document_unsupported`,
@@ -348,7 +348,7 @@ matches sequentially without retaining skipped match objects; collection is boun
 by the page size plus one lookahead, stopping once the page is known. Discovery has
 no aggregate byte cutoff; per-file, candidate, directory and time bounds still apply. Output
 includes `offset`, `next_offset`, `scan_incomplete`, `discovered_files` and
-`scanned_files` (the files actually searched). Files over the 1 MiB search limit
+`scanned_files` (the files actually searched). Files over the 64 MiB search limit
 increment `excluded_by_size` and `skipped` and set `scan_incomplete=true`, including
 an explicit file target. This does not imply a next page; use bounded `read` or
 another appropriate approved tool for those files. A final exact-size page has no
@@ -411,10 +411,10 @@ Follow returned cursors rather than adding the requested limit to the offset.
 
 `read` extracts PDF text in process with PdfPig; nothing is rendered or executed
 ([ADR 0050](../adr/0050-read-extracts-pdf-and-refuses-other-documents.md)). A
-1-based `pages` range is accepted as `"5"` or `"5-12"` and is capped at 20 pages
+1-based `pages` range is accepted as `"5"` or `"5-12"` and is capped at 100 pages
 per call. Without `pages`, a document of at most ten pages is read whole; a
 longer one returns its first ten pages and a `notice` naming the next range.
-Extraction stops at 60,000 characters; image-only or scanned PDFs report that no
+Extraction stops at 200,000 characters; image-only or scanned PDFs report that no
 text was extractable; encrypted, malformed, oversized (beyond what fits in memory), or
 timed-out documents fail by name.
 
@@ -422,7 +422,7 @@ Office Open XML (`.docx`, `.xlsx`, `.pptx` and their macro/template variants) an
 OpenDocument (`.odt`, `.ods`, `.odp`) files return `kind: "document"` with
 `format`, `unit` (`paragraph`, `row` or `slide`), `part_count` and `pages`; a
 spreadsheet row carries its sheet name on the sheet's first row. `pages="120-400"`
-selects a part range, text stops at 60,000 characters, and a `notice` names the
+selects a part range, text stops at 200,000 characters, and a `notice` names the
 next range. Password-protected, damaged, oversized (beyond what fits in memory) or timed-out
 documents fail by name. Legacy `.doc`/`.xls`/`.ppt` and iWork files fail as
 `document_unsupported` with a conversion command; other binary files fail as

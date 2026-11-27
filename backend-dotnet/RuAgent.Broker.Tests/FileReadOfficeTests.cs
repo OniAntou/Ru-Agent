@@ -114,17 +114,19 @@ public sealed class FileReadOfficeTests : IDisposable
     [Fact]
     public async Task A_long_document_names_the_next_part_range()
     {
-        var paragraphs = Enumerable.Range(1, 40).Select(index => $"P{index} " + new string('w', 3_000)).ToArray();
+        var paragraphs = Enumerable.Range(1, 120).Select(index => $"P{index} " + new string('w', 3_000)).ToArray();
         File.WriteAllBytes(FullPath("long.docx"), Docx(paragraphs));
 
         var result = await ReadAsync("long.docx");
 
         Assert.True(result.Output["truncated"]!.GetValue<bool>());
         Assert.Equal(FileOfficeTextExtractor.MaxCharacters, Content(result).Length);
-        Assert.Contains("pages=\"20-40\"", result.Output["notice"]!.GetValue<string>(), StringComparison.Ordinal);
+        var match = System.Text.RegularExpressions.Regex.Match(result.Output["notice"]!.GetValue<string>(), @"pages=""(\d+)-120""");
+        Assert.True(match.Success);
+        var first = match.Groups[1].Value;
 
-        var next = await ReadAsync("long.docx", "20-40");
-        Assert.StartsWith("P20 ", Content(next), StringComparison.Ordinal);
+        var next = await ReadAsync("long.docx", $"{first}-120");
+        Assert.StartsWith($"P{first} ", Content(next), StringComparison.Ordinal);
     }
 
     [Fact]

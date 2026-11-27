@@ -100,19 +100,19 @@ public sealed class FileReadDocumentTests : IDisposable
     }
 
     [Fact]
-    public async Task A_pdf_range_over_twenty_pages_fails_with_a_paging_hint()
+    public async Task A_pdf_range_over_the_page_cap_fails_with_a_paging_hint()
     {
         File.WriteAllBytes(
             FullPath("wide.pdf"),
-            Pdf(Enumerable.Range(1, 30).Select(index => $"Page text {index}").ToArray()));
+            Pdf(Enumerable.Range(1, FilePdfTextExtractor.MaxPagesPerRead + 5).Select(index => $"Page text {index}").ToArray()));
         var arguments = Args("wide.pdf");
-        arguments["pages"] = "1-25";
+        arguments["pages"] = $"1-{FilePdfTextExtractor.MaxPagesPerRead + 1}";
 
         var error = await Assert.ThrowsAsync<FileReadDocumentException>(async () =>
             await _adapter.ExecuteAsync(arguments, imageInputAccepted: true, CancellationToken.None));
 
         Assert.Equal("pdf_pages_too_large", error.Code);
-        Assert.Contains("20", error.Hint, StringComparison.Ordinal);
+        Assert.Contains(FilePdfTextExtractor.MaxPagesPerRead.ToString(), error.Hint, StringComparison.Ordinal);
     }
 
     [Fact]

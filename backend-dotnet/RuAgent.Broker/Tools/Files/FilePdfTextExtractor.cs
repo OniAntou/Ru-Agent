@@ -30,13 +30,13 @@ internal sealed record FilePdfText(
 internal static class FilePdfTextExtractor
 {
     /// <summary>Pages one call may select, matching the range size Claude Code accepts.</summary>
-    public const int MaxPagesPerRead = 20;
+    public const int MaxPagesPerRead = 100;
 
     /// <summary>Pages read when the caller names no range and the document is longer.</summary>
     public const int DefaultPagesWhenUnspecified = 10;
 
     /// <summary>Extracted characters one call returns before it reports truncation.</summary>
-    public const int MaxCharacters = 60_000;
+    public const int MaxCharacters = 200_000;
 
     public static FilePdfText Extract(byte[] pdf, string? pagesArgument, CancellationToken cancellationToken)
     {

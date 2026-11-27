@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - **fix(broker)**: `read` no longer refuses PDF and Office files over 20 MiB; the whole-file bound is now the largest managed array. The 10 s parse budget and the per-part XML and archive-entry bounds still apply.
+- **feat(broker)**: Document, search and time bounds are looser. A document read stops at 200,000 characters (was 60,000) and takes up to 100 PDF pages per call (was 20; the tool description still says 20); the parse budget is 120 s and the search, list and glob budget 60 s (were 10 s and 5 s); grep searches files up to 64 MiB (was 1 MiB); an Office part may hold 256 MiB of XML and 65,536 archive entries. Result counts, the 50000 grep offset, write and edit sizes and the journal bound are unchanged.
 
 - **feat(subagents)**: Detached background subagents ([ADR 0045](docs/adr/0045-detached-background-subagents.md),
   now accepted). When the user asks in their own words for work that keeps running after the

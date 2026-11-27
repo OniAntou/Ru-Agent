@@ -160,7 +160,7 @@ reconciliation surfaces from Phase 3:
     ([ADR 0050](../adr/0050-read-extracts-pdf-and-refuses-other-documents.md));
   - Office Open XML and OpenDocument files (`FileOfficeTextExtractor`, BCL ZIP/XML only, DTDs
     prohibited) return `kind: "document"` text by part (paragraph, spreadsheet row or slide)
-    with `pages` as a part range and the same 60,000-character cap; legacy binary Office and
+    with `pages` as a part range and the same 200,000-character cap; legacy binary Office and
     iWork files fail as `document_unsupported`, other binary files as `binary_file_unsupported`
     and non-UTF-8 text as `invalid_utf8`, each with a hint naming what the bytes are and the
     command that opens them (`FileReadFailureHints`; the hint travels in the exception's data so

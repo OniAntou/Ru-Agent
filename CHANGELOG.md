@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A commit race no longer ends a run as `runtime_drive_failed`. A step
+  that loses its optimistic commit before any tool dispatches re-reads the run and returns
+  `run_changed_during_generation`, so the next pass steps the run that actually won (a
+  `/compact` or `/skill` command, or recovery, advancing the run mid-step) instead of
+  failing it. Run-state transitions now carry a bounded code
+  (`AgentRunStateException`), so a conflict that surfaces after work started fails with
+  `run_commit_conflict` and its fingerprint kind is `state`; the bounded conditions the
+  step already named (`provider_continuation_too_large`, `broker_gateway_*`) keep their
+  codes instead of falling back. The fallback stays for an unnamed contract guard.
+
 - **fix(harness)**: A run another writer already settled is no longer retried as a drive
   failure. A drive pass that stops on an exception now re-reads the run before failing it:
   a run a client Stop, an expired approval, startup recovery or a step's own bounded

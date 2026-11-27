@@ -64,6 +64,7 @@ public static class ExceptionFingerprint
         return exception switch
         {
             // The exception's own code is the most precise bucket when it carries one.
+            RuAgent.Harness.Core.AgentRunStateException => "state",
             RuAgent.Harness.Persistence.HarnessStoreException => "store",
             System.Data.Common.DbException => "store",
             RuAgent.Protocol.AgentProtocolException => "protocol",

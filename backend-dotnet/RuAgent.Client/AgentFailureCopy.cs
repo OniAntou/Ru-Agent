@@ -361,6 +361,10 @@ public static class AgentFailureCopy
             "Run changed during the step",
             "another writer changed the run before this step could commit",
             "retry the step; the run was left unchanged");
+        Add(table, ["run_commit_conflict"],
+            "Run changed during a step",
+            "another writer advanced the run before a step could record its result, after work had already started",
+            "send a new message to continue in a fresh run: the new run carries this session's handoff");
 
         // Workspace, tool execution and recovery.
         Add(table, ["workspace_changed"],

@@ -250,14 +250,28 @@ public sealed partial class AgentRunCoordinator
             reservation.NextRun.ModelStepsInWindow, reservation.NextRun.ToolCallsInWindow,
             startEvents.Count, reservation.NextRun.UpdatedAt, reservation.NextRun.TerminalErrorCode);
         using (Diagnostics.HarnessPerformance.Measure(Diagnostics.HarnessPhase.AdmissionCommit))
-            run = await CommitAsync(
-                run,
-                startedRun,
-                startEvents,
-                startPayloads,
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-                .ConfigureAwait(false);
+        {
+            try
+            {
+                run = await CommitAsync(
+                    run,
+                    startedRun,
+                    startEvents,
+                    startPayloads,
+                    Array.Empty<ConversationOutboxIntent>(),
+                    cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (AgentRunStateException conflict) when (conflict.Code == "run_version_conflict")
+            {
+                // Nothing was dispatched: the model step start lost an optimistic race
+                // with a writer that advanced the run (/compact, /skill, recovery). Let the
+                // next pass step the run that actually won instead of failing it for an
+                // internal conflict; a terminal winner is published by the drive loop.
+                var current = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+                return AgentRunStepResult.Blocked(current, "run_changed_during_generation");
+            }
+        }
         if (!reservation.Granted)
         {
             return AgentRunStepResult.Blocked(run, reservation.ErrorCode!);
@@ -320,8 +334,16 @@ public sealed partial class AgentRunCoordinator
         var preRefresh = CompletionPolicy.DecideBeforeRefresh(step, context);
         if (preRefresh is not null)
         {
-            return await ExecuteStepDecisionAsync(preRefresh, run, modelStepId, invocation, context, cancellationToken)
+            var decided = await ExecuteStepDecisionAsync(preRefresh, run, modelStepId, invocation, context, cancellationToken)
                 .ConfigureAwait(false);
+            if (decided.ErrorCode == "run_changed_during_generation")
+            {
+                // The step was not recorded: its streamed prose is still provisional, and
+                // the next pass may write a different reply for the same run.
+                invocation.RetractAssistantText();
+            }
+
+            return decided;
         }
 
         // Workspace journal state may change while the provider is generating a
@@ -354,7 +376,7 @@ public sealed partial class AgentRunCoordinator
             return await ExecuteStepDecisionAsync(decision, run, modelStepId, invocation, context, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (InvalidOperationException error) when (error.Message == "run_version_conflict")
+        catch (AgentRunStateException conflict) when (conflict.Code == "run_version_conflict")
         {
             var current = await RequireRunAsync(run.RunId, cancellationToken).ConfigureAwait(false);
             invocation.RetractAssistantText();
@@ -865,10 +887,10 @@ public sealed partial class AgentRunCoordinator
         {
             HarnessCommitOutcome.Committed => result.Run!,
             HarnessCommitOutcome.VersionConflict =>
-                throw new InvalidOperationException("run_version_conflict"),
+                throw new AgentRunStateException("run_version_conflict"),
             HarnessCommitOutcome.RunNotFound =>
                 throw new KeyNotFoundException("run_not_found"),
-            _ => throw new InvalidOperationException("unknown_commit_outcome"),
+            _ => throw new AgentRunStateException("unknown_commit_outcome"),
         };
     }
 

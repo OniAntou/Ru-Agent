@@ -42,6 +42,15 @@ public sealed class ExceptionFingerprintTests
     }
 
     [Fact]
+    public void A_named_run_state_failure_has_its_own_kind()
+    {
+        var failure = new RuAgent.Harness.Core.AgentRunStateException("run_version_conflict");
+
+        Assert.Equal("state", ExceptionFingerprint.KindOf(failure));
+        Assert.Equal("run_version_conflict", failure.Code);
+    }
+
+    [Fact]
     public void The_fingerprint_built_from_a_site_passes_its_own_validation()
     {
         var fingerprint = ExceptionFingerprint.For(Capture(() => CallsAThrowHelper(null)));

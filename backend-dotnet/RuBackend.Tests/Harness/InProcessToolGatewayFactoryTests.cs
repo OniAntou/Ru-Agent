@@ -236,7 +236,7 @@ public sealed class InProcessToolGatewayFactoryTests : IDisposable
             DateTimeOffset.UtcNow,
             string.Empty);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<ToolTransportException>(
             () => _fixture.Factory.CreateAsync(_fixture.WorkspaceRoot, snapshot, runId, "session-inprocess-hash", CancellationToken.None));
     }
 

@@ -1085,7 +1085,10 @@ publishes and releases a run another writer already settled (a cancel, an expire
 approval, startup recovery, or a step that committed its own bounded failure)
 instead of failing an already-terminal run, and the coordinator's failure
 transition returns that terminal state or rebases a lost version race the same
-way. A run whose row is gone is unregistered without a failure write.
+way. A run whose row is gone is unregistered without a failure write. A commit
+that loses its version race before a tool dispatches re-drives the pass as
+`run_changed_during_generation`; one that surfaces after work started fails the
+run with `run_commit_conflict`, so a lost race never needs the driver fallback.
 History acknowledgement uses the same persistence
 path when composition fails; a history-delivery failure also needs no provider or
 tool gateway to settle the run.

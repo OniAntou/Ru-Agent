@@ -159,8 +159,8 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
             || policySnapshot is null
             || runId is not { } brokerRunId)
         {
-            throw new InvalidOperationException(
-                "broker_gateway_unavailable: every tool call must execute inside the Broker");
+            throw new ToolTransportException(
+                "broker_gateway_unavailable");
         }
 
         var storedRun = await _store.GetRunAsync(brokerRunId, cancellationToken).ConfigureAwait(false);

@@ -2128,7 +2128,7 @@ public sealed partial class AgentRunCoordinatorTests
     private static AgentRunCoordinator Coordinator(
         IModelStepRunner model,
         FakeToolGateway gateway,
-        InMemoryHarnessEventStore store,
+        IHarnessEventStore store,
         TransientFrameBuffer? frames = null,
         ITransientContentRedactor? redactor = null,
         IAgentReplyPolicy? replyPolicy = null,

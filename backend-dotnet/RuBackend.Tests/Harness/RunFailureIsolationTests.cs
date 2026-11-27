@@ -29,6 +29,7 @@ public sealed class RunFailureIsolationTests
         Database,
         Protocol,
         Transport,
+        StateConflict,
         Unclassified,
     }
 
@@ -37,6 +38,7 @@ public sealed class RunFailureIsolationTests
     [InlineData(Fault.Database, "agent_store_unavailable", "store")]
     [InlineData(Fault.Protocol, "invalid_run_token", "protocol")]
     [InlineData(Fault.Transport, "broker_gateway_unavailable", "transport")]
+    [InlineData(Fault.StateConflict, "run_commit_conflict", "state")]
     [InlineData(Fault.Unclassified, "runtime_drive_failed", "invalid_operation")]
     public async Task A_boundary_fault_names_its_family_and_leaves_the_session_usable(
         Fault fault,
@@ -118,6 +120,8 @@ public sealed class RunFailureIsolationTests
         Fault.Database => new SqliteException("database is locked", 5),
         Fault.Protocol => new AgentProtocolException("invalid_run_token"),
         Fault.Transport => new ToolTransportException("broker_gateway_unavailable"),
+        // A step that lost its commit race after work started: bounded, not the fallback.
+        Fault.StateConflict => new AgentRunStateException("run_version_conflict"),
         _ => new InvalidOperationException("injected drive fault"),
     };
 

@@ -911,6 +911,18 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
                 : "retained_approval_rehydration_failed";
         }
 
+        // A run-state transition that names itself keeps a bounded code too. A version
+        // conflict that survives to the drive boundary means a step could not record its
+        // result over another writer's commit, so the run fails with the conflict's own
+        // name instead of the unexplained driver fallback; the remaining state codes
+        // (unknown_commit_outcome) are contract guards a bug must fix, so they keep the
+        // fallback and the fingerprint.
+        if (error is RuAgent.Harness.Core.AgentRunStateException stateFailure
+            && stateFailure.Code == "run_version_conflict")
+        {
+            return "run_commit_conflict";
+        }
+
         // A failure that names itself keeps that name. The catch-all used to hide
         // the family: a store fault, a protocol fault and an unknown driver bug all
         // arrived as runtime_drive_failed, so nothing told an operator which one to

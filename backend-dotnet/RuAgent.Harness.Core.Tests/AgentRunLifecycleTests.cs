@@ -93,9 +93,10 @@ public sealed class AgentRunLifecycleTests
         var store = new AlwaysConflictingStore(inner);
         var lifecycle = Lifecycle(store);
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var error = await Assert.ThrowsAsync<AgentRunStateException>(() =>
             lifecycle.FailAsync(RunId(), "model_failed", CancellationToken.None));
 
+        Assert.Equal("run_version_conflict", error.Code);
         Assert.Equal("run_version_conflict", error.Message);
         Assert.Equal(8, store.CommitCalls);
         Assert.Empty(inner.Commits);

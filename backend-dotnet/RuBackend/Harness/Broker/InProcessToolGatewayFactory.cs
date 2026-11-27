@@ -104,7 +104,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
         ArgumentNullException.ThrowIfNull(policySnapshot);
         if (policySnapshot.Sha256.Length != 64)
         {
-            throw new InvalidOperationException(
+            throw new ToolTransportException(
                 "broker_gateway_requires_canonical_snapshot_hash");
         }
 
@@ -117,7 +117,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
             : "session_" + runId.Value;
         if (sessionId.Length > 128 || sessionId.Contains('\0'))
         {
-            throw new InvalidOperationException("broker_gateway_requires_bounded_session_id");
+            throw new ToolTransportException("broker_gateway_requires_bounded_session_id");
         }
 
         var canonicalRoot = Path.GetFullPath(workspaceRoot);
@@ -287,7 +287,7 @@ public sealed partial class InProcessToolGatewayFactory : IToolGatewayFactory
         var opened = await Runtime.OpenRunAsync(request, cancellationToken).ConfigureAwait(false);
         if (opened.Error is not null)
         {
-            throw new InvalidOperationException(opened.Error.ErrorCode);
+            throw new ToolTransportException(opened.Error.ErrorCode ?? "broker_gateway_open_failed");
         }
     }
 

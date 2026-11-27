@@ -623,10 +623,10 @@ internal sealed partial class AgentToolExecutionPipeline
         {
             HarnessCommitOutcome.Committed => result.Run!,
             HarnessCommitOutcome.VersionConflict =>
-                throw new InvalidOperationException("run_version_conflict"),
+                throw new AgentRunStateException("run_version_conflict"),
             HarnessCommitOutcome.RunNotFound =>
                 throw new KeyNotFoundException("run_not_found"),
-            _ => throw new InvalidOperationException("unknown_commit_outcome"),
+            _ => throw new AgentRunStateException("unknown_commit_outcome"),
         };
     }
 

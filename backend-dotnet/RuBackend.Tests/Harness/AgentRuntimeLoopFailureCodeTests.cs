@@ -71,6 +71,33 @@ public sealed class AgentRuntimeLoopFailureCodeTests
     }
 
     [Fact]
+    public void A_lost_run_state_race_names_the_conflict_instead_of_the_fallback()
+    {
+        Assert.Equal(
+            "run_commit_conflict",
+            AgentRuntimeLoopService.NormalizeDriveFailureCode(
+                new AgentRunStateException("run_version_conflict")));
+        // A contract guard means a bug, not a known family: the fallback still names it.
+        Assert.Equal(
+            "runtime_drive_failed",
+            AgentRuntimeLoopService.NormalizeDriveFailureCode(
+                new AgentRunStateException("unknown_commit_outcome")));
+    }
+
+    [Fact]
+    public void A_bounded_condition_thrown_by_a_step_keeps_its_code()
+    {
+        Assert.Equal(
+            "provider_continuation_too_large",
+            AgentRuntimeLoopService.NormalizeDriveFailureCode(
+                new AgentProtocolException("provider_continuation_too_large")));
+        Assert.Equal(
+            "broker_gateway_requires_canonical_snapshot_hash",
+            AgentRuntimeLoopService.NormalizeDriveFailureCode(
+                new ToolTransportException("broker_gateway_requires_canonical_snapshot_hash")));
+    }
+
+    [Fact]
     public void An_unclassified_failure_still_falls_back_to_the_driver_code()
     {
         // The catch-all stays for a genuinely unknown fault, so the family mapping

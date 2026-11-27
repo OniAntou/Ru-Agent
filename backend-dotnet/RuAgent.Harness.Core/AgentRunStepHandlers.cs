@@ -590,14 +590,26 @@ internal sealed partial class AgentRunStepHandlers
             appendedEventCount: stepEvents.Count,
             updatedAt: _time.UtcNow,
             terminalErrorCode: reservation.NextRun.TerminalErrorCode);
-        run = await CommitAsync(
-                run,
-                reservationNext,
-                stepEvents,
-                stepPayloads,
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            run = await CommitAsync(
+                    run,
+                    reservationNext,
+                    stepEvents,
+                    stepPayloads,
+                    Array.Empty<ConversationOutboxIntent>(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AgentRunStateException conflict) when (conflict.Code == "run_version_conflict")
+        {
+            // The tool calls have not been dispatched yet: the step was recorded against a
+            // version another writer advanced (/compact, /skill, recovery). Re-read the run
+            // and let the next pass decide again instead of failing it for a race.
+            var current = await _store.GetRunAsync(run.RunId, cancellationToken).ConfigureAwait(false)
+                ?? throw new KeyNotFoundException("run_not_found");
+            return AgentRunStepResult.Blocked(current, "run_changed_during_generation");
+        }
         if (!reservation.Granted)
         {
             return AgentRunStepResult.Blocked(run, reservation.ErrorCode!);
@@ -925,7 +937,7 @@ internal sealed partial class AgentRunStepHandlers
             output_items = continuation.OutputItems,
         });
         if (envelope.Length > ProviderContinuation.MaximumEnvelopeBytes)
-            throw new InvalidOperationException("provider_continuation_too_large");
+            throw new RuAgent.Protocol.AgentProtocolException("provider_continuation_too_large");
         var payloadId = _ids.NewPayloadId();
         payloads.Add(new HarnessPayloadIntent(
             payloadId,
@@ -1001,10 +1013,10 @@ internal sealed partial class AgentRunStepHandlers
         {
             HarnessCommitOutcome.Committed => result.Run!,
             HarnessCommitOutcome.VersionConflict =>
-                throw new InvalidOperationException("run_version_conflict"),
+                throw new AgentRunStateException("run_version_conflict"),
             HarnessCommitOutcome.RunNotFound =>
                 throw new KeyNotFoundException("run_not_found"),
-            _ => throw new InvalidOperationException("unknown_commit_outcome"),
+            _ => throw new AgentRunStateException("unknown_commit_outcome"),
         };
     }
 }

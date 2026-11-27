@@ -29,8 +29,9 @@ internal sealed partial class AgentToolExecutionPipeline
         return result.Outcome switch
         {
             HarnessCommitOutcome.Committed => new(result.Run!, [], "subagents_pending"),
-            HarnessCommitOutcome.VersionConflict => throw new InvalidOperationException("run_version_conflict"),
-            _ => throw new InvalidOperationException("run_not_found"),
+            HarnessCommitOutcome.VersionConflict => throw new AgentRunStateException("run_version_conflict"),
+            HarnessCommitOutcome.RunNotFound => throw new KeyNotFoundException("run_not_found"),
+            _ => throw new AgentRunStateException("unknown_commit_outcome"),
         };
     }
 }

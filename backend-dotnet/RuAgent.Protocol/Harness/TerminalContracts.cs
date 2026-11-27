@@ -48,7 +48,7 @@ public static class TerminalLimits
     /// a value from 1 to 64; a full session fails closed with
     /// background_task_limit_reached.
     /// </summary>
-    public const int MaxBackgroundTasksPerSession = 8;
+    public const int MaxBackgroundTasksPerSession = 16;
 
     /// <summary>
     /// Background lifetime when the call omits timeout_ms.
@@ -65,9 +65,9 @@ public static class TerminalLimits
     /// </summary>
     public const int BackgroundMaxLifetimeMs = 24 * 60 * 60_000;
 
-    public const int MaxArguments = 128;
+    public const int MaxArguments = 1024;
     public const int MaxArgumentChars = 4096;
-    public const int MaxScriptChars = 32_000;
+    public const int MaxScriptChars = 200_000;
     public const int MaxExecutableChars = 2048;
     public const int MaxCanonicalExecutableChars = 4096;
     public const int MaxWorkingDirectoryChars = 2048;

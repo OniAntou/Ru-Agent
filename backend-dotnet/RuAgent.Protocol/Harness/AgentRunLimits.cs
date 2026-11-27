@@ -15,7 +15,7 @@ public static class AgentRunLimits
     /// The bound used to be 16,000, which refused any source file larger than about
     /// 15 KB that lived outside the workspace.
     /// </summary>
-    public const int MaxPromptChars = 200_000;
+    public const int MaxPromptChars = 1_000_000;
 
     /// <summary>
     /// Images one message (a run's prompt or a steer) may carry, and one model request to a

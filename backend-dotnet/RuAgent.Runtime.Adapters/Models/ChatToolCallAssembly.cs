@@ -6,7 +6,7 @@ namespace RuAgent.Runtime.Adapters.Models;
 internal sealed class ChatToolCallAssembly
 {
     private const int MaximumCalls = 16;
-    private const int MaximumArgumentsBytes = 64 * 1024;
+    private const int MaximumArgumentsBytes = 1024 * 1024;
     private readonly SortedDictionary<int, Call> _calls = [];
     private bool _unindexed;
 

@@ -1171,7 +1171,7 @@ public sealed partial class ToolExecutionServiceTests
         try
         {
             var overArgumentCount = new List<string> { "/c", "echo" };
-            overArgumentCount.AddRange(Enumerable.Repeat("x", 127));
+            overArgumentCount.AddRange(Enumerable.Repeat("x", TerminalLimits.MaxArguments - 1));
             var result = await service.ExecuteAuthenticatedV2Async(
                 TerminalV2Request(sessionId, "req-argv-over-" + Guid.NewGuid().ToString("N"), new JsonObject
                 {

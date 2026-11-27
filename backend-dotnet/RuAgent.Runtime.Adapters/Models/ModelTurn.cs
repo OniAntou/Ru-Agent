@@ -9,7 +9,7 @@ public sealed record ModelFunctionCall
 {
     private const int MaximumIdChars = 256;
     private const int MaximumNameChars = 128;
-    private const int MaximumArgumentBytes = 64 * 1024;
+    private const int MaximumArgumentBytes = 1024 * 1024;
 
     public ModelFunctionCall(string id, string name, JsonElement arguments)
     {

@@ -64,7 +64,7 @@ The Chat Completions adapter assembles indexed tool-call deltas by response-loca
 `index` before the runner parses arguments or looks up tool names. Calls are
 emitted in index order at completion, retaining provider ids or assigning a
 distinct generated id when omitted. Assembly is bounded to 16 calls, 128-character
-names and 64 KiB of UTF-8 arguments per call. Conflicting ids and mixed indexed
+names and 1 MiB of UTF-8 arguments per call. Conflicting ids and mixed indexed
 and unindexed call metadata are rejected; wholly unindexed compatibility streams
 retain their existing sequential parsing. Text and reasoning still stream as
 they arrive, and usage on argument-only chunks remains available.

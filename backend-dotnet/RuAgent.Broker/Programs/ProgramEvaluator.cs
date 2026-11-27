@@ -16,9 +16,9 @@ public sealed record ProgramEvaluation(JsonNode? Result = null, ProgramToolReque
 /// asynchronous execution happens outside Jint, then a fresh engine replays receipts.</summary>
 public sealed class ProgramEvaluator
 {
-    public const int MaximumCalls = 32;
-    public const int MaximumCodeBytes = 16 * 1024;
-    public const int MaximumValueBytes = 256 * 1024;
+    public const int MaximumCalls = 128;
+    public const int MaximumCodeBytes = 64 * 1024;
+    public const int MaximumValueBytes = 1024 * 1024;
     public static IReadOnlySet<string> SupportedTools => RuAgent.Protocol.Programs.ProgramToolContract.SupportedTools;
 
     public ProgramEvaluation Evaluate(string code, IReadOnlyList<ProgramToolReceipt> receipts, CancellationToken ct)

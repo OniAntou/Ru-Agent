@@ -115,9 +115,9 @@ public sealed class SubagentContractTests
     [Fact]
     public void Text_limits_count_UTF16_and_context_counts_UTF8()
     {
-        Assert.True(ValidateSpawn(new string('x', 16384), new string('é', 32768)));
-        Assert.False(ValidateSpawn(new string('x', 16385), ""));
-        Assert.False(ValidateSpawn("task", new string('é', 32769)));
+        Assert.True(ValidateSpawn(new string('x', SubagentLimits.MaxTaskCharacters), new string('é', SubagentLimits.MaxContextBytes / 2)));
+        Assert.False(ValidateSpawn(new string('x', SubagentLimits.MaxTaskCharacters + 1), ""));
+        Assert.False(ValidateSpawn("task", new string('é', SubagentLimits.MaxContextBytes / 2 + 1)));
         using var malformed = JsonDocument.Parse("{\"role\":\"coding\",\"task\":\"task\",\"context\":\"\\ud800\"}");
         Assert.False(SubagentContractValidator.Validate("agent_spawn", malformed.RootElement).IsValid);
     }

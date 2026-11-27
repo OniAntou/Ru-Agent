@@ -67,7 +67,7 @@ and returns results in input order. It remains a synchronous SDK call; mutations
 and terminal operations cannot enter a batch. The batch shares the normal call
 budget and reserves all members atomically before dispatch.
 
-Limits: 16 KiB source, 32 total calls, 256 KiB selected result or batch result, 2 MiB trace,
+Limits: 64 KiB source, 128 total calls, 1 MiB selected result or batch result, 2 MiB trace,
 100,000 statements, recursion depth 64, 32 MiB interpreter allocation and 250 ms
 computation per replay. The regex timeout is 50 ms. `timeout_ms` defaults to
 30 seconds and cannot exceed 120 seconds; at most two programs run per authority.

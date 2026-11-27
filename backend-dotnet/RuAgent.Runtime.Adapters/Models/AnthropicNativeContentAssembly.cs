@@ -12,7 +12,7 @@ internal sealed class AnthropicNativeContentAssembly
     // stream allows more blocks than a continuation keeps; CreateContinuation degrades.
     private const int MaximumBlocks = 256;
     private const int MaximumNativeBytes = 4 * 1024 * 1024;
-    private const int MaximumInputBytes = 64 * 1024;
+    private const int MaximumInputBytes = 1024 * 1024;
     private const int MaximumTextChars = 64 * 1024;
     private const int MaximumSignatureChars = 16_384;
     private const int MaximumToolNameChars = 128;

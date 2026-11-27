@@ -22,7 +22,7 @@ public static class AgentSteerLimits
     /// Characters of all steers waiting for one run together. It keeps the steer list, which
     /// carries each waiting steer's text, well under a client's 8 MiB response bound.
     /// </summary>
-    public const int MaxPendingCharacters = 1_000_000;
+    public const int MaxPendingCharacters = 8_000_000;
 
     /// <summary>Images one steer may carry; the same per-message bound as a run.</summary>
     public const int MaxImages = AgentRunLimits.MaxImages;

@@ -60,7 +60,7 @@ public sealed class SubagentWaitStoreTests
         else Assert.Null(deadline);
         if (owned)
         {
-            var summaryText = summaryVariant == 2 ? string.Concat(Enumerable.Repeat("Kết quả kiểm tra 😀\n", 2000))
+            var summaryText = summaryVariant == 2 ? string.Concat(Enumerable.Repeat("Kết quả kiểm tra 😀\n", 8000))
                 : "Kết quả kiểm tra tiếng Việt 😀";
             if (summaryVariant != 0)
             {

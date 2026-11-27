@@ -184,7 +184,7 @@ public sealed class ToolCatalogTests
         ToolSchemaValidator.Validate(listSchema, new JsonObject { ["path"] = "." });
         ToolSchemaValidator.Validate(listSchema, new JsonObject { ["path"] = "src", ["max_entries"] = 8 });
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(listSchema, new JsonObject { ["max_entries"] = 0 }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(listSchema, new JsonObject { ["max_entries"] = 513 }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(listSchema, new JsonObject { ["max_entries"] = 2049 }));
 
         var helpSchema = catalog.Registry.Get("help", "1.0.0").Manifest.InputSchema;
         ToolSchemaValidator.Validate(helpSchema, new JsonObject { ["query"] = "approvals" });
@@ -200,16 +200,16 @@ public sealed class ToolCatalogTests
         var grepSchema = catalog.Registry.Get("grep", "1.0.0").Manifest.InputSchema;
         ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello" });
         ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello", ["path"] = ".", ["file_glob"] = "*.cs", ["is_regex"] = true, ["max_results"] = 3 });
-        ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 128 });
+        ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 512 });
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["path"] = "." }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 129 }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(grepSchema, new JsonObject { ["query"] = "hello", ["max_results"] = 513 }));
 
         var globSchema = catalog.Registry.Get("glob", "1.0.0").Manifest.InputSchema;
         ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs" });
         ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs", ["path"] = ".", ["max_results"] = 3 });
-        ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs", ["max_results"] = 128 });
+        ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs", ["max_results"] = 512 });
         Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(globSchema, new JsonObject { ["path"] = "." }));
-        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs", ["max_results"] = 129 }));
+        Assert.Throws<ToolSchemaException>(() => ToolSchemaValidator.Validate(globSchema, new JsonObject { ["pattern"] = "**/*.cs", ["max_results"] = 513 }));
 
         var searchSchema = catalog.Registry.Get("web_search", "1.0.0").Manifest.InputSchema;
         ToolSchemaValidator.Validate(searchSchema, new JsonObject { ["query"] = "hello" });

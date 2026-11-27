@@ -50,11 +50,11 @@ public sealed class ProgramEvaluatorTests
     }
 
     [Fact]
-    public void ParallelSharesTheExistingThirtyTwoCallBudget()
+    public void ParallelSharesTheCallBudget()
     {
-        var priorReads = Enumerable.Range(0, 25).Select(index =>
+        var priorReads = Enumerable.Range(0, ProgramEvaluator.MaximumCalls - 7).Select(index =>
             new ProgramToolReceipt("read_file", new JsonObject { ["path"] = index.ToString() }, new JsonObject())).ToArray();
-        var code = "for(let i=0;i<25;i++) tools.read_file({path:String(i)}); "
+        var code = "for(let i=0;i<" + (ProgramEvaluator.MaximumCalls - 7) + ";i++) tools.read_file({path:String(i)}); "
             + "return tools.parallel(Array(8).fill({tool:'read_file',arguments:{path:'batch'}}));";
         var result = new ProgramEvaluator().Evaluate(code, priorReads, CancellationToken.None);
         Assert.Equal("program_call_limit", result.ErrorCode);
@@ -71,7 +71,7 @@ public sealed class ProgramEvaluatorTests
         Assert.Equal("program_result_limit", result.ErrorCode);
 
         var batch = new ProgramEvaluator().Evaluate(
-            "tools.parallel([{tool:'read_file',arguments:{path:'x'.repeat(300000)}}]);", [], CancellationToken.None);
+            "tools.parallel([{tool:'read_file',arguments:{path:'x'.repeat(" + (ProgramEvaluator.MaximumValueBytes + 1000) + ")}}]);", [], CancellationToken.None);
         Assert.Equal("program_parallel_arguments_limit", batch.ErrorCode);
         Assert.Null(batch.PendingBatch);
 

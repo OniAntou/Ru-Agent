@@ -8,7 +8,7 @@ public sealed record ModelRequest
     private const int MaxModelMessages = ModelInputLimits.MaxMessages;
     private const int MaxModelMessagesBytes = ModelInputLimits.MaxHistoryBytes;
     private const int MaxAnthropicContentBlocks = 64;
-    private const int MaxNativeArgumentsBytes = 64 * 1024;
+    private const int MaxNativeArgumentsBytes = 1024 * 1024;
     private const int MaximumProviderHeaders = 8;
     private const int MaximumProviderHeaderValueChars = 1024;
     public const int MaximumSerializedBodyBytes = ModelInputLimits.MaxRequestBytes;

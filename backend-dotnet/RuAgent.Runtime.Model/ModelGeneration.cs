@@ -15,7 +15,7 @@ public static class ModelGenerationBounds
     public const int MaxModelMessages = ModelInputLimits.MaxMessages;
     public const int MaxModelMessagesBytes = ModelInputLimits.MaxHistoryBytes;
     public const int MaxTextChars = 1_000_000;
-    public const int MaxToolArgumentsBytes = 64 * 1024;
+    public const int MaxToolArgumentsBytes = 1024 * 1024;
 }
 
 /// <summary>

@@ -97,7 +97,7 @@ truncating it.
 | `session.create` | — | `{ "session_id": "..." }` | `POST /sessions/new` |
 | `session.list` | — | session list (passthrough) | `GET /sessions` |
 | `session.rewind` | `sessionId`, `index` | rewind payload (passthrough) | `POST /sessions/{sessionId}/rewind` |
-| `run.start` | `workspace`, `prompt`, `preset`?, `sessionId`?, `trustWorkspace`?, `confirmFullAccess`?; `prompt` is bounded to 200,000 characters (`AgentRunLimits.MaxPromptChars`) | `{ "run_id", "session_id", "status", "workspace_id" }` | `POST /agent/v1/runs` |
+| `run.start` | `workspace`, `prompt`, `preset`?, `sessionId`?, `trustWorkspace`?, `confirmFullAccess`?; `prompt` is bounded to 1,000,000 characters (`AgentRunLimits.MaxPromptChars`; one RPC frame is 1 MiB, so over RPC the frame bound applies first) | `{ "run_id", "session_id", "status", "workspace_id" }` | `POST /agent/v1/runs` |
 | `run.attach` | `runId`, `afterSequence`?, `includeTransient`? | `{ "subscription_id", "run_id", "include_transient" }` | `GET /agent/v1/runs/{runId}/events` (SSE) |
 | `run.detach` | `subscriptionId` (or `runId` for cleanup) | `{ "detached": "<subscriptionId>" }` or `{ "detached": <count>, "run_id": "<runId>" }` | internal |
 | `run.trust` | `runId`, `approve`? | `{ "run_id", "status" }` | `POST /agent/v1/runs/{runId}/trust` |
@@ -106,7 +106,7 @@ truncating it.
 | `run.status` | `runId` | run record (passthrough) | `GET /agent/v1/runs/{runId}` |
 | `run.command` | `runId`, `command` | command payload (passthrough) | `POST /agent/v1/runs/{runId}/commands` |
 | `run.output` | `runId`, `payloadId` | `{ "encoding": "base64", "data", "byte_length" }` | `GET /agent/v1/runs/{runId}/payloads/{payloadId}` |
-| `run.steer` | `runId`, `text` (1-200,000 chars), `steerId`? | `{ "runId", "steerId", "state": "pending", "deliveredPayloadId" }` | `POST /agent/v1/runs/{runId}/steers` (ADR 0056) |
+| `run.steer` | `runId`, `text` (1-1,000,000 chars), `steerId`? | `{ "runId", "steerId", "state": "pending", "deliveredPayloadId" }` | `POST /agent/v1/runs/{runId}/steers` (ADR 0056) |
 | `subagent.list` | `runId` (root) | root-owned snapshot and usage | `GET /agent/v1/runs/{runId}/subagents` |
 | `subagent.get` | `runId`, `agentId`, `resultVersion`?, `offset`?, `limit`? | child detail and optional UTF-8 result page | `GET .../subagents/{agentId}` |
 | `policy.list` | `scope`? | array of policy rules | `GET /agent/v1/policies` |
@@ -132,7 +132,7 @@ Details that are easy to get wrong:
 - `run.approve` — `decision` is one of `allow_once`, `allow_session_directory`,
   `allow_always`, `deny`.
 - `run.command` — `command` text is bounded to 8192 characters.
-- `run.steer` — `text` is 1 to 200,000 characters (the run prompt bound); images are sent
+- `run.steer` — `text` is 1 to 1,000,000 characters (the run prompt bound; one RPC frame is 1 MiB); images are sent
   through the HTTP route only; `steerId` is optional (`steer_` and 32
   lowercase hex) and makes a retry safe. A run that is not working fails with
   `run_not_steerable`; send the text as a new run instead.

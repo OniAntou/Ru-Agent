@@ -39,7 +39,7 @@ public sealed class ModelToolSelectionParserTests
         var duplicate = "{\"tool_id\":\"files.read\",\"tool_id\":\"files.write\",\"tool_version\":\"1.0.0\",\"arguments\":{}}";
         Assert.Equal("duplicate_key", Assert.Throws<ModelToolSelectionException>(() => ModelToolSelectionParser.Parse(duplicate, Advertised)).Code);
 
-        var oversized = "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"value\":\"" + new string('x', 70_000) + "\"}}";
+        var oversized = "{\"tool_id\":\"files.read\",\"tool_version\":\"1.0.0\",\"arguments\":{\"value\":\"" + new string('x', 1024 * 1024 + 1000) + "\"}}";
         Assert.Equal("arguments_too_large", Assert.Throws<ModelToolSelectionException>(() => ModelToolSelectionParser.Parse(oversized, Advertised)).Code);
     }
 

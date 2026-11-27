@@ -58,6 +58,6 @@ public sealed class SubagentSelectionTests
         var context = SubagentContextBuilder.Build(SubagentRole.Review, "Inspect parsing", "Relevant file: Parser.cs");
         Assert.Contains("Inspect parsing", context);
         Assert.Contains("Relevant file: Parser.cs", context);
-        Assert.Throws<SubagentConfigurationException>(() => SubagentContextBuilder.Build(SubagentRole.Review, "task", new string('é', 32769)));
+        Assert.Throws<SubagentConfigurationException>(() => SubagentContextBuilder.Build(SubagentRole.Review, "task", new string('é', RuAgent.Protocol.Subagents.SubagentLimits.MaxContextBytes / 2 + 1)));
     }
 }

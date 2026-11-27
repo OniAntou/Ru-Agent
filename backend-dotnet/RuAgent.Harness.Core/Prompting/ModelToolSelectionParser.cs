@@ -416,7 +416,7 @@ public static class ModelToolSelectionParser
             throw new ModelToolSelectionException("invalid_json");
         }
 
-        if (utf8.Length > 1_000_000)
+        if (utf8.Length > 1024 * 1024 + 64 * 1024)
         {
             throw new ModelToolSelectionException("input_too_large");
         }
@@ -456,7 +456,7 @@ public static class ModelToolSelectionParser
                 throw new ModelToolSelectionException("invalid_arguments");
             }
 
-            if (Encoding.UTF8.GetByteCount(arguments.GetRawText()) > 64 * 1024)
+            if (Encoding.UTF8.GetByteCount(arguments.GetRawText()) > 1024 * 1024)
             {
                 throw new ModelToolSelectionException("arguments_too_large");
             }

@@ -193,7 +193,7 @@ public sealed class AgentToolDefinitionCatalogTests
         var process = Properties("run_process");
         Assert.Equal(["executable"], Required("run_process"));
         Assert.True(process.ContainsKey("arguments"));
-        Assert.Equal(128, process["arguments"]!["maxItems"]!.GetValue<int>());
+        Assert.Equal(TerminalLimits.MaxArguments, process["arguments"]!["maxItems"]!.GetValue<int>());
         Assert.Equal(4096, process["arguments"]!["items"]!["maxLength"]!.GetValue<int>());
         Assert.False(process.ContainsKey("script"));
 

@@ -660,7 +660,7 @@ It grows with its content up to `ComposerInputHeightPolicy`: 35% of the chat vie
 height, between 180 and 480 px, re-applied on resize, so a long prompt is read in a
 window that follows the app's size rather than a fixed eight-line slot.
 The composed prompt (typed text plus every inlined document) is checked against
-`AgentRunLimits.MaxPromptChars` (200,000 characters, shared with the Host and the
+`AgentRunLimits.MaxPromptChars` (1,000,000 characters, shared with the Host and the
 terminal) before the send and before a turn is queued; an
 oversized prompt stays in the composer with a named status instead of failing the
 Host's create call. Picker, drop and clipboard images share the same bounded

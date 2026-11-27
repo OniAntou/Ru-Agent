@@ -6,11 +6,11 @@ namespace RuAgent.Broker.Tests;
 public sealed class TerminalConcurrencyOptionsTests
 {
     [Fact]
-    public void Missing_terminal_limit_uses_eight_tasks()
+    public void Missing_terminal_limit_uses_the_default_task_count()
     {
         var options = TerminalConcurrencyOptions.FromEnvironment(_ => null);
 
-        Assert.Equal(8, options.MaxConcurrentTasks);
+        Assert.Equal(RuAgent.Protocol.TerminalLimits.MaxBackgroundTasksPerSession, options.MaxConcurrentTasks);
     }
 
     [Theory]

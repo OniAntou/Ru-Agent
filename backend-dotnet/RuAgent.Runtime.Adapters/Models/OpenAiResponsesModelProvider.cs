@@ -397,7 +397,7 @@ public sealed partial class OpenAiResponsesModelProvider : IModelProvider, IMode
             throw new ModelProviderException("malformed_payload", false);
         }
 
-        if (call.Arguments.Length > 64 * 1024) throw new ModelProviderException("response_too_large", false);
+        if (call.Arguments.Length > 1024 * 1024) throw new ModelProviderException("response_too_large", false);
         if (isFinal) call.IsFinal = true;
     }
 

@@ -4,11 +4,11 @@ namespace RuAgent.Protocol.Subagents;
 
 public static class SubagentLimits
 {
-    public const int MaxTaskCharacters = 16_384;
+    public const int MaxTaskCharacters = 65_536;
     /// <summary>Bound for the verbatim user words that ask for a detached child.</summary>
     public const int MaxDetachedRequestCharacters = 256;
-    public const int MaxContextBytes = 64 * 1024;
-    public const int MaxInlineResultBytes = 32 * 1024;
+    public const int MaxContextBytes = 256 * 1024;
+    public const int MaxInlineResultBytes = 128 * 1024;
     public const int MaxApprovalPreviewBytes = 8 * 1024;
     // A family has no ceiling on how many children it spawns or admits, and the Host
     // drives every run at once; each provider's rate limits are what push back.

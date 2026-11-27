@@ -96,6 +96,22 @@ def test_public_route_contract_matches_the_final_surface() -> None:
     } == EXPECTED_WEBSOCKET_ROUTES
 
 
+def test_route_matrix_doc_reports_the_real_totals_and_split() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    contract = load_route_contract(repo_root)
+    agent_count = sum(1 for entry in contract if entry["path"].startswith("/agent/v1/"))
+    expected_total = len(contract)
+    expected_non_agent = expected_total - agent_count
+
+    matrix = " ".join((repo_root / "docs/aspnetcore-route-matrix.md").read_text(encoding="utf-8").split())
+    backend = " ".join((repo_root / "backend-dotnet/README.md").read_text(encoding="utf-8").split())
+
+    assert f"{expected_total} HTTP method/path pairs" in matrix
+    assert f"{agent_count} Agent v1 routes" in matrix
+    assert f"all {expected_total} HTTP routes" in backend
+    assert f"{expected_non_agent} non-Agent routes plus {agent_count}" in backend
+
+
 def test_route_matrix_doc_reports_the_real_reserved_count() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     contract = load_route_contract(repo_root)

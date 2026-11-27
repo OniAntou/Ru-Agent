@@ -12,16 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **feat(tools)**: Schema and size bounds are looser. `write_file`, `edit_file` and `apply_patch` accept 8 MiB (was 4 MiB); `grep` and `glob` take up to 512 results (default stays 128), `list` up to 2048 entries (default stays 512), and the grep `offset` reaches 1,000,000 (was 50000); the file-mutation journal holds 32 MiB, the rollback preimage 64 MiB, and a web download may be configured up to 16 MiB. The model-facing schemas changed, so their golden digests were regenerated. Read and tool output stay at 4 MiB (the context window is the real bound), and the 16 MiB journal and payload bounds in the store are unchanged.
 - **feat(tools)**: More limits are looser. A model tool call may carry 1 MiB of arguments through every provider path (was 64 KiB in the stream assemblers and the model request), which is what bounded large `write_file`/`edit_file` calls in practice. The run prompt and a steer take 1,000,000 characters (was 200,000; a pending-steer queue holds 8,000,000), a terminal script 200,000 characters and 1024 arguments (was 32,000 and 128), 16 background tasks per session (was 8), a subagent task 65,536 characters, its context 256 KiB and its inline result 128 KiB (were 16,384 characters, 64 KiB and 32 KiB), and `run_code` takes 64 KiB of source, 128 calls and 1 MiB values (was 16 KiB, 32 and 256 KiB). The schemas of `powershell`, `run_process`, `run_code`, `agent_spawn` and `agent_send` changed, so their golden digests were regenerated. The RPC frame bound (1 MiB) still applies to a prompt sent over RPC.
 
-- **fix(installer)**: Release packages write a compact `ru-install.json`, and the installer
-  ignores marker whitespace before checking the product. Existing installations created by the
-  previous pretty-printed marker are recognized again, so update and reinstall no longer refuse
-  a non-empty installation folder as belonging to another Ru product.
-
-- **fix(docs)**: The documentation-site builder refuses dangerous or unowned `--work`
-  destinations before deleting a staged copy, including the repository root and source `docs/`
-  tree. Current route and tool counts are corrected and guarded against the canonical contract
-  and Protocol catalog.
-
 - **feat(subagents)**: Detached background subagents ([ADR 0045](docs/adr/0045-detached-background-subagents.md),
   now accepted). When the user asks in their own words for work that keeps running after the
   answer, `agent_spawn` takes `detached=true` with `detached_request` quoting those words; the
@@ -224,6 +214,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **fix(gui)**: The live thinking line changes smoothly. Preview frames are coalesced into one
   UI update, a new paragraph line fades in on the row and in the folded header, and the
   shimmer keeps one speed whatever the line's length.
+
+- **fix(installer)**: Release packages write a compact `ru-install.json`, and the installer
+  ignores marker whitespace before checking the product. Existing installations created by the
+  previous pretty-printed marker are recognized again, so update and reinstall no longer refuse
+  a non-empty installation folder as belonging to another Ru product.
+
+- **fix(docs)**: The documentation-site builder refuses dangerous or unowned `--work`
+  destinations before deleting a staged copy, including the repository root and source `docs/`
+  tree. Current route and tool counts are corrected and guarded against the canonical contract
+  and Protocol catalog.
 
 - **feat(gui)**: The `Thinking` row shows a live line while the model reasons. As soon as the
   first line of a completed reasoning paragraph exists, the running row reads

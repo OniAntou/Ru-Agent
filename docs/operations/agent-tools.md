@@ -17,9 +17,9 @@ declares in `~/.ru/mcp.json` are reached through one `mcp` tool (see
 
 ## Coding profiles
 
-New runs use `coding_v3` (29 definitions): the coding tools plus `apply_patch`
+New runs use `coding_v3` (30 definitions): the coding tools plus `apply_patch`
 and `run_code` ([ADR 0043](../adr/0043-single-default-coding-profile.md)). Runs
-already pinned to `coding_v2` (27) keep it; `patch_v2` and `coding_code_v1` are
+already pinned to `coding_v2` (28) keep it; `patch_v2` and `coding_code_v1` are
 retired. Changing the Host setting does not alter an existing run. Set
 `RU_AGENT_TOOL_PROFILE=coding_v2|coding_v3` in a dedicated Host process to choose
 the profile for new runs. Persisted provider selections must
@@ -121,9 +121,9 @@ Coding tools: `read`, `read_file`, `list`, `help`, `grep`, `glob`,
 `powershell`, `run_process`, `terminal_read`, `terminal_stop`,
 `web_search` and `web_fetch`. Profile and availability filters apply below.
 
-The Protocol catalog contains 29 definitions; the Broker has 27 executable
+The Protocol catalog contains 30 definitions; the Broker has 28 executable
 bindings because `ask_user` and `advisor` are intercepted by the Host. Run-pinned inventories
-contain 29 definitions in `coding_v3` and 27 in `coding_v2`,
+contain 30 definitions in `coding_v3` and 28 in `coding_v2`,
 before availability/role filtering. There is no selectable
 legacy profile. The model-facing file mutation and terminal tools are
 `write_file`, `edit_file`, `file_delete`, `file_restore`, `powershell`,

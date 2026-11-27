@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) and Conventional Commits.
 
-## [Unreleased]
+## [0.1.5-preview.1] - 2026-11-28
 
 - **feat(subagents)**: A later root can continue a detached child. `agent_send` from any later
   root of the same session now queues the follow-up; the child resumes as a new attempt under

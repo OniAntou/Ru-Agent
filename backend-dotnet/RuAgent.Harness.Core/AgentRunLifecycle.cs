@@ -11,6 +11,12 @@ namespace RuAgent.Harness.Core;
 /// </summary>
 internal sealed class AgentRunLifecycle
 {
+    /// <summary>
+    /// How many times a failure transition re-reads and retries after a concurrent writer
+    /// advanced the run. The same bound the Host's persistence-only failure transition uses.
+    /// </summary>
+    private const int MaximumCommitAttempts = 8;
+
     private readonly IHarnessEventStore _store;
     private readonly IIdGenerator _ids;
     private readonly ITimeProvider _time;
@@ -72,42 +78,80 @@ internal sealed class AgentRunLifecycle
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Settles a run as failed. Settlement is idempotent and rebases on concurrent
+    /// progress: a run another writer already settled (a cancel, an expired approval,
+    /// startup recovery, or a step that committed its own bounded failure) keeps that
+    /// durable terminal code instead of being failed a second time, and a version
+    /// conflict re-reads and retries so a writer that merely advanced the run cannot
+    /// make the failure transition lose the race.
+    /// </summary>
     public async Task<AgentRun> FailAsync(
         RunId runId,
         string errorCode,
         CancellationToken cancellationToken,
         RunFailureFingerprint? fingerprint = null)
     {
-        var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
-        var stateChange = AgentRunStateMachine.TryTransition(
-            run.Status,
-            HarnessRunTransition.Fail);
-        if (!stateChange.Accepted)
+        for (var attempt = 0; attempt < MaximumCommitAttempts; attempt++)
         {
-            throw new InvalidOperationException(stateChange.ErrorCode);
+            cancellationToken.ThrowIfCancellationRequested();
+            var run = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
+            if (run.State.IsTerminal())
+            {
+                return run;
+            }
+
+            var stateChange = AgentRunStateMachine.TryTransition(
+                run.Status,
+                HarnessRunTransition.Fail);
+            if (!stateChange.Accepted)
+            {
+                throw new InvalidOperationException(stateChange.ErrorCode);
+            }
+
+            var failure = new HarnessEventIntent(
+                _ids.NewEventId(),
+                HarnessEventKind.RunFailed,
+                safeCode: errorCode);
+            var next = run.Advance(
+                stateChange.Next,
+                run.BudgetWindow,
+                run.ModelStepsInWindow,
+                run.ToolCallsInWindow,
+                1,
+                _time.UtcNow,
+                errorCode,
+                fingerprint);
+            var result = await _store.CommitAsync(
+                    new HarnessCommit(
+                        run.RunId,
+                        run.Version,
+                        next,
+                        new[] { failure },
+                        Array.Empty<HarnessPayloadIntent>(),
+                        Array.Empty<ConversationOutboxIntent>()),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            switch (result.Outcome)
+            {
+                case HarnessCommitOutcome.Committed:
+                    return result.Run!;
+                case HarnessCommitOutcome.RunNotFound:
+                    throw new KeyNotFoundException("run_not_found");
+                case HarnessCommitOutcome.VersionConflict:
+                    // Another writer advanced the run between the read and the commit.
+                    // Re-read so the retry either lands on the advanced version or sees
+                    // that writer's terminal state and leaves it alone.
+                    continue;
+                default:
+                    throw new InvalidOperationException("unknown_commit_outcome");
+            }
         }
 
-        var failure = new HarnessEventIntent(
-            _ids.NewEventId(),
-            HarnessEventKind.RunFailed,
-            safeCode: errorCode);
-        var next = run.Advance(
-            stateChange.Next,
-            run.BudgetWindow,
-            run.ModelStepsInWindow,
-            run.ToolCallsInWindow,
-            1,
-            _time.UtcNow,
-            errorCode,
-            fingerprint);
-        return await CommitAsync(
-                run,
-                next,
-                new[] { failure },
-                Array.Empty<HarnessPayloadIntent>(),
-                Array.Empty<ConversationOutboxIntent>(),
-                cancellationToken)
-            .ConfigureAwait(false);
+        // The store kept refusing the terminal transition. The caller keeps runtime
+        // ownership and retries the pass later instead of writing a code the durable
+        // run did not accept.
+        throw new InvalidOperationException("run_version_conflict");
     }
 
     /// <summary>

@@ -1079,7 +1079,14 @@ If composition fails before a coordinator exists, `AgentRunFailureTransition`
 commits a named terminal failure directly through the event store before runtime
 registration is released. It re-reads on version conflicts, preserves concurrent
 terminal states, and bounds each attempt to eight commits. Store failure retains
-registration for a later retry. History acknowledgement uses the same persistence
+registration for a later retry. A drive pass that stops on an exception after a
+coordinator exists settles under the same contract: it re-reads the run first,
+publishes and releases a run another writer already settled (a cancel, an expired
+approval, startup recovery, or a step that committed its own bounded failure)
+instead of failing an already-terminal run, and the coordinator's failure
+transition returns that terminal state or rebases a lost version race the same
+way. A run whose row is gone is unregistered without a failure write.
+History acknowledgement uses the same persistence
 path when composition fails; a history-delivery failure also needs no provider or
 tool gateway to settle the run.
 `AgentRuntimeParkingState` owns client-wait and recovered-approval/version fences.

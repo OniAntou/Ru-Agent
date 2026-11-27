@@ -298,7 +298,7 @@ The CLI still keeps its start-or-attach behavior: a Host already running for the
 same profile is reused, and that process may not be the file recorded above.
 Stop it or use a dedicated data root when the trial must prove the current build.
 
-Set `RU_REASONING_EFFORT` (for example `low`) in the environment of the benchmark command to pick the reasoning effort for the whole trial without editing saved settings; `request_options_json` in the run's pinned provider selection records what was applied. Set `RU_DRIVE_FAILURE_DIAGNOSTIC` to a file path to capture the full exception when a run ends with `runtime_drive_failed`.
+Set `RU_REASONING_EFFORT` (for example `low`) in the environment of the benchmark command to pick the reasoning effort for the whole trial without editing saved settings; `request_options_json` in the run's pinned provider selection records what was applied. A run that ends with `runtime_drive_failed` records a bounded `failure_kind` and `failure_site` in its terminal state (returned in the run response and stored in `agent_run_failures`), and the Host log records the same exception kind and site; messages and stack text are never recorded, so report the site when a trial fails this way.
 
 ## Held-out external-agent comparisons
 

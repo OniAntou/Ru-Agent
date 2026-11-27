@@ -757,6 +757,33 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
             _logger.LogWarning(error, "run {RunId} failed during runtime drive", runIdValue);
             try
             {
+                var current = await LoadRunAsync(runIdValue, cancellationToken).ConfigureAwait(false);
+                if (current is null)
+                {
+                    // The run row is gone (session deletion or retention), so no failure
+                    // transition can land. Drop the registration instead of retrying a
+                    // settle that can never succeed.
+                    await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
+                    return;
+                }
+
+                if (current.State.IsTerminal())
+                {
+                    // Another writer settled the run while this pass worked: a client
+                    // cancel, an expired approval, startup recovery, or a step that
+                    // committed its own bounded failure. That durable terminal state is
+                    // the authority, so publish it and release the run instead of asking
+                    // the state machine for a second, rejected failure transition.
+                    if (_userApplies is not null)
+                    {
+                        await _userApplies.DriveAsync(current, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    await PublishRunFinishedAsync(current, cancellationToken).ConfigureAwait(false);
+                    await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
+                    return;
+                }
+
                 var failureCode = NormalizeDriveFailureCode(error);
                 // The run's own terminal state keeps the bounded fingerprint, so an
                 // unexplained code still says where it happened without the host log.
@@ -774,6 +801,7 @@ public sealed partial class AgentRuntimeLoopService : BackgroundService, RuAgent
 
                 await coordinator.FailAsync(runId, failureCode, cancellationToken, fingerprint).ConfigureAwait(false);
                 await PublishTerminalSummaryAsync(runId, cancellationToken).ConfigureAwait(false);
+                await RemoveRunRegistrationAsync(runId).ConfigureAwait(false);
             }
             catch (Exception nested) when (nested is not OperationCanceledException)
             {

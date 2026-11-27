@@ -25,6 +25,16 @@ A run that stops on a quota or billing problem **ends** with that error; nothing
 After you fix it, send a new message in the same session: the new run carries a summary of what the
 stopped one did, and your provider and model stay as you chose them.
 
+## A run ended with an internal error
+
+A failed run ends with a bounded code that names its family. `runtime_drive_failed` is the
+fallback for a fault Ru could not classify, so it points at a defect in Ru rather than at
+your message: send the request again, and if it repeats report it at the
+[bug tracker](https://github.com/OniAntou/Ru-Agent/issues/new?template=bug_report.yml).
+The status line shows the throwing site as `(at Namespace.Type.Method)`, the Activity Log
+records the same code and site, and the run response carries `failure_kind` and
+`failure_site`; include them. Ru never records the exception message or stack text.
+
 ## The terminal UI looks wrong
 
 - **Plain text, no full-screen UI:** the terminal is smaller than 80 by 24, output is redirected, or

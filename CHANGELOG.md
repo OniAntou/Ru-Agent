@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A run another writer already settled is no longer retried as a drive
+  failure. A drive pass that stops on an exception now re-reads the run before failing it:
+  a run a client Stop, an expired approval, startup recovery or a step's own bounded
+  failure already made terminal is published and released with that durable code instead
+  of failing an already-terminal transition (which logged "failed to mark run ... as
+  failed" and retried), and a run whose row was deleted is unregistered without a failure
+  write. The coordinator's failure transition matches the persistence-only path: it returns
+  an existing terminal run, re-reads on version conflicts for up to eight attempts, and
+  keeps a concurrent cancellation. This removes the largest known source of the
+  `runtime_drive_failed` fallback in existing host logs; a genuinely unclassified fault
+  still fails closed with its bounded fingerprint.
+
 - **feat(agent)**: A run starts knowing the workspace and the machine. The prompt now carries
   a bounded `workspace_snapshot` (repository root, branch, head, tracking position, workspace-scoped
   working-tree counts or an explicit unavailable marker, workspace-relative changed paths, recent

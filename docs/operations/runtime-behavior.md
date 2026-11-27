@@ -92,6 +92,14 @@ by the fault it wraps.
 an operator can tell the family apart from the run's terminal code without the
 host log; the host still records the throwing type and method for that fallback.
 
+Settlement is idempotent. A drive pass that stops on an exception reads the run
+again before failing it: a run another writer already settled — a client cancel,
+an expired approval, startup recovery, or a step that committed its own bounded
+failure — is published and released with that durable code, and a failure
+transition that loses a version race re-reads and retries instead of reporting an
+internal failure. Only a run still non-terminal is failed with the normalized
+code; a run whose row no longer exists is released without a failure write.
+
 That fallback now names its site too. The run's terminal state carries a bounded
 fingerprint — `failure_kind` (a lower-case token such as `store`, `protocol`,
 `transport` or `invalid_operation`) and `failure_site` (the innermost Ru type and

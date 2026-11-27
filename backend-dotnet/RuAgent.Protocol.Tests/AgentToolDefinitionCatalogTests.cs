@@ -126,7 +126,7 @@ public sealed class AgentToolDefinitionCatalogTests
             new[] { "max_entries", "path" },
             list.Select(item => item.Key).OrderBy(key => key, StringComparer.Ordinal));
         Assert.Equal(1, list["max_entries"]!["minimum"]!.GetValue<int>());
-        Assert.Equal(512, list["max_entries"]!["maximum"]!.GetValue<int>());
+        Assert.Equal(2048, list["max_entries"]!["maximum"]!.GetValue<int>());
 
         // help keeps read op=help's argument shape.
         var help = Properties("help");
@@ -141,12 +141,12 @@ public sealed class AgentToolDefinitionCatalogTests
         Assert.False(grep.ContainsKey("regex"));
         Assert.Equal(["query"], Required("grep"));
         Assert.Equal(1, grep["max_results"]!["minimum"]!.GetValue<int>());
-        Assert.Equal(128, grep["max_results"]!["maximum"]!.GetValue<int>());
+        Assert.Equal(512, grep["max_results"]!["maximum"]!.GetValue<int>());
 
         var glob = Properties("glob");
         Assert.Equal(["pattern"], Required("glob"));
         Assert.Equal(1, glob["max_results"]!["minimum"]!.GetValue<int>());
-        Assert.Equal(128, glob["max_results"]!["maximum"]!.GetValue<int>());
+        Assert.Equal(512, glob["max_results"]!["maximum"]!.GetValue<int>());
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public sealed class AgentToolDefinitionCatalogTests
     {
         var write = Properties("write_file");
         Assert.Equal(["path", "content"], Required("write_file"));
-        Assert.Equal(4 * 1024 * 1024, write["content"]!["maxLength"]!.GetValue<int>());
+        Assert.Equal(8 * 1024 * 1024, write["content"]!["maxLength"]!.GetValue<int>());
         Assert.Equal("boolean", write["overwrite"]!["type"]!.GetValue<string>());
 
         var edit = Properties("edit_file");

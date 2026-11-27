@@ -28,7 +28,7 @@ public sealed record ParsedPatchFile(
 
 public static partial class UnifiedPatchParser
 {
-    public const int MaxPatchBytes = 4 * 1024 * 1024;
+    public const int MaxPatchBytes = 8 * 1024 * 1024;
     public const int MaxFiles = 64;
     public const int MaxHunksPerFile = 256;
     public const int MaxLinesPerHunk = 4096;

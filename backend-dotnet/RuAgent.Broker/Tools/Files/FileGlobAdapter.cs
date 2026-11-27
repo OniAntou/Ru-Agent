@@ -50,7 +50,7 @@ public sealed class FileGlobAdapter
             throw new ArgumentException("path_too_long");
         }
 
-        var maxResults = FileToolLimits.MaxResults;
+        var maxResults = FileToolLimits.DefaultMaxResults;
         if (arguments.TryGetPropertyValue("max_results", out var maxNode) && maxNode is not null)
         {
             if (maxNode is JsonValue mv && mv.TryGetValue<int>(out var v))

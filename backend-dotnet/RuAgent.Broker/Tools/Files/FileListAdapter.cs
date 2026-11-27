@@ -30,7 +30,7 @@ public sealed class FileListAdapter
             throw new ArgumentException("path_too_long");
         }
 
-        var maxEntries = FileToolLimits.MaxEntries;
+        var maxEntries = FileToolLimits.DefaultMaxEntries;
         if (arguments.TryGetPropertyValue("max_entries", out var maxNode) && maxNode is not null)
         {
             if (maxNode is JsonValue mv && mv.TryGetValue<int>(out var v))

@@ -10,7 +10,7 @@ namespace RuAgent.Broker.Tools.Files;
 internal static class FileMutationGuard
 {
     private const int BufferSize = 4096;
-    internal const int MaxRollbackBytes = 32 * 1024 * 1024;
+    internal const int MaxRollbackBytes = 64 * 1024 * 1024;
     private const int SharingViolationHResult = unchecked((int)0x80070020);
     private static readonly object Gate = new();
 

@@ -2,10 +2,10 @@ namespace RuAgent.Broker.Tools.Files;
 
 public static class FileToolLimits
 {
-    public const int MaxEntries = 512;
-    public const int MaxResults = 128;
-    public const int MaxGlobResults = 128;
-    public const int MaxSearchResults = 128;
+    public const int MaxEntries = 2048;
+    public const int MaxResults = 512;
+    public const int MaxGlobResults = 512;
+    public const int MaxSearchResults = 512;
     public const int MaxReadBytes = 4 * 1024 * 1024;
     public const int MaxReadOutputBytes = 4 * 1024 * 1024;
     public const int MaxPathLength = 4096;
@@ -34,7 +34,7 @@ public static class FileToolLimits
     /// How far into ordered grep results a page may start. Each page re-scans
     /// files; this bound limits retained matches and offset work.
     /// </summary>
-    public const int MaxOffset = 50000;
+    public const int MaxOffset = 1_000_000;
 
     public static int ValidateRecoveryBytes(int value)
     {

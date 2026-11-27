@@ -30,7 +30,7 @@ public sealed class FileMutationGuardTests : IDisposable
     [Fact]
     public void Oversized_preimage_is_refused_without_mutating_the_file()
     {
-        const long oversizedPreimageBytes = 33L * 1024 * 1024;
+        const long oversizedPreimageBytes = 65L * 1024 * 1024;
         var path = Full("large-preimage.txt");
         using (var original = File.Create(path)) original.SetLength(oversizedPreimageBytes);
         var expected = FileHashService.ComputeFileHash(path);

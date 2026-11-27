@@ -23,7 +23,7 @@ public sealed class WebContentSanitizer
         ArgumentNullException.ThrowIfNull(sourceUrl);
         if (maxCharacters is < 1 or > 256_000)
             throw new ArgumentOutOfRangeException(nameof(maxCharacters));
-        if (offset is < 0 or > 4 * 1024 * 1024)
+        if (offset is < 0 or > 16 * 1024 * 1024)
             throw new ArgumentOutOfRangeException(nameof(offset));
 
         string content;

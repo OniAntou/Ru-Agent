@@ -3,7 +3,7 @@ namespace RuAgent.Broker.Tools.Files;
 public sealed class FileMutationJournal : IDisposable
 {
     public const int MaxEntries = 64;
-    public const int MaxTotalBytes = 16 * 1024 * 1024;
+    public const int MaxTotalBytes = 32 * 1024 * 1024;
 
     private readonly List<JournalEntry> _entries = new();
     private readonly int _maxEntries;

@@ -62,7 +62,7 @@ public sealed class FileSearchAdapter
             try { queryRegex = new Regex(query, (caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase) | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200)); }
             catch (ArgumentException) { throw new ArgumentException("invalid_regex"); }
         }
-        var maxResults = arguments["max_results"] is JsonValue max && max.TryGetValue<int>(out var maxValue) ? maxValue : FileToolLimits.MaxResults;
+        var maxResults = arguments["max_results"] is JsonValue max && max.TryGetValue<int>(out var maxValue) ? maxValue : FileToolLimits.DefaultMaxResults;
         if (maxResults < 1 || maxResults > FileToolLimits.MaxResults) throw new ArgumentException("invalid_max_results");
         var offset = arguments["offset"] is JsonValue off && off.TryGetValue<int>(out var offValue) ? offValue : 0;
         if (offset < 0 || offset > FileToolLimits.MaxOffset) throw new ArgumentException("invalid_offset");

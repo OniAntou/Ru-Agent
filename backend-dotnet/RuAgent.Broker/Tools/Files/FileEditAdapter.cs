@@ -80,8 +80,8 @@ public sealed class EditMatchException : InvalidOperationException
 
 public sealed partial class FileEditAdapter
 {
-    public const int MaxInputBytes = 4 * 1024 * 1024;
-    public const int MaxFileBytes = 4 * 1024 * 1024;
+    public const int MaxInputBytes = 8 * 1024 * 1024;
+    public const int MaxFileBytes = 8 * 1024 * 1024;
     public const int MaxDiffChars = 8 * 1024;
 
     private readonly string _workspaceRoot;

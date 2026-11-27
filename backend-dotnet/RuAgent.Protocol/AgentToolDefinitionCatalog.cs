@@ -143,18 +143,18 @@ public static partial class AgentToolDefinitionCatalog
         ("query", StringSchema(2048)),
         ("path", StringSchema()), ("file_glob", StringSchema()),
         ("case_sensitive", BooleanSchema()), ("is_regex", BooleanSchema()),
-        ("max_results", IntegerSchema(1, 128)),
+        ("max_results", IntegerSchema(1, 512)),
         // Paging bound mirrors FileToolLimits.MaxOffset in RuAgent.Broker (the
         // adapter is the authority; Protocol cannot reference the Broker layer).
-        ("offset", IntegerSchema(0, 50000)),
+        ("offset", IntegerSchema(0, 1_000_000)),
     ];
     internal static JsonObject GlobSchema() => ObjectSchema(["pattern"], GlobSchemaProperties());
     private static (string Name, JsonObject Schema)[] GlobSchemaProperties() =>
     [
         ("pattern", StringSchema()),
-        ("path", StringSchema()), ("max_results", IntegerSchema(1, 128)),
+        ("path", StringSchema()), ("max_results", IntegerSchema(1, 512)),
     ];
-    internal static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 512))]);
+    internal static JsonObject FileListSchema() => ObjectSchema(properties: [("path", StringSchema()), ("max_entries", IntegerSchema(1, 2048))]);
     internal static JsonObject FileReadSchema() => ObjectSchema(["path"], [("path", StringSchema()), ("offset", IntegerSchema(0)), ("limit", IntegerSchema(1, 4 * 1024 * 1024)), ("pages", StringSchema(maxLength: 32))]);
     internal static JsonObject HelpDocsSchema() => ObjectSchema(["query"], [("query", StringSchema(minLength: 1, maxLength: 256)), ("max_results", IntegerSchema(1, 5))]);
 
@@ -188,7 +188,7 @@ public static partial class AgentToolDefinitionCatalog
             ("status", StringSchema(maxLength: 32))),
     };
     internal static JsonObject WebSearchSchema() => ObjectSchema(["query"], [("query", StringSchema(512)), ("max_results", IntegerSchema(1, 10))]);
-    internal static JsonObject WebFetchSchema() => ObjectSchema(["url"], [("url", StringSchema(2048)), ("offset", IntegerSchema(0, 4 * 1024 * 1024)), ("limit", IntegerSchema(1, 32_000))]);
+    internal static JsonObject WebFetchSchema() => ObjectSchema(["url"], [("url", StringSchema(2048)), ("offset", IntegerSchema(0, 16 * 1024 * 1024)), ("limit", IntegerSchema(1, 32_000))]);
     internal static JsonObject McpSchema() => ObjectSchema(
         ["op"],
         ("op", EnumSchema("list_servers", "list_tools", "call")),

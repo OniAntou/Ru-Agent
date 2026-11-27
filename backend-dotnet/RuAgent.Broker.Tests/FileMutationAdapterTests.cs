@@ -389,9 +389,9 @@ public sealed class FileMutationAdapterTests : IDisposable
     }
 
     [Fact]
-    public void Write_4MiB_input_cap_enforced()
+    public void Write_input_cap_enforced()
     {
-        var large = new string('x', 5 * 1024 * 1024);
+        var large = new string('x', FileWriteAdapter.MaxInputBytes + 1);
         var args = new JsonObject { ["path"] = "large.txt", ["content"] = large, ["expected_sha256"] = "missing" };
         var ex = Assert.Throws<ArgumentException>(() => _write.Prepare(args));
         Assert.Equal("content_too_large", ex.Message);

@@ -8,7 +8,7 @@ public enum WebSearchMode { HtmlRace, ConfiguredJson }
 public sealed record WebOptions
 {
     public const int DefaultMaxResponseBytes = 4 * 1024 * 1024;
-    public const int MaxConfiguredResponseBytes = 4 * 1024 * 1024;
+    public const int MaxConfiguredResponseBytes = 16 * 1024 * 1024;
 
     /// <summary>
     /// The default primary engine. Google HTML search now answers scripted clients

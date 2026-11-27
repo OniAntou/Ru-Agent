@@ -9,7 +9,7 @@ public sealed partial class ToolExecutionServiceTests
     [Theory]
     [InlineData("{\"query\":\"one\",\"pattern\":\"two\"}")]
     [InlineData("{\"pattern\":42}")]
-    [InlineData("{\"pattern\":\"one\",\"max_results\":129}")]
+    [InlineData("{\"pattern\":\"one\",\"max_results\":513}")]
     public async Task Grep_rejects_ambiguous_or_invalid_alias_arguments_before_search(string json)
     {
         var fixture = CreateFullAccessService("ru-grep-alias-invalid-");

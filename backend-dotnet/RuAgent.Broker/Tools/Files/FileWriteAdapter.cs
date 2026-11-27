@@ -6,7 +6,7 @@ namespace RuAgent.Broker.Tools.Files;
 
 public sealed class FileWriteAdapter
 {
-    public const int MaxInputBytes = 4 * 1024 * 1024;
+    public const int MaxInputBytes = 8 * 1024 * 1024;
     public const int MaxDiffChars = 8 * 1024;
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 

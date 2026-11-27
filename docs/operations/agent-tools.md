@@ -147,7 +147,7 @@ Returned JSON is fitted into 4 MiB, including escaping and metadata;
 `offset + bytes_read` continues a truncated Broker page. The Host adjusts
 `next_offset` to the visible page when model context clips it.
 `list` takes `path` with optional
-`max_entries` (1–512); `help` takes `query` (1–256) with optional `max_results`
+`max_entries` (1–2048, default 512); `help` takes `query` (1–256) with optional `max_results`
 (1–5) and searches the five bundled offline documents; `todo_write` replaces the
 session task list (at most 64 rows of `content` plus a `status` of `pending`,
 `in_progress` or `completed`) and touches neither disk nor network. For a coding
@@ -155,11 +155,11 @@ request with several explicit requirements, record each one as its own row befor
 editing, and mark it `completed` only after a check that exercises it passes. A failed
 or unparseable call keeps the previous list.
 `glob` takes `pattern`
-(required) plus optional `path` and `max_results` (1–128, default 128) and returns
+(required) plus optional `path` and `max_results` (1–512, default 128) and returns
 stable sorted relative paths without content access; `grep` takes `query`
 (1–2048 chars, required) plus optional `path`, `file_glob`, `case_sensitive`
-(default false), `is_regex` (default false), `max_results` (1–128, default
-128) and `offset` (0–50000, default 0) for paging the ordinal results,
+(default false), `is_regex` (default false), `max_results` (1–512, default
+128) and `offset` (0–1,000,000, default 0) for paging the ordinal results,
 and returns bounded match locations with previews up to 512 characters.
 The Broker also accepts a single string `pattern` as a compatibility alias for
 `query` on `grep`. Supplying both fields is rejected. The same query, path and
@@ -243,7 +243,7 @@ keywords or fetching a known authoritative URL, 401/403 says the site refuses
 automated clients, 404 suggests checking the address, 429 a different source,
 and an unsupported content type points to an HTML version of the document.
 
-Web downloads default to 4 MiB, with the existing configurable 4 MiB ceiling.
+Web downloads default to 4 MiB, with a configurable 16 MiB ceiling.
 Compressed responses are decoded before that bound is counted. `web_fetch`
 identifies itself as `RuAgent/<version> (+https://github.com/OniAntou/Ru-Agent)`
 and sends `Accept` and `Accept-Language`; without them ordinary sites such as
@@ -356,7 +356,7 @@ next cursor. `truncated` can also indicate a scan/time bound or regex timeout;
 `scan_incomplete=true` means coverage is incomplete, not proof that another
 page exists. Narrow the path/query in that case. Each page re-scans files;
 changing files or hitting discovery bounds can change the ordered result set.
-The 50000-offset ceiling can prevent continuation even when more matches are
+The 1,000,000-offset ceiling can prevent continuation even when more matches are
 known; narrow the query/path rather than exceeding it. If prompt projection
 clips the returned page, use the adjusted `next_offset` in the model-visible page.
 
@@ -717,7 +717,7 @@ per-call external root. Every structured mutation binds a Broker-captured
 preimage and fails with `workspace_changed` on mismatch without writing.
 Existing targets are held against competing writes and rename-over; hash
 validation and update or delete use that same handle. Updates retain at most
-32 MiB of original bytes for ordinary failure recovery (`file_too_large` above
+64 MiB of original bytes for ordinary failure recovery (`file_too_large` above
 that bound), write in place and flush. This does not provide crash-atomic
 replacement. Missing-target creation remains staged with no overwrite.
 Patch rollback restores only an applied target whose current hash still

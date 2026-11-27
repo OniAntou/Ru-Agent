@@ -8,20 +8,20 @@ public static partial class AgentToolDefinitionCatalog
 {
     internal static JsonObject RunCodeSchema() => ObjectSchema(["code"], ("code", StringSchema(16 * 1024, 1)), ("timeout_ms", IntegerSchema(1, 120_000)));
 
-    internal static JsonObject ApplyPatchSchema() => ObjectSchema(["patch"], ("patch", StringSchema(4 * 1024 * 1024, 1)));
+    internal static JsonObject ApplyPatchSchema() => ObjectSchema(["patch"], ("patch", StringSchema(8 * 1024 * 1024, 1)));
 
     internal static JsonObject ReadFileSchema() => ObjectSchema(["path"], ("path", StringSchema()), ("start_line", IntegerSchema(1, 1_000_000)), ("line_count", IntegerSchema(1, 1000)));
 
     internal static JsonObject WriteFileSchema() => ObjectSchema(["path", "content"], ("path", StringSchema()),
-        ("content", WithDescription(StringSchema(4 * 1024 * 1024), "Only the intended file text; preserve newlines with JSON \\n escapes. Other tool arguments belong in sibling JSON properties, not in the file text.")),
+        ("content", WithDescription(StringSchema(8 * 1024 * 1024), "Only the intended file text; preserve newlines with JSON \\n escapes. Other tool arguments belong in sibling JSON properties, not in the file text.")),
         ("overwrite", WithDescription(BooleanSchema(), "JSON boolean beside content. Set true only for deliberate full replacement after reading the existing file.")));
 
     internal static JsonObject EditFileSchema() => ObjectSchema(["path", "edits"], ("path", StringSchema()), ("edits", new JsonObject
     {
         ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 64,
         ["items"] = ObjectSchema(["old_string", "new_string"],
-            ("old_string", WithDescription(StringSchema(4 * 1024 * 1024, 1), "Exact file characters copied from read_file.content, including indentation and line breaks. In this JSON argument, encode a real line break as \\n; do not send HTML entities such as &quot;/&#10;, line-number prefixes, or the surrounding JSON wrapper. No fuzzy matching is performed.")),
-            ("new_string", WithDescription(StringSchema(4 * 1024 * 1024), "Replacement text with actual indentation and line breaks. In this JSON argument, encode a real line break as \\n; entities such as &quot; or &#10; are stored literally and never decoded.")),
+            ("old_string", WithDescription(StringSchema(8 * 1024 * 1024, 1), "Exact file characters copied from read_file.content, including indentation and line breaks. In this JSON argument, encode a real line break as \\n; do not send HTML entities such as &quot;/&#10;, line-number prefixes, or the surrounding JSON wrapper. No fuzzy matching is performed.")),
+            ("new_string", WithDescription(StringSchema(8 * 1024 * 1024), "Replacement text with actual indentation and line breaks. In this JSON argument, encode a real line break as \\n; entities such as &quot; or &#10; are stored literally and never decoded.")),
             ("expected_occurrences", IntegerSchema(1, 1024))),
     }));
 

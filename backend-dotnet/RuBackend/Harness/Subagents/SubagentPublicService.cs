@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -136,6 +137,15 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
     private static bool OccupiesRunnableSlot(string? status) => status is not
         (null or "created" or "completed" or "failed" or "cancelled" or "interrupted");
 
+    /// <summary>A bounded, Unicode-safe preview of the brief carried by a polled list snapshot.</summary>
+    internal static string? TaskPreview(string? task)
+    {
+        if (task is null || task.Length <= SubagentLimits.MaxTaskPreviewCharacters) return task;
+        var elements = StringInfo.ParseCombiningCharacters(task);
+        if (elements.Length <= SubagentLimits.MaxTaskPreviewCharacters) return task;
+        return task[..elements[SubagentLimits.MaxTaskPreviewCharacters]].TrimEnd() + "…";
+    }
+
     private const int MaxReviewTextChars = 64 * 1024;
     private const int MaxReviewTotalChars = 512 * 1024;
     private const long MaxReviewFileBytes = 8 * 1024 * 1024;
@@ -228,7 +238,7 @@ public sealed class SubagentPublicService(SqliteSubagentSnapshotReader snapshots
 
     private static SubagentUserActionSummary MapAction(SubagentUserApply a) => new(a.Status, a.Revision, a.ApprovalId, a.Code);
     private static SubagentSummary Map(SubagentSnapshotEntry entry, IReadOnlyList<SubagentUserApply> actions, IReadOnlyDictionary<string, SubagentFamilyUsage> usage) => new(
-        entry.Agent.AgentId, entry.Agent.Role.ToString().ToLowerInvariant(), entry.Task, entry.Agent.Canceled,
+        entry.Agent.AgentId, entry.Agent.Role.ToString().ToLowerInvariant(), TaskPreview(entry.Task), entry.Agent.Canceled,
         Profile: entry.Profile, Attempts: entry.Attempts.Select(a => new SubagentAttemptSummary(a.Attempt.Run.RunId.Value, a.Attempt.AttemptNumber,
             AgentV1Shared.MapRunState(a.Attempt.Run.Status), a.Attempt.Run.Version,
             a.Model?.ProviderId, a.Model?.Model, a.Model?.Protocol, a.Attempt.DeadlineAt,

@@ -37,9 +37,11 @@ public sealed class SubagentControlDispatcher(IHarnessEventStore events, SqliteS
                 ?? throw new SubagentControlRejectedException("subagent_not_found");
             if (proposal.ToolId == "agent_send" && child.Canceled)
                 throw new SubagentControlRejectedException("subagent_canceled");
-            // A continuation runs under its creating root's family budget and lease.
-            if (proposal.ToolId == "agent_send" && child.RootRunId != root.RunId)
-                throw new SubagentControlRejectedException("subagent_detached_send_unsupported");
+            // A detached child of an earlier root keeps its creating root's family and policy;
+            // the later root may message it, but only while that family is not cancelled.
+            if (proposal.ToolId == "agent_send" && child.Detached && child.RootRunId != root.RunId
+                && await agents.IsFamilyCanceledAsync(child.RootRunId, ct).ConfigureAwait(false))
+                throw new SubagentControlRejectedException("subagent_canceled");
         }
     }
 
@@ -67,8 +69,10 @@ public sealed class SubagentControlDispatcher(IHarnessEventStore events, SqliteS
                 return Receipt("subagent_spawned", new { agent_id = child.AgentId, role = request.Role, accepted = true });
             case "agent_send":
                 var agent = intent.Arguments.GetProperty("agent_id").GetString()!;
-                await RetryIdempotentAsync(() => agents.AppendMessageAsync(root.RunId, agent, intent.InvocationId,
-                    intent.Arguments.GetProperty("message").GetString()!, ct), ct).ConfigureAwait(false);
+                var sendTarget = await agents.FindVisibleAsync(root.RunId, agent, ct).ConfigureAwait(false)
+                    ?? throw new SubagentControlRejectedException("subagent_not_found");
+                await RetryIdempotentAsync(() => agents.AppendMessageAsync(root.RunId, sendTarget.RootRunId, agent,
+                    intent.InvocationId, intent.Arguments.GetProperty("message").GetString()!, ct), ct).ConfigureAwait(false);
                 return Receipt("subagent_message_queued", new { agent_id = agent, accepted = true });
             case "agent_cancel":
                 var canceled = intent.Arguments.GetProperty("agent_id").GetString()!;

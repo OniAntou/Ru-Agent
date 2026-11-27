@@ -292,9 +292,12 @@ public sealed class AgentRuntimeCoordinatorFactory : IAgentRuntimeCoordinatorFac
                             : attempt is null ? "unknown"
                             : attempt.Run.State.IsTerminal() ? attempt.Run.State.ToString().ToLowerInvariant() : "working";
                         // A settled child can still be collecting its result; name the result
-                        // version so a later root knows what agent_apply can integrate.
+                        // version so a later root knows what agent_apply can integrate. While a
+                        // continuation is running, its older result is not the current handoff.
                         var results = await subagentResults.ListAsync(record.RootRunId, record.AgentId, ct).ConfigureAwait(false);
-                        var latest = results.Count > 0 ? results[results.Count - 1] : null;
+                        var latest = attempt?.Run.State.IsTerminal() == true && results.Count > 0
+                            ? results[results.Count - 1]
+                            : null;
                         facts.Add(new(record.AgentId, record.Role, state, latest?.Version, latest?.State));
                     }
                     detached = SubagentRunStateNote.Describe(facts, inherited.Count > facts.Count);

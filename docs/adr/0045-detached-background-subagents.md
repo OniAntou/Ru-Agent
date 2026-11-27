@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-11-13
-amended: 2026-11-27
+amended: 2026-11-28
 ---
 
 # Detached background subagents and manual PR integration
@@ -75,9 +75,13 @@ and explicitly leaves automatic PR creation out.
    the write. The Broker accepts a foreign parent run only when it still holds that
    parent's retained snapshot in the applying root's session and workspace; after a Host
    restart or eviction the apply is denied (`subagent_apply_denied`).
-8. `agent_send` to another root's detached child is refused with
-   `subagent_detached_send_unsupported`: a continuation would run under a closed
-   parent's family and lease.
+8. A later root of the same session may `agent_send` a follow-up to a detached child. The
+   send is admitted under the later root's live lease, but the continuation runs under the
+   creating root's family, pinned policy and internal session; the later root cannot widen
+   the child. The message waits until the current attempt is terminal, then becomes a new
+   attempt. A cancelled family refuses with `subagent_canceled`; a root in another session
+   cannot reach the child (`subagent_not_found`); an attached child of a finished root still
+   refuses (`subagent_root_inactive`).
 9. The HTTP subagent summary and the SDK type report `detached` on each child; the GUI
    and CLI do not label it yet. The GUI stays an observer; there are no user
    Send/Stop/Apply controls. The user asks the main agent.
@@ -121,6 +125,7 @@ network authority and repository history outside the model path.
 ## Consequences
 
 Schema v43 adds `agent_subagent_detached`. Child visibility queries accept a detached
-child of an earlier root in the same session for wait, cancel and apply. A later root
-cannot continue another root's detached child, and a detached result cannot be applied
-after a Host restart; both fail by name rather than falling back.
+child of an earlier root in the same session for wait, cancel, send and apply. A later root
+can continue another root's detached child under that child's creating-family policy, but
+cannot change its pin or family. A detached result cannot be applied after a Host restart;
+both refusal paths fail by name rather than falling back.

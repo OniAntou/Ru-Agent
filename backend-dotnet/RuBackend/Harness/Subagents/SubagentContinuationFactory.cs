@@ -23,7 +23,10 @@ public sealed class SubagentContinuationFactory(IHarnessEventStore events, Sqlit
             var root = await events.GetRunAsync(rootId, ct).ConfigureAwait(false);
             var latest = await agents.GetLatestAttemptAsync(rootId, agentId, ct).ConfigureAwait(false)
                 ?? throw new HarnessStoreException("subagent_not_found");
-            if (root is null || root.State.IsTerminal() || latest.Agent.Canceled)
+            // A detached child keeps its creating root's family and policy after that root
+            // ends normally, so a queued later-root follow-up can still resume it.
+            if (root is null || latest.Agent.Canceled
+                || (root.State.IsTerminal() && (!latest.Agent.Detached || root.State == HarnessRunState.Cancelled)))
                 throw new HarnessStoreException("subagent_root_inactive");
             if (!latest.Run.State.IsTerminal())
             {

@@ -23,7 +23,9 @@ public sealed partial class SqliteSubagentStore
         command.Transaction = transaction;
         command.Parameters.AddWithValue("$root", rootId.Value);
         command.CommandText = "SELECT canceled FROM agent_subagent_families WHERE root_run_id=$root";
-        if (root is null || root.State.IsTerminal() || previous.Agent.Canceled
+        var detached = previous.Agent.Detached;
+        if (root is null || previous.Agent.Canceled
+            || (root.State.IsTerminal() && (!detached || root.State == HarnessRunState.Cancelled))
             || (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 1L) != 0)
             throw new HarnessStoreException("subagent_root_inactive");
         if (previous.Run.RunId != expectedPrevious || !previous.Run.State.IsTerminal()) return previous;

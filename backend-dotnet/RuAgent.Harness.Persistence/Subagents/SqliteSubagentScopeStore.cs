@@ -32,7 +32,9 @@ public sealed partial class SqliteSubagentScopeStore(HarnessSqliteOptions option
             if (existing != scope) throw new HarnessStoreException("subagent_scope_conflict");
             return;
         }
-        if (owner.Canceled || root.State.IsTerminal() || child.State != HarnessRunState.Created)
+        // A detached child keeps its creating root's scope after that root ends normally.
+        if (owner.Canceled || (root.State.IsTerminal() && (!owner.Detached || root.State == HarnessRunState.Cancelled))
+            || child.State != HarnessRunState.Created)
             throw new HarnessStoreException("subagent_root_inactive");
         var encrypted = await protector.EncryptAsync(root.WorkspaceId, childId.Value, "subagent.scope", bytes, ct).ConfigureAwait(false);
         using var command = connection.CreateCommand();
@@ -83,19 +85,23 @@ public sealed partial class SqliteSubagentScopeStore(HarnessSqliteOptions option
         catch (JsonException ex) { throw new HarnessStoreException("subagent_scope_invalid", ex); }
     }
 
-    private sealed record Owner(RunId RootId, SubagentRole Role, bool Canceled);
+    private sealed record Owner(RunId RootId, SubagentRole Role, bool Canceled, bool Detached);
     private static async Task<Owner?> ReadOwnerAsync(SqliteConnection connection, SqliteTransaction transaction, RunId childId, CancellationToken ct)
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT s.root_run_id,s.role,(s.canceled OR f.canceled) FROM agent_subagent_attempts a
+            SELECT s.root_run_id,s.role,(s.canceled OR f.canceled),
+                EXISTS(SELECT 1 FROM agent_subagent_detached d WHERE d.agent_id=s.agent_id)
+            FROM agent_subagent_attempts a
             JOIN agent_subagents s ON s.agent_id=a.agent_id JOIN agent_subagent_families f ON f.root_run_id=s.root_run_id
             WHERE a.run_id=$run
             """;
         command.Parameters.AddWithValue("$run", childId.Value);
         using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
-        return await reader.ReadAsync(ct).ConfigureAwait(false) ? new(new(reader.GetString(0)), (SubagentRole)reader.GetInt32(1), reader.GetInt32(2) != 0) : null;
+        return await reader.ReadAsync(ct).ConfigureAwait(false)
+            ? new(new(reader.GetString(0)), (SubagentRole)reader.GetInt32(1), reader.GetInt32(2) != 0, reader.GetInt64(3) != 0)
+            : null;
     }
 
     private static void Validate(SubagentRuntimeScope scope, AgentRun root, AgentRun child, SubagentRole role)

@@ -1,9 +1,11 @@
 extern alias Broker;
 
 using System.Text;
+using System.Text.Json;
 using RuAgent.Harness.Core;
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Policy;
+using RuAgent.Harness.Core.Subagents;
 using RuAgent.Harness.Persistence;
 using RuAgent.Harness.Persistence.Subagents;
 using RuAgent.Protocol.Subagents;
@@ -127,6 +129,66 @@ public sealed class SubagentDetachedLaunchTests
         Assert.Equal(HarnessRunState.Running, attempt.Run.State);
         Assert.True(setup.Roots.TryGetRoot(attempt.Run.RunId, out _));
     }
+
+    [Fact]
+    public async Task A_detached_child_resumes_from_a_followup_after_its_root_ended()
+    {
+        await using var setup = await Setup.CreateAsync();
+        var detached = await setup.Factory.CreateAsync(setup.Root, "spawn_detached", new("review", "Review the parser",
+            Detached: true, DetachedRequest: "keep that review running in the background"), default);
+        using var scheduler = new SubagentScheduler(setup.Storage.EventStore, setup.Agents, setup.Scopes, setup.Roots, setup.Clock);
+        await scheduler.TickAsync(new Cleanup(setup.Roots), default);
+        var first = (await setup.Agents.GetLatestAttemptAsync(setup.Root, detached.AgentId, default))!;
+        Assert.Equal(HarnessRunState.Running, first.Run.State);
+        await setup.Storage.EventStore.CommitAsync(SubagentAdmission.CreateTerminalCommit(first.Run,
+            new("evt_" + new string('b', 32)), false, "fixture_failure", setup.Clock.UtcNow), default);
+        await setup.EndRootAsync();
+        var later = await setup.Storage.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('c', 32), new string('a', 32), setup.Storage.RootPath,
+            idempotencySha256: new string('d', 64));
+
+        // The creating root already ended; the detached child still accepts a follow-up
+        // from a later root of the same session.
+        await setup.Agents.AppendMessageAsync(later.Run.RunId, setup.Root, detached.AgentId, "message_one",
+            "Check the empty case", default);
+        using var continuations = new SubagentContinuationFactory(setup.Storage.EventStore, setup.Agents,
+            new SqliteAgentRunProviderSelectionStore(setup.Storage.Options), setup.Storage.PayloadStore,
+            setup.Scopes, setup.Clock, setup.Storage.Options);
+
+        var next = await continuations.ContinueAsync(setup.Root, detached.AgentId, default);
+
+        Assert.NotNull(next);
+        Assert.Equal(2, next!.AttemptNumber);
+        Assert.Equal(first.Run.SessionId, next.Run.SessionId);
+        Assert.Equal(HarnessRunState.Created, next.Run.State);
+    }
+
+    [Fact]
+    public async Task A_later_root_preflight_accepts_a_detached_child_of_an_earlier_root()
+    {
+        await using var setup = await Setup.CreateAsync();
+        var detached = await setup.Factory.CreateAsync(setup.Root, "spawn_detached", new("review", "Review the parser",
+            Detached: true, DetachedRequest: "keep that review running in the background"), default);
+        await setup.EndRootAsync();
+        var later = await setup.Storage.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('c', 32), new string('a', 32), setup.Storage.RootPath,
+            idempotencySha256: new string('d', 64));
+        var dispatcher = new SubagentControlDispatcher(setup.Storage.EventStore, setup.Agents, null!, null!, null!);
+
+        await dispatcher.ValidateAsync(SendProposal(later.Run.RunId, detached.AgentId), default);
+
+        var foreign = await setup.Storage.SeedRunWithEncryptedWorkspaceAsync(new(HarnessRunState.Running),
+            "run_" + new string('e', 32), new string('e', 32), setup.Storage.RootPath,
+            idempotencySha256: new string('f', 64));
+        var refused = await Assert.ThrowsAsync<SubagentControlRejectedException>(() =>
+            dispatcher.ValidateAsync(SendProposal(foreign.Run.RunId, detached.AgentId), default));
+        Assert.Equal("subagent_not_found", refused.Code);
+    }
+
+    private static ToolProposal SendProposal(RunId run, string agent) =>
+        new(run, new("step_" + new string('a', 32)), new("call_" + new string('b', 32)), "call_provider_one", 1,
+            "agent_send", "1.0.0",
+            JsonDocument.Parse($$"""{"agent_id":"{{agent}}","message":"Check the empty case"}""").RootElement.Clone());
 
     private sealed class Setup : IAsyncDisposable
     {

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(subagents)**: A later root can continue a detached child. `agent_send` from any later
+  root of the same session now queues the follow-up; the child resumes as a new attempt under
+  its creating root's family, pinned policy and internal session, so the later root authorizes
+  the send but cannot widen what the child may do. The old
+  `subagent_detached_send_unsupported` refusal is retired; a cancelled family returns
+  `subagent_canceled`, another session `subagent_not_found`, and an attached child of a
+  finished root still `subagent_root_inactive`.
+- **feat(subagents)**: A polled subagent list snapshot carries a bounded 4,096-character task
+  preview instead of the full 65,536-character brief. Eight children at the old bound made a
+  legal snapshot serialize to roughly 3.3 MB and exceed the 1 MiB stdio RPC frame; the preview
+  keeps the family summary small without changing the brief the creating turn already has.
+
 - **feat(subagents)**: Detached children are visible as background work. The live
   `subagent.changed` hint carries `detached`, `/subagents` and the GUI task list label the child
   `background`, the side panel reports an unapplied detached result as **result ready**, and a

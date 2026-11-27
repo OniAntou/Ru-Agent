@@ -15,7 +15,10 @@ public sealed partial class SqliteSubagentStore
             JOIN agent_subagent_families f ON f.root_run_id=s.root_run_id
             JOIN agent_runs root ON root.run_id=s.root_run_id
             JOIN agent_subagent_attempts a ON a.agent_id=s.agent_id JOIN agent_runs child ON child.run_id=a.run_id
-            WHERE s.canceled=0 AND f.canceled=0 AND root.terminal_at_utc IS NULL AND child.state IN($completed,$failed)
+            WHERE s.canceled=0 AND f.canceled=0 AND child.state IN($completed,$failed)
+                AND (root.terminal_at_utc IS NULL
+                    OR root.state<>$cancelled
+                       AND EXISTS(SELECT 1 FROM agent_subagent_detached d WHERE d.agent_id=s.agent_id))
                 AND s.agent_id>$after
                 AND NOT EXISTS(SELECT 1 FROM agent_subagent_attempts newer WHERE newer.agent_id=s.agent_id AND newer.attempt_number>a.attempt_number)
                 AND EXISTS(SELECT 1 FROM agent_subagent_messages m WHERE m.agent_id=s.agent_id
@@ -24,6 +27,7 @@ public sealed partial class SqliteSubagentStore
             """;
         command.Parameters.AddWithValue("$completed", (int)HarnessRunState.Completed);
         command.Parameters.AddWithValue("$failed", (int)HarnessRunState.Failed);
+        command.Parameters.AddWithValue("$cancelled", (int)HarnessRunState.Cancelled);
         command.Parameters.AddWithValue("$after", afterAgentId ?? "");
         command.Parameters.AddWithValue("$limit", FamilyPageSize);
         using var reader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);

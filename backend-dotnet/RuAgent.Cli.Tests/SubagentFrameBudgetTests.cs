@@ -22,7 +22,7 @@ public sealed class SubagentFrameBudgetTests
         var results = Enumerable.Range(1, 3).Select(n => new SubagentResultSummary(n, id, "completed", new string('a', 64),
             "unknown", 50000, true, new("awaiting_approval", long.MaxValue, "apr_" + new string('a', 32), new string('a', 64)))).ToArray();
         var agents = Enumerable.Range(0, 8).Select(n => new SubagentSummary(new string('a', 127) + n,
-            "coding", new string('\uffff', SubagentLimits.MaxTaskCharacters), false, attempts, results, new string('a', 32))).ToArray();
+            "coding", new string('\uffff', SubagentLimits.MaxTaskPreviewCharacters), false, attempts, results, new string('a', 32))).ToArray();
         // Two profile files, each at its diagnostic cap plus the limit and overflow lines.
         var diagnostics = Enumerable.Repeat("workspace subagents.json: 20000 more invalid profiles were ignored", 16).ToArray();
         var snapshot = new SubagentListResponse(id, "waiting_subagents", new string('a', 64), agents, [], 24, usage,

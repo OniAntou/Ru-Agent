@@ -5,6 +5,12 @@ namespace RuAgent.Protocol.Subagents;
 public static class SubagentLimits
 {
     public const int MaxTaskCharacters = 65_536;
+    /// <summary>
+    /// A list snapshot carries only this much of the task; the full brief is already in the
+    /// creating turn and a polled family summary must stay small. Detail and result reads do
+    /// not widen it.
+    /// </summary>
+    public const int MaxTaskPreviewCharacters = 4_096;
     /// <summary>Bound for the verbatim user words that ask for a detached child.</summary>
     public const int MaxDetachedRequestCharacters = 256;
     public const int MaxContextBytes = 256 * 1024;

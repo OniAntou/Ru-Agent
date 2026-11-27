@@ -24,13 +24,17 @@ turn this on, and workspace files, tool output or the model's own text cannot as
 When the parent finishes normally, a detached child keeps running; ordinary children are
 still stopped. A later turn in the same chat sees detached children in its run state and can
 `agent_wait` for them, `agent_cancel` them, or `agent_apply` a coding result when you ask.
-The applying turn's own permissions and approvals govern the write. Errors:
+A later turn may also `agent_send` a follow-up: the message is queued and the child resumes as
+a new attempt under its creating root's family and pinned policy, so the later turn authorizes
+the send but cannot widen what the child may do. The applying turn's own permissions and
+approvals govern a write. Errors:
 
 - `subagent_detached_user_request_required`: your prompt does not contain the quoted words.
 - `subagent_detached_unavailable`: the Broker could not retain the parent's policy.
 - `subagent_delegation_capacity`: too many retained parents are still in use.
-- `subagent_detached_send_unsupported`: a later turn cannot send a follow-up to an earlier
-  turn's detached child; spawn a new child instead.
+- `subagent_canceled`: the child or its family was cancelled; it cannot be continued.
+- `subagent_not_found`: the child belongs to another session.
+- `subagent_root_inactive`: an attached child's root already ended, so it cannot be continued.
 - `subagent_detached_interrupted`: the Host exited while the child was running after its
   parent had finished. Detached children do not survive a Host exit.
 - `subagent_apply_denied`: after a Host restart a later turn can still read a detached result
@@ -236,7 +240,8 @@ HTTP exposes only `GET /agent/v1/runs/{runId}/subagents`,
 `GET /agent/v1/runs/{runId}/subagents/{agentId}` (optional `result_version`, `offset`, `limit`)
 and the read-only `GET /agent/v1/runs/{runId}/subagents/{agentId}/changes?result_version=N`.
 Each child reports `detached`. Each attempt carries `created_at`, `admitted_at` and, once terminal, `ended_at`; these are
-fixed instants, so an idle snapshot keeps its `snapshot_id`. In a change review a deleted
+fixed instants, so an idle snapshot keeps its `snapshot_id`. A list snapshot carries at most a
+4,096-character task preview; the full brief remains in the creating turn. In a change review a deleted
 file has `proposed_text: null` (an empty string means an existing empty file).
 Generic run approval/input/cancel/compact/command/reconcile/trust writes reject
 internal children with `subagent_read_only`, including marker-only attempts.

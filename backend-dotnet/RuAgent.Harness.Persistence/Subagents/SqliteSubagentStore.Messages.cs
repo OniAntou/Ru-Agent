@@ -24,19 +24,52 @@ public sealed partial class SqliteSubagentStore
         return (long)(await command.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) != 0;
     }
 
-    public async Task AppendMessageAsync(RunId rootRunId, string agentId, string messageId, string message, CancellationToken ct)
+    public Task AppendMessageAsync(RunId rootRunId, string agentId, string messageId, string message, CancellationToken ct) =>
+        AppendMessageAsync(rootRunId, rootRunId, agentId, messageId, message, ct);
+
+    /// <summary>
+    /// Queue a follow-up from a later root of the same session to a detached child. The
+    /// message is admitted under the caller, but the child keeps its creating root's
+    /// family, policy and internal session; a caller cannot widen what the child may do.
+    /// </summary>
+    public async Task AppendMessageAsync(RunId callerRootId, RunId creatorRootId, string agentId,
+        string messageId, string message, CancellationToken ct)
     {
-        if (!SubagentContractValidator.IsValidId(messageId) || string.IsNullOrWhiteSpace(message)
+        if (!SubagentContractValidator.IsValidId(messageId) || !SubagentContractValidator.IsValidId(agentId)
+            || string.IsNullOrWhiteSpace(message)
             || message.Length > SubagentLimits.MaxTaskCharacters) throw new HarnessStoreException("subagent_message_invalid");
         byte[] bytes;
         try { bytes = new UTF8Encoding(false, true).GetBytes(message); }
         catch (EncoderFallbackException) { throw new HarnessStoreException("subagent_message_invalid"); }
         await using var connection = await Options.OpenConnectionAsync(ct).ConfigureAwait(false);
         using var transaction = connection.BeginTransaction(deferred: false);
-        var attempt = await ReadLatestAttemptAsync(connection, transaction, rootRunId, agentId, ct).ConfigureAwait(false)
+        var attempt = await ReadLatestAttemptAsync(connection, transaction, creatorRootId, agentId, ct).ConfigureAwait(false)
             ?? throw new HarnessStoreException("subagent_not_found");
-        var root = await HarnessSqliteQueries.GetRunAsync(connection, transaction, rootRunId, ct).ConfigureAwait(false);
-        if (root is null || root.State.IsTerminal() || attempt.Agent.Canceled) throw new HarnessStoreException("subagent_root_inactive");
+        var caller = await HarnessSqliteQueries.GetRunAsync(connection, transaction, callerRootId, ct).ConfigureAwait(false);
+        var creator = await HarnessSqliteQueries.GetRunAsync(connection, transaction, creatorRootId, ct).ConfigureAwait(false);
+        // A detached child keeps accepting follow-ups after its creating root ends normally;
+        // an attached child, a cancelled family or a caller that already ended does not.
+        if (caller is null || caller.State.IsTerminal() || attempt.Agent.Canceled
+            || creator is null || creator.State == HarnessRunState.Cancelled
+            || creator.State.IsTerminal() && !attempt.Agent.Detached)
+            throw new HarnessStoreException("subagent_root_inactive");
+        using (var visible = connection.CreateCommand())
+        {
+            visible.Transaction = transaction;
+            visible.CommandText = $"SELECT EXISTS(SELECT 1 FROM agent_subagents s WHERE s.agent_id=$agent AND {VisibleToRoot})";
+            visible.Parameters.AddWithValue("$root", callerRootId.Value);
+            visible.Parameters.AddWithValue("$agent", agentId);
+            if ((long)(await visible.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L) == 0L)
+                throw new HarnessStoreException("subagent_not_found");
+        }
+        using (var family = connection.CreateCommand())
+        {
+            family.Transaction = transaction;
+            family.CommandText = "SELECT canceled FROM agent_subagent_families WHERE root_run_id=$root";
+            family.Parameters.AddWithValue("$root", creatorRootId.Value);
+            if ((long)(await family.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 1L) != 0L)
+                throw new HarnessStoreException("subagent_root_inactive");
+        }
         var payloadId = MessagePayloadId(agentId, messageId);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;

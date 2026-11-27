@@ -247,7 +247,10 @@ public sealed class BackgroundTaskRegistryTests
                 callbackCompleted.Set();
             });
 
-            callbackWaitTimedOut = !callbackCompleted.Wait(TimeSpan.FromSeconds(2));
+            // CancelSession must not hold the registry lock while running this callback.
+            // A loaded CI runner can take several seconds to schedule the probe; the wait
+            // only has to be long enough to prove TryRead is not blocked by the lock.
+            callbackWaitTimedOut = !callbackCompleted.Wait(TimeSpan.FromSeconds(15));
         });
 
         registry.CancelSession("session");

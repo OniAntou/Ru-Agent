@@ -1,0 +1,6 @@
+[*.cs]
+# CsWinRT1032 flags collection expressions that target IReadOnlyList<T> because a
+# WinRT/AOT projection has no concrete type to emit. RuApp publishes untrimmed
+# (PublishTrimmed=false) and these are plain app models, not WinRT projections;
+# suppress the analyzer here instead of rewriting every app-side collection.
+dotnet_diagnostic.CsWinRT1032.severity = none

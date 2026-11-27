@@ -2,7 +2,7 @@
   #define Product "Desktop"
 #endif
 #ifndef ReleaseVersion
-  #define ReleaseVersion "0.1.5-preview.2"
+  #define ReleaseVersion "0.1.5-preview.3"
 #endif
 #ifndef PackageRoot
   #error PackageRoot is required

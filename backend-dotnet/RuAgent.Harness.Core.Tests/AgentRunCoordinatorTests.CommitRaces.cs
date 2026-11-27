@@ -1,5 +1,6 @@
 using RuAgent.Harness.Core.Persistence;
 using RuAgent.Harness.Core.Tests.Fakes;
+using RuAgent.Protocol.Harness;
 using Xunit;
 
 namespace RuAgent.Harness.Core.Tests;
@@ -40,16 +41,21 @@ public sealed partial class AgentRunCoordinatorTests
         var model = new FakeModelStepRunner();
         model.Enqueue(ToolStep());
         var gateway = new FakeToolGateway();
+        var activities = new RecordingActivitySink();
         var inner = new InMemoryHarnessEventStore();
         inner.Seed(Run(new HarnessRunStatus(HarnessRunState.Running)));
         var store = new ConflictOnCommitStore(inner, HarnessEventKind.ModelStepCompleted);
-        var coordinator = Coordinator(model, gateway, store);
+        var coordinator = Coordinator(model, gateway, store, activitySink: activities);
 
         var result = await coordinator.RunOneStepAsync(RunId(), CancellationToken.None);
 
         Assert.Equal("run_changed_during_generation", result.ErrorCode);
         Assert.Equal(HarnessRunState.Running, result.Run.State);
         Assert.Empty(gateway.ExecuteAttempts);
+        // The step was not recorded, so its narration row must not be published either:
+        // the next pass writes it once from the retried step. (The model-step running
+        // row published before the model call is expected.)
+        Assert.DoesNotContain(activities.Activities, item => item.Kind == AgentActivityKind.Narration);
         Assert.DoesNotContain(
             inner.Commits.SelectMany(commit => commit.Events),
             item => item.Kind == HarnessEventKind.RunFailed);

@@ -75,10 +75,47 @@ public sealed class AgentRuntimeSettlementRaceTests
         Assert.False(roots.TryGetRoot(seeded.Run.RunId, out _));
     }
 
+    [Fact]
+    public async Task A_run_row_deleted_during_a_step_is_unregistered_without_a_failure_write()
+    {
+        await using var fixture = await BackendHarnessTestFixture.CreateAsync();
+        var seeded = await fixture.SeedRunWithEncryptedWorkspaceAsync(
+            new HarnessRunStatus(HarnessRunState.Running),
+            "run_" + Guid.NewGuid().ToString("N"),
+            Guid.NewGuid().ToString("N"));
+        var roots = await RootsAsync(fixture, seeded);
+        var recorded = new RecordingLogger<AgentRuntimeLoopService>();
+        var provider = new ScriptedProvider(fixture, seeded.Run.RunId);
+        // The first read is the drive's own load; from the step's read on, the row is gone
+        // (session deletion or retention), so no failure transition can ever land. The
+        // coordinator reads the same store, so the step cannot run either.
+        var store = new RowVanishingStore(fixture.EventStore, visibleReads: 1);
+        var coordinator = Coordinator(fixture, provider, new RecordingActivitySink(), store);
+        using var loop = Loop(
+            fixture,
+            store,
+            roots,
+            new SingleCoordinatorFactory(coordinator),
+            recorded);
+
+        await loop.StepOnceAsync(default);
+
+        Assert.False(roots.TryGetRoot(seeded.Run.RunId, out _));
+        Assert.DoesNotContain(recorded.Entries, entry => entry.Level == LogLevel.Error);
+        var events = await ReadEventsAsync(fixture, seeded.Run.RunId);
+        Assert.DoesNotContain(events, item => item.Kind == "run.failed");
+        var row = await fixture.EventStore.GetRunAsync(seeded.Run.RunId, CancellationToken.None);
+        Assert.Equal(HarnessRunState.Running, row!.State);
+
+        await loop.StepOnceAsync(default);
+        Assert.DoesNotContain(recorded.Entries, entry => entry.Level == LogLevel.Error);
+    }
+
     private static AgentRunCoordinator Coordinator(
         BackendHarnessTestFixture fixture,
         ScriptedProvider provider,
-        RecordingActivitySink activities)
+        RecordingActivitySink activities,
+        IHarnessEventStore? events = null)
     {
         var runner = new InProcessModelStepRunner(new ModelStepService(provider))
         {
@@ -88,7 +125,7 @@ public sealed class AgentRuntimeSettlementRaceTests
         return new AgentRunCoordinator(
             runner,
             new UnusedToolGateway(),
-            fixture.EventStore,
+            events ?? fixture.EventStore,
             new AgentContextAssembler(new StaticContextSource()),
             new CryptographicIdGenerator(),
             new SystemTimeProvider(),
@@ -208,6 +245,29 @@ public sealed class AgentRuntimeSettlementRaceTests
                 cancellationToken).ConfigureAwait(false);
             Assert.Equal(HarnessCommitOutcome.Committed, commit.Outcome);
         }
+    }
+
+    /// <summary>
+    /// Hides the run row after the drive's initial load, standing in for a session
+    /// deletion or retention that removes it while the step runs.
+    /// </summary>
+    private sealed class RowVanishingStore(IHarnessEventStore inner, int visibleReads) : IHarnessEventStore
+    {
+        private int _reads;
+
+        public Task<CreateRunResult> TryCreateRunAsync(NewAgentRun request, CancellationToken cancellationToken) =>
+            inner.TryCreateRunAsync(request, cancellationToken);
+
+        public Task<AgentRun?> GetRunAsync(RunId runId, CancellationToken cancellationToken) =>
+            Interlocked.Increment(ref _reads) <= visibleReads
+                ? inner.GetRunAsync(runId, cancellationToken)
+                : Task.FromResult<AgentRun?>(null);
+
+        public IAsyncEnumerable<HarnessEventEnvelope> ReadEventsAsync(RunId runId, long afterSequence, CancellationToken cancellationToken) =>
+            inner.ReadEventsAsync(runId, afterSequence, cancellationToken);
+
+        public Task<HarnessCommitResult> CommitAsync(HarnessCommit commit, CancellationToken cancellationToken) =>
+            inner.CommitAsync(commit, cancellationToken);
     }
 
     private sealed class SingleCoordinatorFactory(AgentRunCoordinator coordinator) : IAgentRuntimeCoordinatorFactory

@@ -267,7 +267,10 @@ public sealed partial class AgentRunCoordinator
                 // Nothing was dispatched: the model step start lost an optimistic race
                 // with a writer that advanced the run (/compact, /skill, recovery). Let the
                 // next pass step the run that actually won instead of failing it for an
-                // internal conflict; a terminal winner is published by the drive loop.
+                // internal conflict; a terminal winner is published by the drive loop. A
+                // reservation made above is not released (the family-budget interface has
+                // no rollback); for an internal run that only over-counts the fail-closed
+                // pool.
                 var current = await RequireRunAsync(runId, cancellationToken).ConfigureAwait(false);
                 return AgentRunStepResult.Blocked(current, "run_changed_during_generation");
             }

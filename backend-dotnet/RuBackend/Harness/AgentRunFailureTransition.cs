@@ -36,6 +36,9 @@ internal sealed class AgentRunFailureTransition(IHarnessEventStore store)
         }
 
         // The caller must retain runtime ownership when no terminal transition was committed.
+        // This persistence-only path names a store-family code ("commit_conflict") because it
+        // settles without a coordinator; the in-process lifecycle names the run-state race
+        // instead. Both signals mean the same thing here: keep ownership and retry the pass.
         throw new HarnessStoreException("commit_conflict");
     }
 }

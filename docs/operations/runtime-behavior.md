@@ -100,10 +100,11 @@ transition that loses a version race re-reads and retries instead of reporting a
 internal failure. Only a run still non-terminal is failed with the normalized
 code; a run whose row no longer exists is released without a failure write.
 
-A commit that loses a version race before a tool is dispatched re-reads the run
-and returns `run_changed_during_generation`, so the next pass decides again
-without executing anything. A version conflict that surfaces after work started
-ends the run with `run_commit_conflict`, and a bounded condition a step carries
+The model-step admission commit and the tool-step record commit lose a version race
+before any tool dispatches: each re-reads the run and returns
+`run_changed_during_generation`, so the next pass decides again without executing
+anything. Any other version conflict that surfaces after work started ends the run
+with `run_commit_conflict`, and a bounded condition a step carries
 (`provider_continuation_too_large`, `broker_gateway_*`) keeps its own code, so
 none of them needs the driver fallback. Only a contract guard the code does not
 name keeps the fallback.

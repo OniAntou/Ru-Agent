@@ -516,16 +516,6 @@ internal sealed partial class AgentRunStepHandlers
         if (reservation.Granted && _familyBudget is not null
             && !await _familyBudget.ReserveToolsAsync(run, modelStepId, step.ToolCalls.Count, cancellationToken).ConfigureAwait(false))
             reservation = Subagents.SubagentBudgetPolicy.Reject(run, "subagent_family_budget_exhausted", _time.UtcNow);
-        if (!string.IsNullOrWhiteSpace(step.Text))
-        {
-            // The model said something before it reached for the tool. That sentence gets a
-            // row of its own so a reader watching the run sees it as it happens, instead of
-            // only finding out at the end what the run had been doing all along.
-            AgentActivityProjector.PublishSafe(
-                _activitySink,
-                run.RunId,
-                AgentActivityProjector.ProjectNarration(modelStepId, step.Text));
-        }
         var assistantBytes = AssistantStepJsonCodec.Serialize(step);
         var assistantPayloadId = _ids.NewPayloadId();
         var modelPayload = new HarnessPayloadIntent(
@@ -605,10 +595,25 @@ internal sealed partial class AgentRunStepHandlers
         {
             // The tool calls have not been dispatched yet: the step was recorded against a
             // version another writer advanced (/compact, /skill, recovery). Re-read the run
-            // and let the next pass decide again instead of failing it for a race.
+            // and let the next pass decide again instead of failing it for a race. The
+            // family-budget reservation above is not released (the interface has no
+            // rollback); for an internal run that only over-counts the fail-closed pool.
             var current = await _store.GetRunAsync(run.RunId, cancellationToken).ConfigureAwait(false)
                 ?? throw new KeyNotFoundException("run_not_found");
             return AgentRunStepResult.Blocked(current, "run_changed_during_generation");
+        }
+        if (!string.IsNullOrWhiteSpace(step.Text))
+        {
+            // The model said something before it reached for the tool. That sentence gets a
+            // row of its own so a reader watching the run sees it as it happens, instead of
+            // only finding out at the end what the run had been doing all along. Published
+            // after the step commit on purpose: a commit that lost its race is swallowed
+            // above and the next pass steps again, so an early row would show the same
+            // narration twice while durable replay keeps none.
+            AgentActivityProjector.PublishSafe(
+                _activitySink,
+                run.RunId,
+                AgentActivityProjector.ProjectNarration(modelStepId, step.Text));
         }
         if (!reservation.Granted)
         {

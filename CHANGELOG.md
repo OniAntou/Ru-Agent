@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(harness)**: A tool step that loses its commit race no longer shows its narration
+  twice. The narration row is published only after the step commit lands, because a
+  swallowed conflict re-drives the pass and durable replay keeps no copy of the discarded
+  step. The failure docs now name the two commits that re-drive (the model-step admission
+  and the tool-step record) instead of claiming every pre-dispatch commit does, and the
+  persistence-only failure transition documents why it names `commit_conflict` where the
+  in-process lifecycle names `run_version_conflict`. A run row that disappears between the
+  drive's read and the settlement is now covered by a regression test.
+
 - **fix(harness)**: A commit race no longer ends a run as `runtime_drive_failed`. A step
   that loses its optimistic commit before any tool dispatches re-reads the run and returns
   `run_changed_during_generation`, so the next pass steps the run that actually won (a

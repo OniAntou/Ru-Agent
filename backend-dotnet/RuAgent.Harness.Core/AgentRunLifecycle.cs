@@ -144,7 +144,7 @@ internal sealed class AgentRunLifecycle
                     // that writer's terminal state and leaves it alone.
                     continue;
                 default:
-                    throw new InvalidOperationException("unknown_commit_outcome");
+                    throw new AgentRunStateException("unknown_commit_outcome");
             }
         }
 

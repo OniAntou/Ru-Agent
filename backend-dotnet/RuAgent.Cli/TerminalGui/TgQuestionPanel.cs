@@ -16,6 +16,7 @@ internal sealed class TgQuestionPanel : View
     private readonly record struct BodyRow(string Text, int Choice = -1, bool First = false);
 
     private string _question = "";
+    private string? _inputTitle;
     private IReadOnlyList<string> _options = [];
     private readonly List<BodyRow> _body = [];
     private readonly List<int> _choiceStarts = [];
@@ -55,10 +56,15 @@ internal sealed class TgQuestionPanel : View
     // Editing a suggested answer turns it into a custom draft.
     private int SelectedChoice => IsPreset(_selected) && Editor.Text != _options[_selected] ? _options.Count : _selected;
 
-    internal void SetQuestion(ChatInputQuestion question)
+    internal void SetQuestion(ChatInputQuestion question) => SetPrompt(null, question.Question, question.Options);
+
+    internal void SetTextPrompt(string title, string description) => SetPrompt(title, description, []);
+
+    private void SetPrompt(string? title, string question, IReadOnlyList<string> options)
     {
-        _question = TuiText.SanitizeUntrusted(question.Question);
-        _options = question.Options.Select(TuiText.SanitizeUntrusted).ToArray();
+        _inputTitle = title is null ? null : TuiText.SanitizeUntrusted(title);
+        _question = TuiText.SanitizeUntrusted(question);
+        _options = options.Select(TuiText.SanitizeUntrusted).ToArray();
         _wrapWidth = -1;
         _offset = 0;
         _selected = -1;
@@ -158,8 +164,13 @@ internal sealed class TgQuestionPanel : View
         else if (key == Key.Enter)
         {
             key.Handled = true;
-            if (ChatInputWorkflow.IsValidAnswer(Editor.Text)) Answered?.Invoke(Editor.Text);
-            else { _error = "Enter an answer of 1..8192 characters"; SetNeedsDraw(); }
+            if (_inputTitle is not null && Editor.Text.Contains('\n'))
+            {
+                _error = "Enter a single line";
+                SetNeedsDraw();
+            }
+            else if (ChatInputWorkflow.IsValidAnswer(Editor.Text)) Answered?.Invoke(Editor.Text);
+            else { _error = _inputTitle is null ? "Enter an answer of 1..8192 characters" : "Enter 1..8192 characters"; SetNeedsDraw(); }
         }
         else if (key == Key.Tab || key == Key.Tab.WithShift)
         {
@@ -206,7 +217,7 @@ internal sealed class TgQuestionPanel : View
         EnsureBodyRows(width);
         _offset = Math.Clamp(_offset, 0, Math.Max(0, _body.Count - BodyHeight));
         for (var row = 0; row < Viewport.Height; row++) Paint(row, "", TuiToken.Ink);
-        Paint(0, "Question · answer in Ru", TuiToken.Brand2);
+        Paint(0, _inputTitle ?? "Question · answer in Ru", TuiToken.Brand2);
         var selected = SelectedChoice;
         for (var index = 0; index < BodyHeight && _offset + index < _body.Count; index++)
         {
@@ -215,8 +226,9 @@ internal sealed class TgQuestionPanel : View
             var text = row.First ? (active ? "› " : "  ") + row.Text : row.Text;
             Paint(BodyTop + index, text, row.Choice < 0 ? TuiToken.Ink : active ? TuiToken.Ok : TuiToken.Meta);
         }
-        Paint(EditorTop - 1, _error ?? "Answer", _error is null ? TuiToken.Meta : TuiToken.Err);
-        var keys = ChoiceCount > 0 ? "↑/↓ or click select · Enter send · Esc later" : "Enter send · Ctrl+J newline · Esc later";
+        Paint(EditorTop - 1, _error ?? (_inputTitle is null ? "Answer" : "Value"), _error is null ? TuiToken.Meta : TuiToken.Err);
+        var keys = _inputTitle is not null ? "Enter confirm · Esc cancel"
+            : ChoiceCount > 0 ? "↑/↓ or click select · Enter send · Esc later" : "Enter send · Ctrl+J newline · Esc later";
         if (_body.Count > BodyHeight) keys += " · PgUp/Dn scroll";
         Paint(Viewport.Height - 1, keys, TuiToken.Meta);
         return true;

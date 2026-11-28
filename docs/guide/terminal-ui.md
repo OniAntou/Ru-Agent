@@ -74,6 +74,9 @@ Custom commands you add appear in the same list; see [Teach Ru your project](tea
 
 In Customize, use Left and Right to change tabs, Up and Down to move through the
 current tab, and Escape to close the panel.
+The Skills tab uses the workspace catalog and supports enabling skills, controlling
+automatic selection, and managing local folders or commit-pinned GitHub packages.
+Use in chat puts a skill request in the composer for you to review and send.
 
 `/model` groups the live catalog of the active provider together with every provider you signed
 in to, so a model of another provider is one pick away: choosing it switches the provider too.

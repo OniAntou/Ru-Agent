@@ -1,3 +1,4 @@
+using RuAgent.Client;
 using RuAgent.Cli.TerminalGui;
 using RuAgent.Cli.Tui;
 
@@ -39,8 +40,11 @@ public sealed partial class AgentCommands
             }
         }
 
-        private Task<string?> OpenCustomizeTabAsync(int tab, CancellationToken ct) =>
-            PickCustomizeAsync(tab, [new("No settings available", "", "", Enabled: false)], ct);
+        private Task<string?> OpenCustomizeTabAsync(int tab, CancellationToken ct) => tab switch
+        {
+            0 => ShowCustomizeSkillsAsync(ct),
+            _ => PickCustomizeAsync(tab, [new("No settings available", "", "", Enabled: false)], ct),
+        };
 
         private Task<string?> PickCustomizeAsync(int tab, IReadOnlyList<ChoiceItem> rows, CancellationToken ct)
         {
@@ -49,6 +53,21 @@ public sealed partial class AgentCommands
                 new ChoiceList("Customize  ·  " + tabs, rows, footer: "←/→ tab · ↑/↓ select · enter actions · esc close",
                     showCounter: false),
                 ct, direction => direction < 0 ? PreviousCustomizeTab : NextCustomizeTab);
+        }
+
+        private Task<string?> PickCustomizeActionAsync(string title, IReadOnlyList<ChoiceItem> rows, CancellationToken ct) =>
+            TgPanelRequests.RequestChoiceAsync(tgWindow!, new ChoiceList(title, rows, showCounter: false), ct);
+
+        private async Task<T?> CustomizeCallAsync<T>(Func<Task<T>> call, CancellationToken ct) where T : class
+        {
+            try { return await call().ConfigureAwait(false); }
+            catch (Exception ex) when (ex is AgentApiException or HttpRequestException or TimeoutException
+                || ex is OperationCanceledException && !ct.IsCancellationRequested)
+            {
+                await TgPanelRequests.RequestDocumentAsync(tgWindow!, "Customize",
+                    [TuiText.SanitizeUntrusted(CliErrorText.ShortMessage(ex.Message))], ct).ConfigureAwait(false);
+                return null;
+            }
         }
 
     }

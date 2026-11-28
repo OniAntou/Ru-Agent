@@ -16,6 +16,10 @@ public static class TgPanelRequests
         CancellationToken cancellationToken) => RunAsync(window,
             () => window.ShowQuestion(question), value => value, delete: null, cancelled: null, cancellationToken);
 
+    internal static Task<string?> RequestTextAsync(TgChatWindow window, string title, string description,
+        CancellationToken cancellationToken) => RunAsync(window,
+            () => window.ShowTextPrompt(title, description), value => value, delete: null, cancelled: null, cancellationToken);
+
     /// <summary>Runs a <see cref="ChoiceList"/> picker over the transcript.</summary>
     public static Task<string?> RequestChoiceAsync(
         TgChatWindow window,

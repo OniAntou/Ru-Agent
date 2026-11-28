@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **fix(tui)**: Start `/customize` with a section menu and load a catalog only
+  when its section opens. An explicit tab name opens that section directly.
+
 - **feat(tui)**: Open Skills, Plugins and Instructions from `/customize` in
   interactive chat. Manage skill availability and packages, review plugin
   commands before turning them on, and edit personal instruction files with

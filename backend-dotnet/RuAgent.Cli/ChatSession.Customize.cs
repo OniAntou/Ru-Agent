@@ -10,7 +10,12 @@ public sealed partial class AgentCommands
     {
         private const string PreviousCustomizeTab = "tab:previous";
         private const string NextCustomizeTab = "tab:next";
-        private static readonly string[] CustomizeTabs = ["Skills", "Plugins", "Instructions"];
+        private static readonly ChoiceItem[] CustomizeTabs =
+        [
+            new("Skills", "Browse and manage skills", "skills"),
+            new("Plugins", "Manage plugins and tool options", "plugins"),
+            new("Instructions", "Edit personal or workspace instructions", "instructions"),
+        ];
 
         private async Task ShowCustomizeAsync(string? argument, CancellationToken ct)
         {
@@ -20,8 +25,15 @@ public sealed partial class AgentCommands
                 return;
             }
 
-            var tab = string.IsNullOrEmpty(argument) ? 0 : Array.FindIndex(CustomizeTabs,
-                name => name.Equals(argument, StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrEmpty(argument))
+            {
+                argument = await PickCustomizeActionAsync("Customize · Choose a section", CustomizeTabs, ct)
+                    .ConfigureAwait(false);
+                if (argument is null || ct.IsCancellationRequested) return;
+            }
+
+            var tab = Array.FindIndex(CustomizeTabs,
+                item => item.Value.Equals(argument, StringComparison.OrdinalIgnoreCase));
             if (tab < 0)
             {
                 await WriteDiagnosticLineAsync(_err, "Usage: /customize [skills|plugins|instructions]").ConfigureAwait(false);
@@ -49,7 +61,7 @@ public sealed partial class AgentCommands
 
         private Task<string?> PickCustomizeAsync(int tab, IReadOnlyList<ChoiceItem> rows, CancellationToken ct)
         {
-            var tabs = string.Join("  ", CustomizeTabs.Select((name, index) => index == tab ? $"[{name}]" : name));
+            var tabs = string.Join("  ", CustomizeTabs.Select((item, index) => index == tab ? $"[{item.Label}]" : item.Label));
             return TgPanelRequests.RequestChoiceAsync(tgWindow!,
                 new ChoiceList("Customize  ·  " + tabs, rows, footer: "←/→ tab · ↑/↓ select · enter actions · esc close",
                     showCounter: false),

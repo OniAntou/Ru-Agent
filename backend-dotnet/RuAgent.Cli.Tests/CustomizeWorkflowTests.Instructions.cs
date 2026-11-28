@@ -19,14 +19,23 @@ public sealed partial class CustomizeWorkflowTests
         });
         await RunCustomizeAsync(host, workspace, "/customize", (stage, app, page, screen) =>
         {
-            if (stage == 1 && page.IsModalPanelOpen && screen.Contains("[Skills]"))
+            if (stage == 1 && page.IsModalPanelOpen && screen.Contains("Choose a section"))
+            {
+                Assert.Contains("Skills", screen);
+                Assert.Contains("Plugins", screen);
+                Assert.Contains("Instructions", screen);
+                Assert.DoesNotContain(host.Requests, request => request.Contains("/agent/v1/skills")
+                    || request.Contains("/agent/v1/plugins"));
+                app.InjectKey(Key.Enter);
+            }
+            else if (stage == 2 && page.IsModalPanelOpen && screen.Contains("[Skills]"))
             {
                 Assert.DoesNotContain(host.Requests, request => request.Contains("/agent/v1/plugins"));
                 app.InjectKey(Key.CursorRight);
             }
-            else if (stage == 2 && page.IsModalPanelOpen && screen.Contains("[Plugins]"))
+            else if (stage == 3 && page.IsModalPanelOpen && screen.Contains("[Plugins]"))
                 app.InjectKey(Key.CursorRight);
-            else if (stage == 3 && page.IsModalPanelOpen && screen.Contains("[Instructions]"))
+            else if (stage == 4 && page.IsModalPanelOpen && screen.Contains("[Instructions]"))
             {
                 app.InjectKey(Key.Esc);
                 return true;
@@ -37,6 +46,31 @@ public sealed partial class CustomizeWorkflowTests
         Assert.Single(host.Requests, request => request.StartsWith("GET /agent/v1/skills ", StringComparison.Ordinal));
         Assert.Single(host.Requests, request => request.StartsWith("GET /agent/v1/plugins ", StringComparison.Ordinal));
         Assert.DoesNotContain(host.Requests, request => request.StartsWith("POST ", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CustomizeMenuCanCloseOrOpenInstructionsWithoutReadingCatalogs(bool openInstructions)
+    {
+        var workspace = Path.GetTempPath();
+        using var host = new CustomizeHost((_, _) => new { status = "ok" });
+        await RunCustomizeAsync(host, workspace, "/customize", (stage, app, page, screen) =>
+        {
+            if (stage == 1 && page.IsModalPanelOpen && screen.Contains("Choose a section"))
+            {
+                app.InjectKey(openInstructions ? Key.D3 : Key.Esc);
+                return !openInstructions;
+            }
+            if (stage == 2 && page.IsModalPanelOpen && screen.Contains("[Instructions]"))
+            {
+                app.InjectKey(Key.Esc);
+                return true;
+            }
+            return null;
+        });
+        Assert.DoesNotContain(host.Requests, request => request.Contains("/agent/v1/skills")
+            || request.Contains("/agent/v1/plugins") || request.StartsWith("POST ", StringComparison.Ordinal));
     }
 
     [Theory]

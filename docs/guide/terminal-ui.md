@@ -72,8 +72,9 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 
 Custom commands you add appear in the same list; see [Teach Ru your project](teach-ru.md).
 
-In Customize, use Left and Right to change tabs, Up and Down to move through the
-current tab, and Escape to close the panel.
+`/customize` opens a menu for Skills, Plugins and Instructions. Use Up and Down
+and press Enter to choose, or pass a tab name to open it directly. In a tab,
+use Left and Right to switch sections and Escape to close Customize.
 The Skills tab uses the workspace catalog and supports enabling skills, controlling
 automatic selection, and managing local folders or commit-pinned GitHub packages.
 Use in chat puts a skill request in the composer for you to review and send.

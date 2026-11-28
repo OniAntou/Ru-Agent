@@ -1,5 +1,6 @@
 using RuAgent.Cli.Images;
 using RuAgent.Cli.Tui;
+using RuAgent.Client;
 using Terminal.Gui.Input;
 using Terminal.Gui.ViewBase;
 
@@ -17,6 +18,8 @@ internal sealed class TgQuestionPanel : View
 
     private string _question = "";
     private string? _inputTitle;
+    private string? _originalDocument;
+    private bool _confirmDiscard;
     private IReadOnlyList<string> _options = [];
     private readonly List<BodyRow> _body = [];
     private readonly List<int> _choiceStarts = [];
@@ -48,7 +51,9 @@ internal sealed class TgQuestionPanel : View
         Add(Editor);
     }
 
-    private int InputRows => Math.Clamp(Viewport.Height - ChromeRows - 1, 1, MaxEditorRows);
+    private int InputRows => _originalDocument is null
+        ? Math.Clamp(Viewport.Height - ChromeRows - 1, 1, MaxEditorRows)
+        : Math.Max(1, Viewport.Height - ChromeRows - 2);
     private int BodyHeight => Math.Max(0, Viewport.Height - ChromeRows - InputRows);
     private int EditorTop => BodyTop + BodyHeight + 1;
     private int ChoiceCount => _options.Count == 0 ? 0 : _options.Count + 1;
@@ -59,6 +64,20 @@ internal sealed class TgQuestionPanel : View
     internal void SetQuestion(ChatInputQuestion question) => SetPrompt(null, question.Question, question.Options);
 
     internal void SetTextPrompt(string title, string description) => SetPrompt(title, description, []);
+
+    internal void SetDocumentEditor(string title, string description, string original, string draft)
+    {
+        SetPrompt(title, description, []);
+        _originalDocument = InstructionFileStore.NormalizeNewlines(original);
+        Editor.Text = draft;
+        Editor.MaxPasteCharacters = InstructionFileStore.MaxBytes;
+        Editor.TabKeyAddsTab = true;
+        Editor.DraftInsertionRejected += () =>
+        {
+            _error = "Instruction file limit: 64 KiB";
+            SetNeedsDraw();
+        };
+    }
 
     private void SetPrompt(string? title, string question, IReadOnlyList<string> options)
     {
@@ -78,6 +97,7 @@ internal sealed class TgQuestionPanel : View
 
     internal int MeasureHeight(int width, int available)
     {
+        if (_originalDocument is not null) return available;
         EnsureBodyRows(width);
         return Math.Min(available, _body.Count + ChromeRows + MaxEditorRows);
     }
@@ -147,6 +167,7 @@ internal sealed class TgQuestionPanel : View
     internal bool Paste(string text)
     {
         var cleaned = TuiText.SanitizeUntrusted(text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n'));
+        if (_originalDocument is not null) return !_confirmDiscard && Editor.TryInsertDraft(cleaned);
         if (Editor.Text.Length - Editor.SelectedText.Length + cleaned.Length > ChatInputWorkflow.MaxAnswerCharacters)
         {
             _error = "Answer limit: 8192 characters";
@@ -158,6 +179,11 @@ internal sealed class TgQuestionPanel : View
 
     private void OnEditorKey(object? sender, Key key)
     {
+        if (_originalDocument is not null)
+        {
+            HandleDocumentKey(key);
+            return;
+        }
         if (key == Key.Esc) { key.Handled = true; Deferred?.Invoke(); }
         else if (key == Key.J.WithCtrl || key == Key.Enter.WithShift)
         { key.Handled = true; Paste("\n"); }
@@ -190,6 +216,47 @@ internal sealed class TgQuestionPanel : View
         }
         else if (key == Key.V.WithCtrl)
         { key.Handled = true; Paste(CliClipboard.TryReadText() ?? ""); }
+    }
+
+    private void HandleDocumentKey(Key key)
+    {
+        if (key == Key.S.WithCtrl)
+        {
+            key.Handled = true;
+            _confirmDiscard = false;
+            var text = Editor.Text;
+            if (InstructionFileStore.ByteCount(text) <= InstructionFileStore.MaxBytes)
+                Answered?.Invoke(text);
+            else
+            {
+                _error = "Instruction file limit: 64 KiB";
+                SetNeedsDraw();
+            }
+        }
+        else if (key == Key.Esc)
+        {
+            key.Handled = true;
+            if (_confirmDiscard)
+                _confirmDiscard = false;
+            else if (_originalDocument == Editor.Text)
+            {
+                Deferred?.Invoke();
+                return;
+            }
+            else
+                _confirmDiscard = true;
+            SetNeedsDraw();
+        }
+        else if (_confirmDiscard)
+        {
+            key.Handled = true;
+            if (key == Key.D) Deferred?.Invoke();
+        }
+        else if (key == Key.V.WithCtrl)
+        {
+            key.Handled = true;
+            Paste(CliClipboard.TryReadText() ?? "");
+        }
     }
 
     protected override bool OnMouseEvent(Mouse mouse)
@@ -226,8 +293,11 @@ internal sealed class TgQuestionPanel : View
             var text = row.First ? (active ? "› " : "  ") + row.Text : row.Text;
             Paint(BodyTop + index, text, row.Choice < 0 ? TuiToken.Ink : active ? TuiToken.Ok : TuiToken.Meta);
         }
-        Paint(EditorTop - 1, _error ?? (_inputTitle is null ? "Answer" : "Value"), _error is null ? TuiToken.Meta : TuiToken.Err);
-        var keys = _inputTitle is not null ? "Enter confirm · Esc cancel"
+        var label = _originalDocument is not null ? "Markdown" : _inputTitle is null ? "Answer" : "Value";
+        Paint(EditorTop - 1, _error ?? label, _error is null ? TuiToken.Meta : TuiToken.Err);
+        var keys = _originalDocument is not null
+            ? _confirmDiscard ? "Unsaved · Ctrl+S save · D discard · Esc keep editing" : "Ctrl+S save · Esc back"
+            : _inputTitle is not null ? "Enter confirm · Esc cancel"
             : ChoiceCount > 0 ? "↑/↓ or click select · Enter send · Esc later" : "Enter send · Ctrl+J newline · Esc later";
         if (_body.Count > BodyHeight) keys += " · PgUp/Dn scroll";
         Paint(Viewport.Height - 1, keys, TuiToken.Meta);

@@ -44,7 +44,7 @@ public sealed partial class AgentCommands
         {
             0 => ShowCustomizeSkillsAsync(ct),
             1 => ShowCustomizePluginsAsync(ct),
-            _ => PickCustomizeAsync(tab, [new("No settings available", "", "", Enabled: false)], ct),
+            _ => ShowCustomizeInstructionsAsync(ct),
         };
 
         private Task<string?> PickCustomizeAsync(int tab, IReadOnlyList<ChoiceItem> rows, CancellationToken ct)

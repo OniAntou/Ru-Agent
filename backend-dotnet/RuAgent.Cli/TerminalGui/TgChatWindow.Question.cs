@@ -10,6 +10,9 @@ public sealed partial class TgChatWindow
     internal void ShowTextPrompt(string title, string description) =>
         ShowQuestionPanel(panel => panel.SetTextPrompt(title, description));
 
+    internal void ShowDocumentEditor(string title, string path, string original, string draft) =>
+        ShowQuestionPanel(panel => panel.SetDocumentEditor(title, path, original, draft));
+
     private void ShowQuestionPanel(Action<TgQuestionPanel> configure)
     {
         Transcript.ClearTextSelection();

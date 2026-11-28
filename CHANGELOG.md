@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **feat(tui)**: Open Skills, Plugins and Instructions from `/customize` in
+  interactive chat. Manage skill availability and packages, review plugin
+  commands before turning them on, and edit personal instruction files with
+  explicit save and conflict handling.
+
 - **fix(tui)**: Show each model narration once during streaming and realign completed tool
   rows when the terminal width changes or the Todos panel collapses.
 

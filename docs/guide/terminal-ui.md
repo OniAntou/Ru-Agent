@@ -81,6 +81,11 @@ The Plugins tab manages local and commit-pinned GitHub plugins, shows their hook
 and MCP commands before approval, and controls computer use and browser sign-ins
 for new turns.
 
+The Instructions tab edits `~/.ru/AGENTS.md` or the current workspace's
+`.ru/AGENTS.md`. Press Ctrl+S to save. Escape on an edited draft offers save,
+discard or keep editing. Changes made outside Ru require a separate decision
+before saving over them. Shared project files are listed separately.
+
 `/model` groups the live catalog of the active provider together with every provider you signed
 in to, so a model of another provider is one pick away: choosing it switches the provider too.
 `/provider` selects the provider, stores its checked key, then opens that provider's model list,

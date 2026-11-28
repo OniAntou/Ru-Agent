@@ -11,6 +11,7 @@ namespace RuAgent.Cli.TerminalGui;
 public sealed class TgPromptEditor : TextView
 {
     public const int MaxDraftChars = 16_000;
+    internal int MaxPasteCharacters { get; set; } = MaxDraftChars;
     private Point _sourceCursor;
     public event Action? DraftInsertionRejected;
 
@@ -75,7 +76,7 @@ public sealed class TgPromptEditor : TextView
         foreach (var rune in normalized.EnumerateRunes())
             if (!Rune.IsControl(rune) || rune.Value is '\n' or '\t') cleaned.Append(rune);
         var selectedLength = SelectedText.Replace("\r\n", "\n", StringComparison.Ordinal).Length;
-        if (Text.Length - selectedLength + cleaned.Length > MaxDraftChars)
+        if (Text.Length - selectedLength + cleaned.Length > MaxPasteCharacters)
         {
             DraftInsertionRejected?.Invoke();
             return false;

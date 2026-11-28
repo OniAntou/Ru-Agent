@@ -82,7 +82,7 @@ and MCP commands before approval, and controls computer use and browser sign-ins
 for new turns.
 
 The Instructions tab edits `~/.ru/AGENTS.md` or the current workspace's
-`.ru/AGENTS.md`. Press Ctrl+S to save. Escape on an edited draft offers save,
+`.ru/AGENTS.md`. Press F2 or Ctrl+S to save. Escape on an edited draft offers save,
 discard or keep editing. Changes made outside Ru require a separate decision
 before saving over them. Shared project files are listed separately.
 

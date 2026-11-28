@@ -220,7 +220,7 @@ internal sealed class TgQuestionPanel : View
 
     private void HandleDocumentKey(Key key)
     {
-        if (key == Key.S.WithCtrl)
+        if (key == Key.F2 || key == Key.S.WithCtrl)
         {
             key.Handled = true;
             _confirmDiscard = false;
@@ -296,7 +296,7 @@ internal sealed class TgQuestionPanel : View
         var label = _originalDocument is not null ? "Markdown" : _inputTitle is null ? "Answer" : "Value";
         Paint(EditorTop - 1, _error ?? label, _error is null ? TuiToken.Meta : TuiToken.Err);
         var keys = _originalDocument is not null
-            ? _confirmDiscard ? "Unsaved · Ctrl+S save · D discard · Esc keep editing" : "Ctrl+S save · Esc back"
+            ? _confirmDiscard ? "Unsaved · F2 save · D discard · Esc keep editing" : "F2/Ctrl+S save · Esc back"
             : _inputTitle is not null ? "Enter confirm · Esc cancel"
             : ChoiceCount > 0 ? "↑/↓ or click select · Enter send · Esc later" : "Enter send · Ctrl+J newline · Esc later";
         if (_body.Count > BodyHeight) keys += " · PgUp/Dn scroll";

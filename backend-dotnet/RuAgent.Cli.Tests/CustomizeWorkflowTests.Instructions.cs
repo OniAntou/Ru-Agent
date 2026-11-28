@@ -40,14 +40,16 @@ public sealed partial class CustomizeWorkflowTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task InstructionsSaveOrDiscardOnlyTheSelectedScope(bool save)
+    [InlineData("f2")]
+    [InlineData("ctrl+s")]
+    [InlineData("discard")]
+    public async Task InstructionsSaveOrDiscardOnlyTheSelectedScope(string action)
     {
         var workspace = Directory.CreateTempSubdirectory("ru-customize-instructions-");
         try
         {
             var path = InstructionFileStore.WorkspacePath(workspace.FullName)!;
+            var save = action != "discard";
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             const string original = "Old instructions";
             const string edited = "Use English for docs.\nGiữ nguyên checklist.";
@@ -62,7 +64,7 @@ public sealed partial class CustomizeWorkflowTests
                 {
                     Assert.Equal(original, page.QuestionPanel.Editor.Text);
                     page.QuestionPanel.Editor.Text = edited;
-                    app.InjectKey(save ? Key.S.WithCtrl : Key.Esc);
+                    app.InjectKey(action == "f2" ? Key.F2 : save ? Key.S.WithCtrl : Key.Esc);
                     editorClosed = save;
                 }
                 else if (!editorClosed && stage == 3 && screen.Contains("Unsaved"))

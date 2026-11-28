@@ -43,6 +43,7 @@ public sealed partial class AgentCommands
         private Task<string?> OpenCustomizeTabAsync(int tab, CancellationToken ct) => tab switch
         {
             0 => ShowCustomizeSkillsAsync(ct),
+            1 => ShowCustomizePluginsAsync(ct),
             _ => PickCustomizeAsync(tab, [new("No settings available", "", "", Enabled: false)], ct),
         };
 

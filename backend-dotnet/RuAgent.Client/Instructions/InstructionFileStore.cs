@@ -1,6 +1,7 @@
+using System.Diagnostics;
 using System.Text;
 
-namespace RuApp.Services;
+namespace RuAgent.Client;
 
 /// <summary>What the editor loaded: the text and the file stamp it was read at.</summary>
 public sealed record InstructionFileSnapshot(string Path, string Text, bool Exists, DateTime? LastWriteUtc, long? Length);
@@ -109,7 +110,7 @@ public static class InstructionFileStore
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            GuiDiagnosticWriter.AppendTraceLine($"[Instructions] Save failed: {error.GetType().Name}");
+            Trace.TraceWarning("[Instructions] Save failed: {0}", error.GetType().Name);
             return InstructionSaveOutcome.Failed;
         }
     }

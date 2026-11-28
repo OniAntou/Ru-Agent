@@ -1,6 +1,6 @@
 using System.IO;
 using System.Text;
-using RuApp.Services;
+using RuAgent.Client;
 using Xunit;
 
 namespace RuApp.Tests;

@@ -20,12 +20,13 @@ public static class TgPanelRequests
     public static Task<string?> RequestChoiceAsync(
         TgChatWindow window,
         ChoiceList list,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        Func<int, string>? navigateTabs = null) =>
         RunAsync(
             window,
             () => window.ShowPicker(
                 list.Title, list.Items, list.Selected, list.Footer,
-                showCounter: list.ShowCounter, hideFooter: list.HideFooter),
+                showCounter: list.ShowCounter, hideFooter: list.HideFooter, navigateTabs: navigateTabs),
             confirmed: value => value,
             delete: null,
             cancelled: null,

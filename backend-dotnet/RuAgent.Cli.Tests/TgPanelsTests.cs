@@ -10,6 +10,40 @@ namespace RuAgent.Cli.Tests;
 
 public sealed class TgPanelsTests
 {
+    [Theory]
+    [InlineData(false, "previous")]
+    [InlineData(true, "next")]
+    public void TabbedPickerArrowsResolveNavigationWithoutSubmittingTheDraft(bool right, string expected)
+    {
+        using IApplication app = Application.Create();
+        app.Init(DriverRegistry.Names.ANSI);
+        using var window = TgChatWindow.Build();
+        var list = new ChoiceList("Customize", [new ChoiceItem("Unavailable", "", "item", Enabled: false)]);
+        Task<string?>? pending = null;
+
+        app.AddTimeout(TimeSpan.FromMilliseconds(200), () =>
+        {
+            window.Composer.Input.Text = "existing draft";
+            pending = TgPanelRequests.RequestChoiceAsync(window, list, CancellationToken.None,
+                direction => direction > 0 ? "next" : "previous");
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(350), () =>
+        {
+            app.InjectKey(right ? Key.CursorRight : Key.CursorLeft);
+            return false;
+        });
+        app.AddTimeout(TimeSpan.FromMilliseconds(600), () =>
+        {
+            Assert.True(pending?.IsCompletedSuccessfully);
+            Assert.Equal(expected, pending!.Result);
+            Assert.Equal("existing draft", window.Composer.Input.Text);
+            app.RequestStop();
+            return false;
+        });
+        app.Run(window);
+    }
+
     [Fact]
     public void Picker_AtShortHeightKeepsTheSelectedChoiceAndFooterVisible()
     {

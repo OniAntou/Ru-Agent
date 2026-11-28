@@ -460,7 +460,8 @@ public sealed partial class TgChatWindow : Window
         string? footer = null,
         bool allowDelete = false,
         bool showCounter = true,
-        bool hideFooter = false)
+        bool hideFooter = false,
+        Func<int, string>? navigateTabs = null)
     {
         SetApprovalWaiting(false);
         var safeTitle = ChatDisplayText.Sanitize(title, 120);
@@ -469,6 +470,7 @@ public sealed partial class TgChatWindow : Window
         _approval = null;
         _choices = list;
         _choicesAllowDelete = allowDelete;
+        _choicesNavigateTabs = navigateTabs;
         _secretPanel = false;
         (int Width, int Height, int Selected, string Filter) lastLayout = default;
         IReadOnlyList<CardLine>? lastCard = null;
@@ -486,6 +488,8 @@ public sealed partial class TgChatWindow : Window
             return lastCard;
         });
     }
+
+    private Func<int, string>? _choicesNavigateTabs;
 
     private const string SearchHint = "Search";
 
@@ -559,6 +563,7 @@ public sealed partial class TgChatWindow : Window
         _approval = null;
         _choices = null;
         _choicesAllowDelete = false;
+        _choicesNavigateTabs = null;
         _secretPanel = false;
         _secret.Clear();
         if (App is not null)
@@ -838,6 +843,12 @@ public sealed partial class TgChatWindow : Window
                 case TgPanelKeyKind.Down:
                     choices.Move(1);
                     break;
+                case TgPanelKeyKind.Left when _choicesNavigateTabs is { } previous:
+                    ResolveConfirmed(previous(-1));
+                    return;
+                case TgPanelKeyKind.Right when _choicesNavigateTabs is { } next:
+                    ResolveConfirmed(next(1));
+                    return;
                 case TgPanelKeyKind.Enter:
                     if (choices.Current.Enabled)
                     {

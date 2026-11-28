@@ -62,6 +62,7 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 | `/advisor [off\|<model>\|<provider> <model>]` | Choose a model the agent may consult in this session (a new session has none) |
 | `/computer [on\|off]` | Show or set computer use for new turns |
 | `/preset [plan\|standard\|full_access\|rules]` | Choose permissions or manage remembered rules |
+| `/customize [skills\|plugins\|instructions]` | Open customization in the interactive terminal |
 | `/new` | Start a new session |
 | `/sessions [query\|id:<session-id>]` | Browse saved sessions and reopen one by id |
 | `/subagents [run-id]` | See delegated tasks and read their results |
@@ -70,6 +71,9 @@ Type `/` to see suggestions, or press `Ctrl+P`.
 | `/help`, `/exit` | List every command, quit |
 
 Custom commands you add appear in the same list; see [Teach Ru your project](teach-ru.md).
+
+In Customize, use Left and Right to change tabs, Up and Down to move through the
+current tab, and Escape to close the panel.
 
 `/model` groups the live catalog of the active provider together with every provider you signed
 in to, so a model of another provider is one pick away: choosing it switches the provider too.

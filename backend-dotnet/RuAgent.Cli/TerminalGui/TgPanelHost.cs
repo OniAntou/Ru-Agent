@@ -12,6 +12,8 @@ public enum TgPanelKeyKind
 {
     Up,
     Down,
+    Left,
+    Right,
     Enter,
     Escape,
     Digit,
@@ -163,6 +165,9 @@ public sealed class TgPanelHost : View
         {
             return new TgPanelKey(TgPanelKeyKind.Down);
         }
+
+        if (key == Key.CursorLeft) return new TgPanelKey(TgPanelKeyKind.Left);
+        if (key == Key.CursorRight) return new TgPanelKey(TgPanelKeyKind.Right);
 
         if (key == Key.Enter)
         {

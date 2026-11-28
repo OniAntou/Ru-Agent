@@ -474,6 +474,12 @@ public sealed partial class AgentCommands
                 return true;
             }
 
+            if (slashCmd == "/customize")
+            {
+                await ShowCustomizeAsync(arg, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
             if (slashCmd == "/subagents")
             {
                 await ShowSubagentsAsync(arg, runSession.ActiveRunId ?? runSession.ParkedRunId ?? runSession.FollowableRunId,

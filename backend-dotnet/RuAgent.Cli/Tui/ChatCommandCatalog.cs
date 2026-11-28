@@ -14,6 +14,7 @@ public static class ChatCommandCatalog
         new("/computer", "Show or set computer use for new turns", "/computer [on|off]"),
         new("/browser", "Keep or clear browser sign-ins for new turns", "/browser [keep|fresh]"),
         new("/preset", "Choose permissions or manage remembered rules", "/preset [plan|standard|full_access|rules]"),
+        new("/customize", "Open Skills, Plugins and Instructions", "/customize [skills|plugins|instructions]"),
         new("/new", "Start a new session", "/new"),
         new("/sessions", "Browse saved sessions and reopen by id", "/sessions [query|id:<session-id>]"),
         new("/subagents", "View child tasks and results", "/subagents [run-id] [agent result [version]]"),
